@@ -98,6 +98,61 @@ PDF·HWP(X)·사진·도면을 공통 문서 모델로 연결하고, 규칙 검�
 
 정확 연결된 세 도면은 `도면21. 2지점 유구+유물 편집.ai`의 서로 다른 영역이며, 각각 5–8호·9–12호·13–16호 토광묘 캡션에 대응한다. 도면 57은 선택 구간에 번호가 붙은 도면 캡션이 없어 의미 검토 상태다. 도판 JPEG 후보는 파일명과 보이는 표지만으로 선택한 2지점임을 확정할 수 없었고, 도판 85는 허용한 검색 범위에서 맞는 후보가 없었다.
 
+### 2.6 승인된 표본 감사 기준선 — 관찰 사실
+
+아래 JSON은 최종 재현성 검사가 사용하는 승인된 표본 기준선이다. Git에 추적된 이 문서의 커밋 버전을 신뢰 기준으로 사용하며, `tmp/sample-validation/`의 변경 가능한 중간 산출물이 스스로 기대값을 바꾸는 근거가 될 수 없다.
+
+```json
+{
+  "schema_version": 1,
+  "source_pdf_sha256": {
+    "1차": "ac2dcd575f247276d0641bbc2104395e180b4e0148daeda0402b9aff9464eba8",
+    "2차": "7f6ad24597448a27491e2ed2113ebd381446e6790974348d3980ee48e97d6eb1",
+    "3차": "32ec1e2f02e3b088b0b014ca0294823caec8531850d5b68e3ad99d16cfcc8e60"
+  },
+  "difference_baseline": {
+    "total": 124,
+    "status": {
+      "confirmed": 120,
+      "layout_noise": 2,
+      "manual_review": 2,
+      "unresolved": 0
+    },
+    "rule": {
+      "site_or_area_name": 0,
+      "feature_or_artifact_id": 2,
+      "figure_plate_table_photo_ref": 66,
+      "numeric_value": 0,
+      "direction_period_term": 0,
+      "annotation_resolution": 56
+    },
+    "change_type": {
+      "added": 71,
+      "deleted": 2,
+      "modified": 51,
+      "moved": 0
+    }
+  },
+  "asset_baseline": {
+    "references": 10,
+    "unassigned": 30,
+    "status": {
+      "exact": 3,
+      "multiple": 4,
+      "missing": 1,
+      "semantic_review": 2
+    },
+    "reviewed_exact_ids": [
+      "drawing-58",
+      "drawing-59",
+      "drawing-60"
+    ]
+  }
+}
+```
+
+`src`는 Git이 추적하지 않는 심볼릭 링크이므로 Git은 `src` 전체 불변성을 감사할 수 없다. 따라서 이 검증은 `src` 전체가 불변이라고 주장하지 않는다. 감사 가능한 명시적 범위는 세 PDF와 모든 참조 후보의 원본·미리보기 해시이며, 그 밖의 무관한 `src` 파일 전체에 대한 해시 매니페스트는 만들지 않았다.
+
 ## 3. 검증에서 도출한 판단 — 분석·추론
 
 1. **페이지 번호는 단독 키가 아니다.** 판형과 앞부분 증감으로 물리·인쇄 페이지가 이동하므로 버전, 두 페이지 번호, 내용 지문을 결합해야 한다.
