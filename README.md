@@ -146,10 +146,21 @@ PDF·HWP(X)·사진·도면을 공통 문서 모델로 연결하고, 규칙 검�
       "drawing-58",
       "drawing-59",
       "drawing-60"
-    ]
+    ],
+    "provenance": {
+      "source_reference_entries": 61,
+      "preview_entries": 32,
+      "distinct_source_files": 35,
+      "distinct_previews": 8,
+      "canonical_evidence_sha256": "755329a4db373c95f357d405aed2f80a6b0a2cb9ae15f471537c4b0cbdd73ca4",
+      "source_references_sha256": "908865e9e9b20f4a6f9601c4f2bff1545d0913057eb960d27d877ba5f7778a06",
+      "preview_evidence_sha256": "0ff475fcc791adf8ddea31a1da69c3fcfa7130c01bc99b7922d60ded16dfd7e4"
+    }
   }
 }
 ```
+
+자산 출처 기준선은 참조 ID, 후보·문맥 기각·시각 기각 역할, 상대 경로, 참조 상태, 원본 SHA-256과 미리보기 SHA-256·영역 근거를 포함한 전체 검토 집합의 정규 JSON 해시다. 따라서 상태별 건수가 같더라도 후보나 기각 근거가 추가·삭제·변경되면 최종 검사는 실패한다.
 
 `src`는 Git이 추적하지 않는 심볼릭 링크이므로 Git은 `src` 전체 불변성을 감사할 수 없다. 따라서 이 검증은 `src` 전체가 불변이라고 주장하지 않는다. 감사 가능한 명시적 범위는 세 PDF와 모든 참조 후보의 원본·미리보기 해시이며, 그 밖의 무관한 `src` 파일 전체에 대한 해시 매니페스트는 만들지 않았다.
 
