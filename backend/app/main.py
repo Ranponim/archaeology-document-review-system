@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
+from app.api.ai_analysis import router as ai_analysis_router
 from app.graph.client import create_driver
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -100,6 +101,7 @@ def create_app(
         return {"status": "ok"}
 
     application.include_router(projects_router)
+    application.include_router(ai_analysis_router)
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
     if frontend_dir.is_dir():

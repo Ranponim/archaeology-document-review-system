@@ -1,5 +1,4 @@
-from typing import Literal
-
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -74,3 +73,30 @@ class ProjectDetailResponse(ProjectResponse):
 class ErrorResponse(ApiModel):
     code: Literal["input_error", "server_error"]
     request_id: str
+
+
+class AIAnalyzeRequest(ApiModel):
+    version_id: str | None = Field(default=None, alias="versionId")
+    model: str = Field(default="openai/gpt-5.6-luna")
+
+
+class AIAnalyzeResponse(ApiModel):
+    analysis_run_id: str = Field(alias="analysisRunId")
+    status: str
+    model: str
+
+
+class CandidateResponse(ApiModel):
+    id: str
+    category: str
+    change_type: str = Field(alias="changeType")
+    status: str
+    original_text: str | None = Field(default=None, alias="originalText")
+    proposed_text: str | None = Field(default=None, alias="proposedText")
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateListResponse(ApiModel):
+    project_id: str = Field(alias="projectId")
+    total: int
+    candidates: list[CandidateResponse]
