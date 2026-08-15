@@ -10,8 +10,15 @@ class ProjectNotFoundError(LookupError):
 
 
 class ProjectRepository:
-    def __init__(self, driver: Driver) -> None:
+    def __init__(self, driver: Driver, database: str | None = None) -> None:
         self._driver = driver
+        self._database = database
+
+    @property
+    def _query_config(self) -> dict[str, str]:
+        if self._database is None:
+            return {}
+        return {"database_": self._database}
 
     def create_project(self, name: str, internal_code: str | None) -> Project:
         project = Project(
@@ -30,6 +37,7 @@ class ProjectRepository:
             id=project.id,
             name=project.name,
             internal_code=project.internal_code,
+            **self._query_config,
         )
         return project
 
@@ -47,7 +55,10 @@ class ProjectRepository:
             original_name=stored.original_name,
             stage=stage,
         )
-        with self._driver.session() as session:
+        session_config = (
+            {"database": self._database} if self._database is not None else {}
+        )
+        with self._driver.session(**session_config) as session:
             created = session.execute_write(
                 self._create_document_version,
                 project_id,
@@ -115,6 +126,7 @@ class ProjectRepository:
                    count(DISTINCT run) AS AnalysisRun
             """,
             document_version_id=document_version_id,
+            **self._query_config,
         )
         if not records:
             return {}
