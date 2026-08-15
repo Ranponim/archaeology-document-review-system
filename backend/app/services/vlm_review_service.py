@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from app.jobs.ingest import ApiError, RateLimitedError
 from app.services.asset_cache import AssetHashCache
+from app.services.image_processor import ImageProcessor
 from app.services.openrouter_client import OpenRouterConfig
 
 
@@ -110,7 +111,8 @@ class VLMReviewService:
         expected_site: str = "2지점",
         mime_type: str = "image/jpeg",
     ) -> VLMReviewResult:
-        image_hash = self._cache.compute_bytes_hash(image_bytes)
+        processed_bytes = ImageProcessor.prepare_for_vlm(image_bytes)
+        image_hash = self._cache.compute_bytes_hash(processed_bytes)
         prompt_text = (
             f"이 발굴 사진의 표찰을 판독하여 유적 지점(예: '{expected_site}') 및 "
             f"유구 번호(예: '{expected_feature}')와 일치하는지 판별하십시오.\n"
@@ -121,9 +123,9 @@ class VLMReviewService:
         cached_data = self._cache.get_cached_result(image_hash, prompt_text)
         if cached_data is not None:
             is_match = (
-                expected_site in cached_data.get("site_point", "")
-                or expected_feature in cached_data.get("label_detected", "")
-            )
+                (bool(expected_site) and expected_site in cached_data.get("site_point", ""))
+                or (bool(expected_feature) and expected_feature in cached_data.get("label_detected", ""))
+            ) or bool(cached_data.get("is_match", False))
             return VLMReviewResult(
                 label_detected=cached_data.get("label_detected", ""),
                 feature_number=cached_data.get("feature_number", ""),
@@ -138,7 +140,7 @@ class VLMReviewService:
             )
 
         # 2. Call VLM API (Cache Miss)
-        payload = self._build_multimodal_payload(prompt_text, image_bytes, mime_type)
+        payload = self._build_multimodal_payload(prompt_text, processed_bytes, mime_type)
         response = await self._call_api(payload)
 
         prompt_tokens = response.get("usage", {}).get("prompt_tokens", 0)
@@ -157,9 +159,9 @@ class VLMReviewService:
         self._cache.store_result(image_hash, prompt_text, data)
 
         is_match = (
-            expected_site in data.get("site_point", "")
-            or expected_feature in data.get("label_detected", "")
-        )
+            (bool(expected_site) and expected_site in data.get("site_point", ""))
+            or (bool(expected_feature) and expected_feature in data.get("label_detected", ""))
+        ) or bool(data.get("is_match", False))
 
         return VLMReviewResult(
             label_detected=data.get("label_detected", ""),

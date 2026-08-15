@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
 from pathlib import Path
+import tempfile
+import time
 from typing import Any
 
 
@@ -13,6 +16,10 @@ class AssetHashCache:
                 os.environ.get("ASSET_CACHE_DIR", "/data/derived/asset_cache")
             )
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def cache_dir(self) -> Path:
+        return self._cache_dir
 
     @staticmethod
     def compute_bytes_hash(data: bytes) -> str:
@@ -46,8 +53,66 @@ class AssetHashCache:
     ) -> None:
         key = self._cache_key(image_hash, prompt)
         cache_file = self._cache_dir / key
-        temp_file = cache_file.with_suffix(".tmp")
-        temp_file.write_text(
-            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temp_file.replace(cache_file)
+        payload = json.dumps(result, ensure_ascii=False, indent=2)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=self._cache_dir,
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+                suffix=".tmp",
+            ) as tf:
+                tf.write(payload)
+                temp_path = Path(tf.name)
+            os.replace(temp_path, cache_file)
+            temp_path = None
+        finally:
+            if temp_path is not None and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+
+    def cleanup(self, max_age_days: int = 30) -> int:
+        """Remove cache files older than max_age_days. Returns the number of files deleted."""
+        if not self._cache_dir.exists():
+            return 0
+        cutoff = time.time() - (max_age_days * 86400)
+        removed_count = 0
+        for item in self._cache_dir.iterdir():
+            if item.is_file():
+                try:
+                    if item.stat().st_mtime < cutoff:
+                        item.unlink()
+                        removed_count += 1
+                except OSError:
+                    pass
+        return removed_count
+
+    def get_cache_stats(self) -> dict[str, int]:
+        """Return cache statistics including total files count and total size in bytes."""
+        if not self._cache_dir.exists():
+            return {
+                "file_count": 0,
+                "files_count": 0,
+                "total_files": 0,
+                "total_size_bytes": 0,
+                "total_size": 0,
+            }
+        count = 0
+        total_size = 0
+        for item in self._cache_dir.iterdir():
+            if item.is_file():
+                count += 1
+                try:
+                    total_size += item.stat().st_size
+                except OSError:
+                    pass
+        return {
+            "file_count": count,
+            "files_count": count,
+            "total_files": count,
+            "total_size_bytes": total_size,
+            "total_size": total_size,
+        }

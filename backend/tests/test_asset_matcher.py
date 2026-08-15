@@ -1,6 +1,8 @@
-import os
+import concurrent.futures
 import hashlib
+import os
 from pathlib import Path
+import time
 import pytest
 from app.services.asset_cache import AssetHashCache
 from app.services.asset_matcher import AssetMatcher, MatchedAssetResult
@@ -45,6 +47,52 @@ def test_asset_hash_cache_computes_sha256_and_caches(tmp_path):
     assert cached is not None
     assert cached["plate_number"] == "85"
 
+    # 5. Verify race-condition-safe concurrent writes
+    def _concurrent_write(worker_id: int):
+        cache.store_result(
+            image_hash=computed_hash,
+            prompt="ocr_plate",
+            result={"plate_number": "85", "site_name": "2지점 2호 토광묘", "worker": worker_id}
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_concurrent_write, i) for i in range(16)]
+        for f in concurrent.futures.as_completed(futures):
+            f.result()
+
+    # Cached result is valid JSON and no stray .tmp files left behind
+    final_cached = cache.get_cached_result(computed_hash, prompt="ocr_plate")
+    assert final_cached is not None
+    assert final_cached["plate_number"] == "85"
+    tmp_files = list(tmp_path.glob("*.tmp"))
+    assert len(tmp_files) == 0
+
+    # 6. Verify stats method
+    stats = cache.get_cache_stats()
+    assert stats["file_count"] == 1
+    assert stats["total_size_bytes"] > 0
+
+    # 7. Verify cleanup method
+    old_file = tmp_path / "old_image_hash_dummy.json"
+    old_file.write_text('{"plate_number": "old"}', encoding="utf-8")
+    old_mtime = time.time() - (35 * 86400)
+    os.utime(old_file, (old_mtime, old_mtime))
+
+    stats_before_cleanup = cache.get_cache_stats()
+    assert stats_before_cleanup["file_count"] == 2
+
+    # Clean up files older than 30 days
+    deleted_count = cache.cleanup(max_age_days=30)
+    assert deleted_count == 1
+    assert not old_file.exists()
+
+    # Recent cache entry still remains
+    assert cache.get_cached_result(computed_hash, prompt="ocr_plate") is not None
+
+    stats_after_cleanup = cache.get_cache_stats()
+    assert stats_after_cleanup["file_count"] == 1
+    assert stats_after_cleanup["total_size_bytes"] > 0
+
 
 def test_asset_matcher_indexes_real_repository_assets():
     matcher = AssetMatcher(
@@ -65,12 +113,53 @@ def test_asset_matcher_matches_sample_references():
         env_dir=SRC_ENV
     )
     
-    # Reference for Drawing 58, 59, 60 (2지점 토광묘 AI drawing)
-    result_58 = matcher.match_reference(
+    # 1. A drawing number that exists in the repo files (e.g., Drawing 1 in 환경 도면)
+    result_drawing = matcher.match_reference(
         ref_type="drawing",
-        number="58",
-        context={"feature": "토광묘", "site_point": "2지점"}
+        number="1",
+        context={}
     )
-    assert isinstance(result_58, MatchedAssetResult)
-    assert result_58.status in ["exact", "multiple", "semantic_review"]
-    assert result_58.matched_path is not None or len(result_58.candidate_paths) > 0
+    assert isinstance(result_drawing, MatchedAssetResult)
+    assert result_drawing.status == "exact"
+    assert result_drawing.matched_path is not None
+    assert "도면1" in result_drawing.matched_path.name
+
+    # 2. A plate number that exists in the repo files (e.g., Plate 10 has multiple candidates, Plate 116 is exact)
+    result_plate_multi = matcher.match_reference(
+        ref_type="plate",
+        number="10",
+        context={}
+    )
+    assert isinstance(result_plate_multi, MatchedAssetResult)
+    assert result_plate_multi.status == "multiple"
+    assert len(result_plate_multi.candidate_paths) > 1
+
+    result_plate_exact = matcher.match_reference(
+        ref_type="plate",
+        number="116",
+        context={}
+    )
+    assert isinstance(result_plate_exact, MatchedAssetResult)
+    assert result_plate_exact.status == "exact"
+    assert result_plate_exact.matched_path is not None
+
+    # 3. A completely nonexistent reference (should return 'missing')
+    result_missing = matcher.match_reference(
+        ref_type="drawing",
+        number="99999",
+        context={}
+    )
+    assert isinstance(result_missing, MatchedAssetResult)
+    assert result_missing.status == "missing"
+    assert result_missing.matched_path is None
+    assert result_missing.candidate_paths == []
+
+    # 4. Context with blank caption triggers semantic_review
+    result_blank = matcher.match_reference(
+        ref_type="drawing",
+        number="1",
+        context={"text": "출토유물 (도면 : , 도판 : )"}
+    )
+    assert isinstance(result_blank, MatchedAssetResult)
+    assert result_blank.status == "semantic_review"
+    assert result_blank.matched_path is not None
