@@ -1,0 +1,11 @@
+.git
+.worktrees
+.superpowers
+.pytest_cache
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/node_modules
+**/test-results
+src
+tmp

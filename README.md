@@ -6,7 +6,7 @@ PDF·HWP(X)·사진·도면을 공통 문서 모델로 연결하고, 규칙 검�
 
 | 구분 | 상태 | 기준일 | 의미 |
 | --- | --- | --- | --- |
-| 시스템 설계 | 설계 검토 초안 | 2026-08-14 | 아래의 향후 구현 요구사항은 확정했지만 제품 구현은 시작 전이다. |
+| 시스템 설계 | 로컬 기반 구현 | 2026-08-15 | Windows Docker 실행, 프로젝트·원본 PDF 등록과 작업 상태 조회까지 구현했다. 검색·교정·전문가 승인 기능은 후속 범위다. |
 | 실제 자료 표본 | 샘플 검증 완료 | 2026-08-14 | 1차·2차·3차 교정 PDF의 동일 내용 10쪽씩, 총 30쪽과 연결 자산을 읽기 전용으로 검사했다. |
 
 이 문서는 다음 세 종류의 문장을 구분한다.
@@ -14,6 +14,40 @@ PDF·HWP(X)·사진·도면을 공통 문서 모델로 연결하고, 규칙 검�
 - **관찰 사실**: 검증 스크립트와 사람이 확인한 표본 결과
 - **분석·추론**: 관찰 사실에서 도출한 설계 판단이며 전체 자료에 대한 보장은 아님
 - **향후 구현 요구사항**: 제품이 충족해야 하지만 현재 구현 완료를 뜻하지 않는 조건
+
+## Windows 로컬 실행
+
+필수 환경은 Windows 10/11, WSL 2 기반 Docker Desktop, PowerShell이다. 저장소를 받은 뒤
+프로젝트 루트에서 설정 파일을 만들고 비밀값을 입력한다.
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+`NEO4J_PASSWORD`를 새 비밀번호로 바꾸고, 외부 AI 기능을 사용하기 전
+`AI_API_KEY`를 설정한다. `DATA_ROOT=/data`는 컨테이너 내부 데이터 경로이므로 그대로
+둔다. `.env`와 API 키는 Git이나 브라우저로 전달되지 않는다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
+Start-Process http://localhost:8080
+powershell -ExecutionPolicy Bypass -File .\scripts\healthcheck.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
+```
+
+상태 검사는 웹 UI, FastAPI, 작업자, Neo4j Bolt 연결, Redis 응답을 확인하고 성공 시
+`healthy`를 출력한다. 종료 명령은 컨테이너만 내리며 원본과 데이터베이스를 삭제하지
+않는다.
+
+| 데이터 | 컨테이너 경로 | Docker 명명 볼륨 |
+| --- | --- | --- |
+| 업로드 원본·파생물·보고서 | `/data/incoming`, `/data/derived`, `/data/reports` | `review_data` |
+| Neo4j 데이터 | `/data` | `neo4j_data` |
+
+명명 볼륨의 실제 Windows 저장 위치는 Docker Desktop이 관리한다. 직접 편집하지 말고
+`docker volume ls`와 `docker volume inspect <볼륨명>`으로 확인한다. 원본 삭제·수정과
+전문가 승인 기능은 현재 웹 화면에 제공하지 않는다.
 
 ## 1. 목표와 역할 분담 — 향후 구현 요구사항
 

@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
@@ -44,6 +46,7 @@ def create_app(
     file_store: FileStore | None = None,
     project_repository=None,
     ingest_enqueuer=None,
+    static_dir: Path | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -92,7 +95,19 @@ def create_app(
     async def server_operation_error(request: Request, _error: ServerOperationError):
         return _server_error_response(request)
 
+    @application.get("/health", include_in_schema=False)
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     application.include_router(projects_router)
+
+    frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
+    if frontend_dir.is_dir():
+        application.mount(
+            "/",
+            StaticFiles(directory=frontend_dir, html=True),
+            name="frontend",
+        )
     return application
 
 

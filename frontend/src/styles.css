@@ -1,0 +1,209 @@
+:root {
+  color: #242b25;
+  background: #eee9df;
+  font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 8% 6%, rgb(197 134 74 / 18%), transparent 30rem),
+    linear-gradient(155deg, #f7f2e8 0%, #e7e4da 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(920px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 72px 0;
+}
+
+.hero {
+  margin-bottom: 32px;
+}
+
+.hero h1 {
+  margin: 6px 0 12px;
+  color: #183328;
+  font-family: Georgia, "Noto Serif KR", serif;
+  font-size: clamp(2.3rem, 6vw, 4.25rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+}
+
+.hero p:last-child,
+.muted,
+.empty-state {
+  color: #677068;
+}
+
+.eyebrow,
+.section-label {
+  margin: 0;
+  color: #a05b2b;
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.panel {
+  display: grid;
+  gap: 24px;
+  padding: 28px;
+  border: 1px solid rgb(56 73 62 / 14%);
+  border-radius: 4px;
+  background: rgb(255 253 248 / 86%);
+  box-shadow: 0 20px 60px rgb(45 42 32 / 9%);
+}
+
+.panel h2 {
+  margin: 5px 0 8px;
+  color: #244638;
+  font-size: 1.45rem;
+}
+
+.panel p {
+  margin-bottom: 0;
+}
+
+.form-stack {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.form-stack label {
+  grid-column: 1 / -1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+input[type="text"],
+.form-stack input {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #a8afa8;
+  border-radius: 3px;
+  background: #fffefb;
+}
+
+button,
+.file-button {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 3px;
+  color: white;
+  background: #275443;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled,
+.file-button.disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.project-summary {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.run-list {
+  display: grid;
+  gap: 10px;
+}
+
+.run-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border-left: 3px solid #b66b37;
+  background: #f4f1e8;
+}
+
+.run-card div:first-child,
+.status-column {
+  display: flex;
+  gap: 8px;
+}
+
+.run-card div:first-child {
+  flex-direction: column;
+}
+
+.run-card span:not(.status) {
+  color: #73786f;
+  font-size: 0.82rem;
+}
+
+.status-column {
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #234737;
+  background: #dbe9df;
+  font: 700 0.78rem ui-monospace, monospace;
+}
+
+.status-failed,
+.error-code {
+  color: #8c2922;
+  background: #f5dfdc;
+}
+
+.error-code {
+  width: fit-content;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+}
+
+code {
+  color: #8c2922;
+}
+
+@media (max-width: 620px) {
+  .app-shell {
+    padding: 40px 0;
+  }
+
+  .form-stack,
+  .project-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .file-button {
+    text-align: center;
+  }
+}

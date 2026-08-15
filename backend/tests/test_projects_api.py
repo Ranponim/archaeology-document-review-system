@@ -130,6 +130,13 @@ def test_create_project_returns_public_project_fields(client):
     }
 
 
+def test_health_endpoint_reports_only_a_fixed_ready_status(client):
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_upload_creates_queued_ingest_run_and_preserves_bytes(
     client, repository, tmp_path, enqueued_runs
 ):

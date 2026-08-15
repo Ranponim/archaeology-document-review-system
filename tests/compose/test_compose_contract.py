@@ -29,7 +29,10 @@ def test_worker_receives_the_same_neo4j_credentials_as_the_database(compose):
 def test_web_service_runs_fastapi_on_the_local_web_port(compose):
     web = compose["services"]["web"]
 
-    assert web["build"]["context"] == "./backend"
+    assert web["build"] == {
+        "context": ".",
+        "dockerfile": "backend/Dockerfile",
+    }
     assert web["command"] == [
         "uvicorn",
         "app.main:app",
@@ -42,6 +45,13 @@ def test_web_service_runs_fastapi_on_the_local_web_port(compose):
     assert web["environment"]["REDIS_URL"] == "redis://redis:6379/0"
     assert web["environment"]["NEO4J_URI"] == "bolt://neo4j:7687"
     assert "AI_API_KEY" not in web["environment"]
+
+
+def test_worker_uses_the_same_frontend_capable_application_build(compose):
+    assert compose["services"]["worker"]["build"] == {
+        "context": ".",
+        "dockerfile": "backend/Dockerfile",
+    }
 
 
 def test_env_file_is_gitignored():
