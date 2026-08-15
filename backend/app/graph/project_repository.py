@@ -68,6 +68,76 @@ class ProjectRepository:
             raise ProjectNotFoundError(project_id)
         return version
 
+    def get_project(self, project_id: str) -> dict:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})
+            OPTIONAL MATCH (project)-[:HAS_DOCUMENT]->(document:Document)
+                           -[:HAS_VERSION]->(version:DocumentVersion)
+            OPTIONAL MATCH (run:AnalysisRun)-[:ANALYZES]->(version)
+            RETURN project,
+                   collect(DISTINCT {
+                       id: version.id,
+                       documentId: document.id,
+                       analysisRunId: run.id,
+                       uri: version.uri,
+                       sha256: version.sha256,
+                       sizeBytes: version.sizeBytes,
+                       mimeType: version.mimeType,
+                       originalName: version.originalName,
+                       stage: version.stage
+                   }) AS documentVersions,
+                   collect(DISTINCT {
+                       id: run.id,
+                       status: run.status,
+                       step: run.step,
+                       documentVersionId: version.id
+                   }) AS analysisRuns
+            """,
+            project_id=project_id,
+            **self._query_config,
+        )
+        if not records:
+            raise ProjectNotFoundError(project_id)
+
+        record = records[0]
+        project_node = record["project"]
+        project = Project(
+            id=project_node["id"],
+            name=project_node["name"],
+            internal_code=project_node.get("internalCode"),
+        )
+        versions = [
+            DocumentVersion(
+                id=value["id"],
+                document_id=value["documentId"],
+                analysis_run_id=value["analysisRunId"],
+                uri=value["uri"],
+                sha256=value["sha256"],
+                size_bytes=value["sizeBytes"],
+                mime_type=value["mimeType"],
+                original_name=value["originalName"],
+                stage=value["stage"],
+            )
+            for value in record["documentVersions"]
+            if value["id"] is not None
+        ]
+        runs = [
+            {
+                "id": value["id"],
+                "status": value["status"],
+                "step": value["step"],
+                "document_version_id": value["documentVersionId"],
+            }
+            for value in record["analysisRuns"]
+            if value["id"] is not None
+        ]
+        return {
+            "project": project,
+            "document_versions": versions,
+            "analysis_runs": runs,
+        }
+
     @staticmethod
     def _create_document_version(
         transaction: ManagedTransaction,
