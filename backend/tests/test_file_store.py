@@ -4,6 +4,7 @@ from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
+from app.services import file_store
 from app.services.file_store import FileStore
 from fastapi import UploadFile
 from starlette.datastructures import Headers
@@ -209,3 +210,32 @@ async def test_store_upload_runs_sync_storage_off_the_event_loop(tmp_path):
     await store.store_upload(uuid4(), upload)
 
     assert store.storage_thread_id != event_loop_thread_id
+
+
+def test_store_bytes_rejects_incoming_swapped_to_a_symlink_during_storage_setup(
+    tmp_path, monkeypatch
+):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original_open = file_store.os.open
+    swapped = False
+
+    def swap_incoming_before_descriptor_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal swapped
+        if path == "incoming" and dir_fd is not None and not swapped:
+            incoming.rmdir()
+            incoming.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(file_store.os, "open", swap_incoming_before_descriptor_open)
+
+    with pytest.raises(ValueError):
+        FileStore(tmp_path).store_bytes(uuid4(), "report.pdf", b"PDF")
+
+    assert swapped
+    assert list(outside.rglob("*")) == []

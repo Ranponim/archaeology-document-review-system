@@ -1,5 +1,6 @@
 import hashlib
 import mimetypes
+import os
 from pathlib import Path
 from uuid import UUID
 
@@ -45,6 +46,9 @@ WINDOWS_RESERVED_NAMES = frozenset(
     | {f"LPT{number}" for number in range(1, 10)}
 )
 WINDOWS_INVALID_FILENAME_CHARACTERS = frozenset('<>:"/\\|?*')
+DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+FILE_CREATE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+FILE_READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW
 
 
 class FileStore:
@@ -63,15 +67,7 @@ class FileStore:
         filename = self._safe_filename(original_name)
         resolved_mime_type = self._resolved_mime_type(filename, mime_type)
         uri = Path("incoming") / str(normalized_project_id) / sha256 / filename
-        destination = self._data_root / uri
-        self._reject_symlink_components(uri)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with destination.open("xb") as stored_file:
-                stored_file.write(content)
-        except FileExistsError:
-            if destination.read_bytes() != content:
-                raise FileExistsError(f"A different file already exists at {uri}") from None
+        self._write_once(uri, content)
 
         return StoredFile(
             uri=uri.as_posix(),
@@ -133,9 +129,71 @@ class FileStore:
             raise ValueError("Unsupported file type")
         return resolved_mime_type
 
-    def _reject_symlink_components(self, uri: Path) -> None:
-        path = self._data_root
-        for component in uri.parts:
-            path /= component
-            if path.is_symlink():
-                raise ValueError("Symlinked storage paths are not allowed")
+    def _write_once(self, uri: Path, content: bytes) -> None:
+        directory_fds: list[int] = []
+        file_fds: list[int] = []
+        try:
+            directory_fd = self._open_data_root()
+            directory_fds.append(directory_fd)
+            for component in uri.parts[:-1]:
+                child_fd = self._open_or_create_directory(directory_fd, component)
+                directory_fd = child_fd
+                directory_fds.append(directory_fd)
+
+            try:
+                file_fd = os.open(uri.name, FILE_CREATE_FLAGS, 0o600, dir_fd=directory_fd)
+                file_fds.append(file_fd)
+            except FileExistsError:
+                if self._read_existing_file(directory_fd, uri.name) != content:
+                    raise FileExistsError(f"A different file already exists at {uri}") from None
+            else:
+                self._write_all(file_fd, content)
+        finally:
+            for file_fd in reversed(file_fds):
+                os.close(file_fd)
+            for directory_fd in reversed(directory_fds):
+                os.close(directory_fd)
+
+    def _open_data_root(self) -> int:
+        self._data_root.mkdir(parents=True, exist_ok=True)
+        try:
+            return os.open(self._data_root, DIRECTORY_OPEN_FLAGS)
+        except OSError:
+            raise ValueError("A valid data root is required") from None
+
+    @staticmethod
+    def _open_or_create_directory(parent_fd: int, name: str) -> int:
+        try:
+            return os.open(name, DIRECTORY_OPEN_FLAGS, dir_fd=parent_fd)
+        except FileNotFoundError:
+            try:
+                os.mkdir(name, 0o700, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+            try:
+                return os.open(name, DIRECTORY_OPEN_FLAGS, dir_fd=parent_fd)
+            except OSError:
+                raise ValueError("Symlinked storage paths are not allowed") from None
+        except OSError:
+            raise ValueError("Symlinked storage paths are not allowed") from None
+
+    @staticmethod
+    def _read_existing_file(directory_fd: int, name: str) -> bytes:
+        try:
+            file_fd = os.open(name, FILE_READ_FLAGS, dir_fd=directory_fd)
+        except OSError:
+            raise ValueError("Symlinked storage paths are not allowed") from None
+        try:
+            chunks = bytearray()
+            while chunk := os.read(file_fd, 1024 * 1024):
+                chunks.extend(chunk)
+            return bytes(chunks)
+        finally:
+            os.close(file_fd)
+
+    @staticmethod
+    def _write_all(file_fd: int, content: bytes) -> None:
+        remaining = memoryview(content)
+        while remaining:
+            written = os.write(file_fd, remaining)
+            remaining = remaining[written:]
