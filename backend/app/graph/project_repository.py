@@ -9,6 +9,10 @@ class ProjectNotFoundError(LookupError):
     pass
 
 
+class AnalysisRunNotFoundError(LookupError):
+    pass
+
+
 class ProjectRepository:
     def __init__(self, driver: Driver, database: str | None = None) -> None:
         self._driver = driver
@@ -347,3 +351,43 @@ class ProjectRepository:
             **self._query_config,
         )
         return bool(records)
+
+    def prepare_ingest_retry(self, project_id: str, analysis_run_id: str) -> str:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_DOCUMENT]->
+                  (:Document)-[:HAS_VERSION]->(version:DocumentVersion)<-
+                  [:ANALYZES]-(run:AnalysisRun {id: $analysis_run_id})
+            WHERE run.step = 'ingest'
+              AND run.status = 'failed'
+              AND run.retryable = true
+            SET run.status = 'queued',
+                run.queuedAt = datetime(),
+                run.startedAt = null,
+                run.completedAt = null,
+                run.errorCode = null,
+                run.retryable = false
+            RETURN run.status AS status
+            """,
+            project_id=project_id,
+            analysis_run_id=analysis_run_id,
+            **self._query_config,
+        )
+        if records:
+            return records[0]["status"]
+
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_DOCUMENT]->
+                  (:Document)-[:HAS_VERSION]->(:DocumentVersion)<-
+                  [:ANALYZES]-(run:AnalysisRun {id: $analysis_run_id})
+            WHERE run.step = 'ingest'
+            RETURN run.status AS status
+            """,
+            project_id=project_id,
+            analysis_run_id=analysis_run_id,
+            **self._query_config,
+        )
+        if not records:
+            raise AnalysisRunNotFoundError(analysis_run_id)
+        return records[0]["status"]

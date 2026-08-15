@@ -11,15 +11,20 @@ from app.api.schemas import (
     ProjectCreateRequest,
     ProjectDetailResponse,
     ProjectResponse,
+    RetryAnalysisRunResponse,
     UploadResponse,
 )
 from app.domain.models import DocumentVersion, Project, StoredFile
-from app.graph.project_repository import ProjectNotFoundError
+from app.graph.project_repository import AnalysisRunNotFoundError, ProjectNotFoundError
 from app.services.file_store import FileStore
 
 
 class ServerOperationError(RuntimeError):
     """A sanitized marker for an unexpected storage or repository failure."""
+
+
+class AnalysisRunRetryConflict(RuntimeError):
+    """The requested run is terminal and not eligible for retry."""
 
 
 class ProjectRepositoryPort(Protocol):
@@ -32,6 +37,8 @@ class ProjectRepositoryPort(Protocol):
     ) -> DocumentVersion: ...
 
     def fail_ingest(self, analysis_run_id: str, code: str, retryable: bool) -> bool: ...
+
+    def prepare_ingest_retry(self, project_id: str, analysis_run_id: str) -> str: ...
 
 
 def get_file_store(request: Request) -> FileStore:
@@ -53,6 +60,8 @@ async def _run_repository(operation, *args):
     try:
         return await run_in_threadpool(operation, *args)
     except ProjectNotFoundError:
+        raise
+    except AnalysisRunNotFoundError:
         raise
     except Exception:  # noqa: BLE001 - sanitize adapter failures at the API boundary
         raise ServerOperationError from None
@@ -120,6 +129,47 @@ async def upload_document(
     return UploadResponse(
         document_version_id=version.id,
         analysis_run_id=version.analysis_run_id,
+    )
+
+
+@router.post(
+    "/{project_id}/analysis-runs/{analysis_run_id}/retry",
+    response_model=RetryAnalysisRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_analysis_run(
+    project_id: UUID,
+    analysis_run_id: UUID,
+    repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+    ingest_enqueuer: Annotated[Callable[[str], str], Depends(get_ingest_enqueuer)],
+) -> RetryAnalysisRunResponse:
+    normalized_run_id = str(analysis_run_id)
+    run_status = await _run_repository(
+        repository.prepare_ingest_retry,
+        str(project_id),
+        normalized_run_id,
+    )
+    if run_status not in {"queued", "running"}:
+        raise AnalysisRunRetryConflict
+
+    if run_status == "queued":
+        try:
+            await run_in_threadpool(ingest_enqueuer, normalized_run_id)
+        except Exception:  # noqa: BLE001 - Redis details stay private
+            try:
+                await _run_repository(
+                    repository.fail_ingest,
+                    normalized_run_id,
+                    "api_error",
+                    True,
+                )
+            except ServerOperationError:
+                pass
+            raise ServerOperationError from None
+
+    return RetryAnalysisRunResponse(
+        analysis_run_id=normalized_run_id,
+        status=run_status,
     )
 
 

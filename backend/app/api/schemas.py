@@ -43,6 +43,11 @@ class UploadResponse(ApiModel):
     analysis_run_id: str = Field(alias="analysisRunId")
 
 
+class RetryAnalysisRunResponse(ApiModel):
+    analysis_run_id: str = Field(alias="analysisRunId")
+    status: Literal["queued", "running"]
+
+
 class DocumentVersionResponse(ApiModel):
     id: str
     document_id: str = Field(alias="documentId")

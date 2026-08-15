@@ -5,10 +5,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.projects import ServerOperationError
+from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
 from app.graph.client import create_driver
-from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
+from app.graph.project_repository import (
+    AnalysisRunNotFoundError,
+    ProjectNotFoundError,
+    ProjectRepository,
+)
 from app.jobs.queue import enqueue_ingest
 from app.services.file_store import FileStore
 
@@ -71,6 +75,14 @@ def create_app(
     @application.exception_handler(ProjectNotFoundError)
     async def missing_project(request: Request, _error: ProjectNotFoundError):
         return _error_response(request, 404)
+
+    @application.exception_handler(AnalysisRunNotFoundError)
+    async def missing_analysis_run(request: Request, _error: AnalysisRunNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(AnalysisRunRetryConflict)
+    async def retry_conflict(request: Request, _error: AnalysisRunRetryConflict):
+        return _error_response(request, 409)
 
     @application.exception_handler(ValueError)
     async def invalid_input(request: Request, _error: ValueError):

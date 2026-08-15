@@ -75,6 +75,23 @@ class FakeProjectRepository:
         self.failed_runs[analysis_run_id] = (code, retryable)
         return True
 
+    def prepare_ingest_retry(self, project_id, analysis_run_id):
+        versions = self.versions.get(project_id)
+        if versions is None:
+            raise ProjectNotFoundError(project_id)
+        if not any(version.analysis_run_id == analysis_run_id for version in versions):
+            from app.graph.project_repository import AnalysisRunNotFoundError
+
+            raise AnalysisRunNotFoundError(analysis_run_id)
+
+        failure = self.failed_runs.get(analysis_run_id)
+        if failure is None:
+            return "queued"
+        if failure[1]:
+            del self.failed_runs[analysis_run_id]
+            return "queued"
+        return "failed"
+
 
 @pytest.fixture
 def repository():
@@ -156,6 +173,105 @@ def test_upload_queue_failure_does_not_report_acceptance_and_marks_run_retryable
     assert detail["analysisRuns"][0]["status"] == "failed"
     assert detail["analysisRuns"][0]["errorCode"] == "api_error"
     assert detail["analysisRuns"][0]["retryable"] is True
+
+
+def test_retry_after_queue_recovery_reuses_the_same_run_without_duplicate_job(
+    client, repository
+):
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+    client.app.state.ingest_enqueuer = lambda _run_id: (_ for _ in ()).throw(
+        ConnectionError("redis unavailable")
+    )
+    failed_upload = client.post(
+        f"/api/projects/{project['id']}/documents?stage=source",
+        files={"file": ("a.pdf", b"%PDF", "application/pdf")},
+    )
+    assert failed_upload.status_code == 500
+    version = repository.versions[project["id"]][0]
+    run_id = version.analysis_run_id
+
+    queued_jobs: set[str] = set()
+
+    def restored_queue(analysis_run_id):
+        queued_jobs.add(f"ingest-{analysis_run_id}")
+        return f"ingest-{analysis_run_id}"
+
+    client.app.state.ingest_enqueuer = restored_queue
+    retry_url = f"/api/projects/{project['id']}/analysis-runs/{run_id}/retry"
+
+    first_retry = client.post(retry_url)
+    second_retry = client.post(retry_url)
+
+    assert first_retry.status_code == 202
+    assert first_retry.json() == {"analysisRunId": run_id, "status": "queued"}
+    assert second_retry.status_code == 202
+    assert second_retry.json() == first_retry.json()
+    assert queued_jobs == {f"ingest-{run_id}"}
+    assert len(repository.versions[project["id"]]) == 1
+
+
+def test_retry_rejects_a_non_retryable_failure_without_enqueueing(client, repository):
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+    upload = client.post(
+        f"/api/projects/{project['id']}/documents?stage=source",
+        files={"file": ("a.pdf", b"%PDF", "application/pdf")},
+    )
+    run_id = upload.json()["analysisRunId"]
+    repository.failed_runs[run_id] = ("conversion_error", False)
+    enqueued: list[str] = []
+    client.app.state.ingest_enqueuer = enqueued.append
+
+    response = client.post(
+        f"/api/projects/{project['id']}/analysis-runs/{run_id}/retry"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "input_error"
+    assert enqueued == []
+
+
+def test_retry_queue_failure_is_sanitized_and_remains_recoverable(
+    client, repository, caplog
+):
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+    upload = client.post(
+        f"/api/projects/{project['id']}/documents?stage=source",
+        files={"file": ("a.pdf", b"%PDF", "application/pdf")},
+    )
+    run_id = upload.json()["analysisRunId"]
+    repository.failed_runs[run_id] = ("api_error", True)
+
+    def unavailable_queue(_analysis_run_id):
+        raise ConnectionError("redis://private-host:6379/0")
+
+    client.app.state.ingest_enqueuer = unavailable_queue
+
+    response = client.post(
+        f"/api/projects/{project['id']}/analysis-runs/{run_id}/retry"
+    )
+
+    assert response.status_code == 500
+    assert set(response.json()) == {"code", "request_id"}
+    assert "private-host" not in response.text
+    assert "private-host" not in caplog.text
+    assert repository.failed_runs[run_id] == ("api_error", True)
+
+
+def test_retry_hides_an_analysis_run_owned_by_another_project(client):
+    first_project = client.post("/api/projects", json={"name": "첫째"}).json()
+    second_project = client.post("/api/projects", json={"name": "둘째"}).json()
+    upload = client.post(
+        f"/api/projects/{first_project['id']}/documents?stage=source",
+        files={"file": ("a.pdf", b"%PDF", "application/pdf")},
+    )
+
+    response = client.post(
+        f"/api/projects/{second_project['id']}/analysis-runs/"
+        f"{upload.json()['analysisRunId']}/retry"
+    )
+
+    assert response.status_code == 404
+    assert set(response.json()) == {"code", "request_id"}
 
 
 def test_get_project_returns_versions_and_analysis_runs_without_storage_secrets(

@@ -6,7 +6,11 @@ import pytest
 from neo4j import GraphDatabase
 
 from app.domain.models import StoredFile
-from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
+from app.graph.project_repository import (
+    AnalysisRunNotFoundError,
+    ProjectNotFoundError,
+    ProjectRepository,
+)
 from app.graph.schema import ensure_schema
 from app.jobs.ingest import ExtractionMetadata
 
@@ -411,3 +415,39 @@ def test_retrying_failed_ingest_clears_its_terminal_timestamp(
         ExtractionMetadata("application/pdf", 1, False),
         None,
     )
+
+
+def test_prepare_retry_is_project_scoped_and_idempotently_queues_the_same_run(
+    neo4j_driver, neo4j_database, stored_pdf
+):
+    repo = ProjectRepository(neo4j_driver, database=neo4j_database)
+    project = repo.create_project("task5-recovery", None)
+    other_project = repo.create_project("task5-other", None)
+    version = repo.add_document_version(project.id, stored_pdf, "source")
+    assert repo.fail_ingest(version.analysis_run_id, "api_error", True)
+
+    with pytest.raises(AnalysisRunNotFoundError):
+        repo.prepare_ingest_retry(other_project.id, version.analysis_run_id)
+
+    first = repo.prepare_ingest_retry(project.id, version.analysis_run_id)
+    second = repo.prepare_ingest_retry(project.id, version.analysis_run_id)
+
+    assert first == "queued"
+    assert second == "queued"
+    records, _, _ = neo4j_driver.execute_query(
+        """
+        MATCH (run:AnalysisRun {id: $analysis_run_id})
+        RETURN run.status AS status,
+               run.errorCode AS errorCode,
+               run.retryable AS retryable,
+               run.completedAt AS completedAt
+        """,
+        analysis_run_id=version.analysis_run_id,
+        database_=neo4j_database,
+    )
+    assert dict(records[0]) == {
+        "status": "queued",
+        "errorCode": None,
+        "retryable": False,
+        "completedAt": None,
+    }
