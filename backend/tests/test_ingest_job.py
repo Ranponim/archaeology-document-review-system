@@ -4,6 +4,8 @@ import pytest
 from rq.exceptions import DuplicateJobError
 from rq.job import validate_job_id
 
+from pypdf import PdfWriter
+
 from app.jobs.ingest import (
     ApiError,
     CachedExtraction,
@@ -15,7 +17,11 @@ from app.jobs.ingest import (
     ingest_document,
 )
 from app.jobs.queue import enqueue_ingest
-from app.jobs.worker import RetryableIngestError, execute_ingest_job
+from app.jobs.worker import (
+    LocalMetadataExtractor,
+    RetryableIngestError,
+    execute_ingest_job,
+)
 
 
 @dataclass
@@ -309,3 +315,106 @@ def test_enqueue_ingest_recovers_when_another_request_wins_the_enqueue_race():
 def test_enqueue_ingest_rejects_an_invalid_analysis_run_id(invalid_id):
     with pytest.raises(ValueError):
         enqueue_ingest(invalid_id, queue=FakeQueue())
+
+
+def test_local_metadata_extractor_runs_review_pipeline_on_pdf(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "document.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with open(pdf_path, "wb") as f:
+        writer.write(f)
+
+    pipeline_calls = []
+
+    class SpyReviewPipeline:
+        def __init__(self, review_repo=None):
+            self.review_repo = review_repo
+
+        def run_full_pipeline(self, project_id, version_files):
+            pipeline_calls.append((self.review_repo, project_id, version_files))
+
+    monkeypatch.setattr("app.jobs.review_pipeline.ReviewPipeline", SpyReviewPipeline)
+
+    extractor = LocalMetadataExtractor(data_root=tmp_path)
+    context = IngestContext(
+        analysis_run_id="run-test",
+        document_version_id="version-test",
+        uri="document.pdf",
+        sha256="b" * 64,
+        mime_type="application/pdf",
+    )
+
+    metadata = extractor.extract(context)
+
+    assert metadata.mime_type == "application/pdf"
+    assert metadata.page_count == 1
+    assert len(pipeline_calls) == 1
+    repo, proj_id, vfiles = pipeline_calls[0]
+    assert repo is None
+    assert proj_id == "version-test"
+    assert vfiles == {"current": pdf_path.resolve()}
+
+
+def test_local_metadata_extractor_skips_review_pipeline_for_non_pdf(tmp_path, monkeypatch):
+    text_file = tmp_path / "notes.txt"
+    text_file.write_text("hello world", encoding="utf-8")
+
+    pipeline_calls = []
+
+    class SpyReviewPipeline:
+        def __init__(self, review_repo=None):
+            pass
+
+        def run_full_pipeline(self, project_id, version_files):
+            pipeline_calls.append(project_id)
+
+    monkeypatch.setattr("app.jobs.review_pipeline.ReviewPipeline", SpyReviewPipeline)
+
+    extractor = LocalMetadataExtractor(data_root=tmp_path)
+    context = IngestContext(
+        analysis_run_id="run-test",
+        document_version_id="version-test",
+        uri="notes.txt",
+        sha256="c" * 64,
+        mime_type="text/plain",
+    )
+
+    metadata = extractor.extract(context)
+
+    assert metadata.mime_type == "text/plain"
+    assert metadata.page_count is None
+    assert metadata.text_extractable is False
+    assert len(pipeline_calls) == 0
+
+
+def test_local_metadata_extractor_handles_review_pipeline_failure_gracefully(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "failing.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with open(pdf_path, "wb") as f:
+        writer.write(f)
+
+    class FailingReviewPipeline:
+        def __init__(self, review_repo=None):
+            pass
+
+        def run_full_pipeline(self, project_id, version_files):
+            raise RuntimeError("Pipeline crashed unexpectedly")
+
+    monkeypatch.setattr("app.jobs.review_pipeline.ReviewPipeline", FailingReviewPipeline)
+
+    extractor = LocalMetadataExtractor(data_root=tmp_path)
+    context = IngestContext(
+        analysis_run_id="run-test",
+        document_version_id="version-test",
+        uri="failing.pdf",
+        sha256="d" * 64,
+        mime_type="application/pdf",
+    )
+
+    # Should not raise an exception even if ReviewPipeline fails
+    metadata = extractor.extract(context)
+
+    assert metadata.mime_type == "application/pdf"
+    assert metadata.page_count == 1
+

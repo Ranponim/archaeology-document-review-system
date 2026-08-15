@@ -29,3 +29,7 @@ class ParsedPage:
     normalized_text: str
     text_blocks: list[TextBlockData] = field(default_factory=list)
     captions: list[CaptionData] = field(default_factory=list)
+
+
+TextBlock = TextBlockData
+Caption = CaptionData

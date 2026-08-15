@@ -7,7 +7,7 @@ from app.domain.document_structure import ParsedPage
 @dataclass(frozen=True, slots=True)
 class AlignedPageRow:
     row_id: int
-    pages: dict[str, ParsedPage]
+    pages: dict[str, ParsedPage | None]
     similarity_score: float
     sequence_matcher_ratio: float
 
@@ -33,6 +33,10 @@ class PageAligner:
         return len(set_a & set_b) / len(set_a | set_b)
 
     @classmethod
+    def _jaccard_similarity(cls, set_a: set, set_b: set) -> float:
+        return cls._jaccard(set_a, set_b)
+
+    @classmethod
     def calculate_weighted_similarity(cls, text_a: str, text_b: str) -> float:
         words_a = set(text_a.split())
         words_b = set(text_b.split())
@@ -44,42 +48,219 @@ class PageAligner:
 
         return 0.45 * word_jaccard + 0.55 * ngram_jaccard
 
+    @classmethod
+    def weighted_similarity(
+        cls, a: str | ParsedPage, b: str | ParsedPage
+    ) -> float:
+        text_a = a.normalized_text if isinstance(a, ParsedPage) else a
+        text_b = b.normalized_text if isinstance(b, ParsedPage) else b
+        return cls.calculate_weighted_similarity(text_a, text_b)
+
     @staticmethod
     def calculate_sequence_matcher_ratio(text_a: str, text_b: str) -> float:
         return difflib.SequenceMatcher(None, text_a, text_b, autojunk=False).ratio()
 
+    @classmethod
+    def _page_features(cls, page: ParsedPage) -> tuple[set[str], set[str]]:
+        text = page.normalized_text
+        words = set(text.split())
+        ngrams = cls._ngrams(text, 4)
+        return words, ngrams
+
+    @classmethod
+    def _similarity_from_features(
+        cls,
+        feat_a: tuple[set[str], set[str]],
+        feat_b: tuple[set[str], set[str]],
+    ) -> float:
+        words_a, ngrams_a = feat_a
+        words_b, ngrams_b = feat_b
+        word_jaccard = cls._jaccard(words_a, words_b)
+        ngram_jaccard = cls._jaccard(ngrams_a, ngrams_b)
+        return 0.45 * word_jaccard + 0.55 * ngram_jaccard
+
+    def _align_pairwise_dtw(
+        self,
+        ref_pages: list[ParsedPage],
+        other_pages: list[ParsedPage],
+        gap_cost: float = 1.0,
+    ) -> list[tuple[ParsedPage | None, ParsedPage | None]]:
+        n = len(ref_pages)
+        m = len(other_pages)
+
+        if n == 0 and m == 0:
+            return []
+        if n == 0:
+            return [(None, page) for page in other_pages]
+        if m == 0:
+            return [(page, None) for page in ref_pages]
+
+        # Precompute features for fast similarity calculation
+        ref_feats = [self._page_features(p) for p in ref_pages]
+        other_feats = [self._page_features(p) for p in other_pages]
+
+        # Compute similarity matrix: sim[i][j] in [0, 1]
+        sim = [
+            [
+                self._similarity_from_features(ref_feats[i], other_feats[j])
+                for j in range(m)
+            ]
+            for i in range(n)
+        ]
+
+        # Build (n + 1) x (m + 1) DTW cost matrix
+        # D[i][j] represents optimal alignment cost of prefixes ref_pages[:i] and other_pages[:j]
+        D = [[0.0] * (m + 1) for _ in range(n + 1)]
+        for i in range(1, n + 1):
+            D[i][0] = D[i - 1][0] + gap_cost
+        for j in range(1, m + 1):
+            D[0][j] = D[0][j - 1] + gap_cost
+
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                match_cost = 1.0 - sim[i - 1][j - 1]
+                D[i][j] = min(
+                    D[i - 1][j - 1] + match_cost,  # Match (both advance)
+                    D[i - 1][j] + gap_cost,        # Deletion (ref page skipped in other)
+                    D[i][j - 1] + gap_cost,        # Insertion (extra page in other)
+                )
+
+        # Backtrack from (n, m) to (0, 0)
+        i, j = n, m
+        alignment: list[tuple[ParsedPage | None, ParsedPage | None]] = []
+
+        while i > 0 or j > 0:
+            if i > 0 and j > 0:
+                match_cost = 1.0 - sim[i - 1][j - 1]
+                diag_cost = D[i - 1][j - 1] + match_cost
+                up_cost = D[i - 1][j] + gap_cost
+                left_cost = D[i][j - 1] + gap_cost
+
+                # Prefer match (diagonal) on ties to maintain alignment
+                if abs(D[i][j] - diag_cost) < 1e-9:
+                    alignment.append((ref_pages[i - 1], other_pages[j - 1]))
+                    i -= 1
+                    j -= 1
+                elif abs(D[i][j] - up_cost) < 1e-9:
+                    alignment.append((ref_pages[i - 1], None))
+                    i -= 1
+                else:
+                    alignment.append((None, other_pages[j - 1]))
+                    j -= 1
+            elif i > 0:
+                alignment.append((ref_pages[i - 1], None))
+                i -= 1
+            else:
+                alignment.append((None, other_pages[j - 1]))
+                j -= 1
+
+        alignment.reverse()
+        return alignment
+
     def align_parallel_ranges(
         self, version_pages: dict[str, list[ParsedPage]]
     ) -> list[AlignedPageRow]:
-        """Aligns corresponding pages assuming parallel slices of equal length."""
+        """Aligns corresponding pages across versions using Dynamic Time Warping (DTW)."""
         stages = list(version_pages.keys())
         if not stages:
             return []
 
-        min_len = min(len(pages) for pages in version_pages.values())
+        ref_stage = stages[0]
+        ref_pages = version_pages[ref_stage]
+
+        if len(stages) == 1:
+            raw_rows: list[dict[str, ParsedPage | None]] = [
+                {ref_stage: page} for page in ref_pages
+            ]
+        else:
+            other_stages = stages[1:]
+            n_ref = len(ref_pages)
+
+            insertions_before: dict[str, list[list[ParsedPage]]] = {
+                st: [[] for _ in range(n_ref)] for st in other_stages
+            }
+            matched_ref: dict[str, list[ParsedPage | None]] = {
+                st: [None for _ in range(n_ref)] for st in other_stages
+            }
+            trailing_insertions: dict[str, list[ParsedPage]] = {
+                st: [] for st in other_stages
+            }
+
+            for st in other_stages:
+                pairs = self._align_pairwise_dtw(ref_pages, version_pages[st])
+                ref_idx = 0
+                for r_page, o_page in pairs:
+                    if r_page is not None:
+                        matched_ref[st][ref_idx] = o_page
+                        ref_idx += 1
+                    else:
+                        if ref_idx < n_ref:
+                            if o_page is not None:
+                                insertions_before[st][ref_idx].append(o_page)
+                        else:
+                            if o_page is not None:
+                                trailing_insertions[st].append(o_page)
+
+            raw_rows = []
+
+            for i in range(n_ref):
+                max_ins = max(
+                    (len(insertions_before[st][i]) for st in other_stages),
+                    default=0,
+                )
+                for slot in range(max_ins):
+                    row: dict[str, ParsedPage | None] = {ref_stage: None}
+                    for st in other_stages:
+                        ins_list = insertions_before[st][i]
+                        row[st] = ins_list[slot] if slot < len(ins_list) else None
+                    raw_rows.append(row)
+
+                row_ref: dict[str, ParsedPage | None] = {ref_stage: ref_pages[i]}
+                for st in other_stages:
+                    row_ref[st] = matched_ref[st][i]
+                raw_rows.append(row_ref)
+
+            max_trail = max(
+                (len(trailing_insertions[st]) for st in other_stages),
+                default=0,
+            )
+            for slot in range(max_trail):
+                row_trail: dict[str, ParsedPage | None] = {ref_stage: None}
+                for st in other_stages:
+                    trail_list = trailing_insertions[st]
+                    row_trail[st] = trail_list[slot] if slot < len(trail_list) else None
+                raw_rows.append(row_trail)
+
         rows: list[AlignedPageRow] = []
-
-        for i in range(min_len):
-            row_pages = {stage: version_pages[stage][i] for stage in stages}
-
-            # Calculate pairwise similarity across all combinations
+        for idx, row_pages in enumerate(raw_rows):
             w_sims: list[float] = []
             s_sims: list[float] = []
 
             for idx_a in range(len(stages)):
                 for idx_b in range(idx_a + 1, len(stages)):
                     st_a, st_b = stages[idx_a], stages[idx_b]
-                    t_a = row_pages[st_a].normalized_text
-                    t_b = row_pages[st_b].normalized_text
-                    w_sims.append(self.calculate_weighted_similarity(t_a, t_b))
-                    s_sims.append(self.calculate_sequence_matcher_ratio(t_a, t_b))
+                    page_a = row_pages.get(st_a)
+                    page_b = row_pages.get(st_b)
+                    if page_a is not None and page_b is not None:
+                        t_a = page_a.normalized_text
+                        t_b = page_b.normalized_text
+                        w_sims.append(self.calculate_weighted_similarity(t_a, t_b))
+                        s_sims.append(self.calculate_sequence_matcher_ratio(t_a, t_b))
 
-            avg_w = sum(w_sims) / len(w_sims) if w_sims else 1.0
-            avg_s = sum(s_sims) / len(s_sims) if s_sims else 1.0
+            if w_sims:
+                avg_w = sum(w_sims) / len(w_sims)
+                avg_s = sum(s_sims) / len(s_sims)
+            else:
+                if len(stages) <= 1:
+                    avg_w = 1.0
+                    avg_s = 1.0
+                else:
+                    avg_w = 0.0
+                    avg_s = 0.0
 
             rows.append(
                 AlignedPageRow(
-                    row_id=i + 1,
+                    row_id=idx + 1,
                     pages=row_pages,
                     similarity_score=avg_w,
                     sequence_matcher_ratio=avg_s,
@@ -91,6 +272,8 @@ class PageAligner:
     def find_best_matching_page(
         self, target_page: ParsedPage, candidate_pages: list[ParsedPage]
     ) -> tuple[ParsedPage, float]:
+        if not candidate_pages:
+            raise ValueError("candidate_pages cannot be empty")
         best_page = candidate_pages[0]
         best_score = -1.0
 

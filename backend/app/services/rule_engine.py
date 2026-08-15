@@ -13,16 +13,34 @@ from app.services.page_aligner import AlignedPageRow
 
 
 class RuleEngine:
-    HEADER_PATTERN = re.compile(
-        r"^(?:\d+\s*\|\s*(?:백제문화유산연구원|문화유적\s*보고서)|(?:백제문화유산연구원|문화유적\s*보고서)\s*\|\s*\d+)$"
-    )
-    
+    DEFAULT_HEADER_PATTERNS: list[str] = [
+        r"^(?:\d+\s*\|\s*(?:백제문화유산연구원|문화유적\s*보고서)|(?:백제문화유산연구원|문화유적\s*보고서)\s*\|\s*\d+)$",
+        r"^(?:\d+\s*\|\s*.*(?:연구원|보고서|학술조사|문화재).*|.*(?:연구원|보고서|학술조사|문화재).*\s*\|\s*\d+)$",
+        r"^(?:백제문화유산연구원|문화유적\s*보고서)$",
+        r"^(?:연구원|보고서|학술조사|문화재)$",
+    ]
+
     FEATURE_ID_PATTERN = re.compile(
         r"(?:\d+호\s*(?:토광묘|주거지|수혈유구|함정유구|유구|유물))"
     )
 
+    def __init__(self, header_patterns: list[str] | None = None) -> None:
+        self._header_patterns: list[str] = (
+            list(header_patterns)
+            if header_patterns is not None
+            else list(self.DEFAULT_HEADER_PATTERNS)
+        )
+
     def _is_header_noise(self, line: str) -> bool:
-        return bool(self.HEADER_PATTERN.match(line.strip()))
+        stripped = line.strip()
+        for pattern in self._header_patterns:
+            if isinstance(pattern, str):
+                if re.search(pattern, stripped):
+                    return True
+            elif hasattr(pattern, 'search'):
+                if pattern.search(stripped):
+                    return True
+        return False
 
     def _classify_rule_category(
         self, old_text: str | None, new_text: str | None
@@ -63,26 +81,26 @@ class RuleEngine:
         cand_idx = 1
 
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == "equal":
+            if tag == 'equal':
                 continue
 
             chunk_a = lines_a[i1:i2]
             chunk_b = lines_b[j1:j2]
 
-            old_str = " ".join(chunk_a) if chunk_a else None
-            new_str = " ".join(chunk_b) if chunk_b else None
+            old_str = ' '.join(chunk_a) if chunk_a else None
+            new_str = ' '.join(chunk_b) if chunk_b else None
 
-            if tag == "replace":
-                change_type: ChangeType = "modified"
-            elif tag == "insert":
-                change_type = "added"
-            elif tag == "delete":
-                change_type = "deleted"
+            if tag == 'replace':
+                change_type: ChangeType = 'modified'
+            elif tag == 'insert':
+                change_type = 'added'
+            elif tag == 'delete':
+                change_type = 'deleted'
             else:
-                change_type = "modified"
+                change_type = 'modified'
 
             category = self._classify_rule_category(old_str, new_str)
-            status: ReviewStatus = "confirmed"
+            status: ReviewStatus = 'confirmed'
 
             evidence = EvidenceData(
                 version_from=stage_from,
@@ -143,10 +161,12 @@ class RuleEngine:
 
         for row in rows:
             for st_from, st_to in paths:
-                if st_from in row.pages and st_to in row.pages:
+                page_from = row.pages.get(st_from)
+                page_to = row.pages.get(st_to)
+                if page_from is not None and page_to is not None:
                     cands = self.compare_pages(
-                        row.pages[st_from],
-                        row.pages[st_to],
+                        page_from,
+                        page_to,
                         st_from,
                         st_to,
                     )

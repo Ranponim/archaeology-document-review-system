@@ -117,3 +117,82 @@ def test_image_processor_prepare_for_vlm_with_pillow_if_available():
             assert res_img.size[1] == 512
     except ImportError:
         pytest.skip("Pillow is not installed in the test environment")
+
+
+@pytest.mark.anyio
+async def test_vlm_review_service_default_expected_site_empty_string(tmp_path):
+    import inspect
+    sig = inspect.signature(VLMReviewService.verify_plate_photo)
+    assert sig.parameters['expected_site'].default == ''
+
+    cache = AssetHashCache(cache_dir=tmp_path)
+    mock_response = {
+        'choices': [
+            {
+                'message': {
+                    'content': json.dumps({
+                        'label_detected': '논산 산노리 2지점 2호 토광묘',
+                        'feature_number': '2',
+                        'site_point': '2지점',
+                        'compass_north': 'N-74-E',
+                        'match_confidence': 0.98,
+                        'rationale': 'Feature matched'
+                    })
+                }
+            }
+        ],
+        'usage': {'prompt_tokens': 100, 'completion_tokens': 50}
+    }
+    mock_client = MockOpenRouterMultimodalClient(mock_response)
+    service = VLMReviewService(client=mock_client, cache=cache)
+    
+    # Call without specifying expected_site (default empty string)
+    res = await service.verify_plate_photo(
+        image_bytes=b'SAMPLE_IMAGE',
+        expected_feature='2호 토광묘'
+    )
+    assert res.is_match is True
+    assert res.feature_number == '2'
+
+@pytest.mark.anyio
+async def test_vlm_review_service_handles_markdown_wrapped_json(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path)
+    inner_json = json.dumps({
+        "label_detected": "논산 산노리 2지점 2호 토광묘",
+        "feature_number": "2",
+        "site_point": "2지점",
+        "compass_north": "N-74-E",
+        "match_confidence": 0.98,
+        "rationale": "표찰 텍스트 및 방위표가 본문 서술과 일치함"
+    })
+    wrapped_content = """```json
+""" + inner_json + """
+```"""
+
+    mock_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": wrapped_content
+                }
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 400,
+            "completion_tokens": 80,
+            "total_tokens": 480
+        }
+    }
+
+    mock_client = MockOpenRouterMultimodalClient(mock_response)
+    service = VLMReviewService(client=mock_client, cache=cache, model="openai/gpt-5.6-luna")
+
+    res = await service.verify_plate_photo(
+        image_bytes=b"RAW_IMAGE_DATA_SAMPLE_PLATE_85_MD",
+        expected_feature="2호 토광묘",
+        expected_site="2지점"
+    )
+    assert isinstance(res, VLMReviewResult)
+    assert res.feature_number == "2"
+    assert res.site_point == "2지점"
+    assert res.is_match is True

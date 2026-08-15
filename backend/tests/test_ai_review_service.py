@@ -83,3 +83,59 @@ async def test_ai_review_service_generates_candidates_from_llm_response():
     assert cand1.proposed_text == "풍화암반토(생토) 포함 여부"
     assert cand1.evidence.version_from == "1차"
     assert cand1.evidence.physical_page_from == 105
+
+@pytest.mark.anyio
+async def test_ai_review_service_handles_markdown_wrapped_json():
+    inner_json = json.dumps({
+        "candidates": [
+            {
+                "category": "numeric_value",
+                "original_text": "해발 45.2m",
+                "proposed_text": "해발 45.5m",
+                "change_type": "modified",
+                "rationale": "도면 수치와 불일치"
+            }
+        ]
+    })
+    wrapped_content = """```json
+""" + inner_json + """
+```"""
+
+    mock_llm_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": wrapped_content
+                }
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 200,
+            "completion_tokens": 50,
+            "total_tokens": 250
+        }
+    }
+
+    mock_client = MockOpenRouterClient(mock_llm_response)
+    service = AIReviewService(client=mock_client, model="openai/gpt-5.6-luna")
+
+    page = ParsedPage(
+        physical_page=10,
+        printed_page=8,
+        header="보고서 | 8",
+        raw_text="표고 해발 45.2m...",
+        normalized_text="표고 해발 45.2m...",
+        text_blocks=[
+            TextBlockData(block_id="p10_b1", text="표고 해발 45.2m...", normalized_text="표고 해발 45.2m...", order=1)
+        ],
+        captions=[]
+    )
+
+    result = await service.analyze_page(project_id="p1", version_stage="1차", page=page)
+
+    assert isinstance(result, AIReviewResult)
+    assert len(result.candidates) == 1
+    cand = result.candidates[0]
+    assert cand.rule_category == "numeric_value"
+    assert cand.proposed_text == "해발 45.5m"
+    assert cand.original_text == "해발 45.2m"

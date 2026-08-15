@@ -7,6 +7,7 @@ import httpx
 from app.jobs.ingest import ApiError, RateLimitedError
 from app.services.asset_cache import AssetHashCache
 from app.services.image_processor import ImageProcessor
+from app.services.json_utils import strip_markdown_json
 from app.services.openrouter_client import OpenRouterConfig
 
 
@@ -108,7 +109,7 @@ class VLMReviewService:
         self,
         image_bytes: bytes,
         expected_feature: str,
-        expected_site: str = "2지점",
+        expected_site: str = "",
         mime_type: str = "image/jpeg",
     ) -> VLMReviewResult:
         processed_bytes = ImageProcessor.prepare_for_vlm(image_bytes)
@@ -151,7 +152,7 @@ class VLMReviewService:
         if choices:
             msg_str = choices[0].get("message", {}).get("content", "{}")
             try:
-                data = json.loads(msg_str)
+                data = json.loads(strip_markdown_json(msg_str))
             except json.JSONDecodeError:
                 data = {}
 

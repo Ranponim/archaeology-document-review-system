@@ -65,3 +65,87 @@ def test_pdf_parser_handles_all_three_sample_ranges():
         assert p1[i].printed_page == 101 + i
         assert p2[i].printed_page == 102 + i
         assert p3[i].printed_page == 102 + i
+
+
+def test_pdf_parser_single_and_full_reference_captions():
+    parser = PDFParser()
+
+    # 1. Single drawing reference
+    cap1 = parser._extract_caption("① 2호 토광묘(도면 : 57)", caption_id="p1_c1")
+    assert cap1 is not None
+    assert cap1.caption_id == "p1_c1"
+    assert cap1.drawing_number == "57"
+    assert cap1.plate_number is None
+    assert cap1.is_blank_reference is False
+
+    # 2. Single blank reference (drawing)
+    cap2 = parser._extract_caption("① 2호 토광묘(도면 : )", caption_id="p1_c2")
+    assert cap2 is not None
+    assert cap2.caption_id == "p1_c2"
+    assert cap2.drawing_number is None
+    assert cap2.plate_number is None
+    assert cap2.is_blank_reference is True
+
+    # 3. Single plate reference
+    cap3 = parser._extract_caption("① 유물(도판 : 85)", caption_id="p1_c3")
+    assert cap3 is not None
+    assert cap3.caption_id == "p1_c3"
+    assert cap3.drawing_number is None
+    assert cap3.plate_number == "85"
+    assert cap3.is_blank_reference is False
+
+    # 4. Single blank reference (plate)
+    cap4 = parser._extract_caption("① 유물(도판 : )", caption_id="p1_c4")
+    assert cap4 is not None
+    assert cap4.caption_id == "p1_c4"
+    assert cap4.drawing_number is None
+    assert cap4.plate_number is None
+    assert cap4.is_blank_reference is True
+
+    # 5. Full reference (both drawing and plate)
+    cap5 = parser._extract_caption("① 2호 토광묘(도면 : 57, 도판 : 85)", caption_id="p1_c5")
+    assert cap5 is not None
+    assert cap5.caption_id == "p1_c5"
+    assert cap5.drawing_number == "57"
+    assert cap5.plate_number == "85"
+    assert cap5.is_blank_reference is False
+
+    # 6. Full blank reference
+    cap6 = parser._extract_caption("① 2호 토광묘(도면 : , 도판 : )", caption_id="p1_c6")
+    assert cap6 is not None
+    assert cap6.caption_id == "p1_c6"
+    assert cap6.drawing_number is None
+    assert cap6.plate_number is None
+    assert cap6.is_blank_reference is True
+
+    # 7. Non-caption line
+    non_cap = parser._extract_caption("일반적인 본문 문장입니다.", caption_id="p1_c7")
+    assert non_cap is None
+
+
+def test_pdf_parser_extract_captions_list():
+    parser = PDFParser()
+    lines = [
+        "백제문화유산연구원",
+        "① 2호 토광묘(도면 : 57)",
+        "본문 설명 텍스트",
+        "② 3호 토광묘(도면 : )",
+        "③ 4호 토광묘(도면 : 57, 도판 : 85)",
+    ]
+    captions = parser._extract_captions(lines, physical_page=105)
+    assert len(captions) == 3
+    assert captions[0].caption_id == "p105_c1"
+    assert captions[0].drawing_number == "57"
+    assert captions[0].plate_number is None
+    assert captions[0].is_blank_reference is False
+
+    assert captions[1].caption_id == "p105_c2"
+    assert captions[1].drawing_number is None
+    assert captions[1].plate_number is None
+    assert captions[1].is_blank_reference is True
+
+    assert captions[2].caption_id == "p105_c3"
+    assert captions[2].drawing_number == "57"
+    assert captions[2].plate_number == "85"
+    assert captions[2].is_blank_reference is False
+

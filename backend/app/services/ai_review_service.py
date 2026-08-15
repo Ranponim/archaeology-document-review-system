@@ -10,6 +10,7 @@ from app.domain.review_models import (
     ChangeType,
     ReviewStatus,
 )
+from app.services.json_utils import strip_markdown_json
 from app.services.openrouter_client import OpenRouterClient, OpenRouterConfig
 
 
@@ -76,7 +77,7 @@ class AIReviewService:
         if choices:
             msg_content = choices[0].get("message", {}).get("content", "{}")
             try:
-                data = json.loads(msg_content)
+                data = json.loads(strip_markdown_json(msg_content))
                 raw_cands = data.get("candidates", [])
                 for idx, c in enumerate(raw_cands):
                     cat = c.get("category", "annotation_resolution")

@@ -64,3 +64,31 @@ def test_rule_engine_runs_across_sample_alignment_rows():
     assert result.summary["total"] == len(result.candidates)
     assert "figure_plate_table_photo_ref" in result.summary["rule"]
     assert "annotation_resolution" in result.summary["rule"]
+
+
+def test_rule_engine_default_header_noise_patterns():
+    engine = RuleEngine()
+    # Default patterns should match Baekje and common archaeology report headers
+    assert engine._is_header_noise('105 | 백제문화유산연구원')
+    assert engine._is_header_noise('문화유적 보고서 | 106')
+    assert engine._is_header_noise('12 | 국립문화재연구원')
+    assert engine._is_header_noise('학술조사보고서 | 45')
+    assert engine._is_header_noise('백제문화유산연구원')
+    assert engine._is_header_noise('학술조사')
+    
+    # Normal body lines should not be considered header noise
+    assert not engine._is_header_noise('1. 조사지역의 위치 및 환경')
+    assert not engine._is_header_noise('본 유적은 논산시 노성면 산노리에 위치한다.')
+    assert not engine._is_header_noise('도면 57, 도판 85')
+
+
+def test_rule_engine_custom_header_patterns():
+    custom_patterns = [r'^\d+\s*\|\s*한국고고학연구소$', r'^특수발굴조사단$']
+    engine = RuleEngine(header_patterns=custom_patterns)
+    
+    assert engine._header_patterns == custom_patterns
+    assert engine._is_header_noise('123 | 한국고고학연구소')
+    assert engine._is_header_noise('특수발굴조사단')
+    
+    # Baekje header should NOT match when custom patterns are explicitly provided
+    assert not engine._is_header_noise('105 | 백제문화유산연구원')

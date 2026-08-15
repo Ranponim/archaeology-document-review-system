@@ -9,3 +9,5 @@ frontend/test-results/
 
 # 원본 보고서·사진·도면은 대용량이며 읽기 전용으로 관리한다.
 /src
+**/__pycache__/
+*.egg-info/

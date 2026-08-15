@@ -5,6 +5,8 @@ from app.services.asset_cache import AssetHashCache
 from app.services.asset_matcher import AssetMatcher, MatchedAssetResult, AssetMatchStatus
 from app.services.vlm_review_service import VLMReviewService
 
+MAX_VLM_CANDIDATES: int = 5
+
 
 @dataclass(frozen=True, slots=True)
 class AssetPipelineSummary:
@@ -14,15 +16,19 @@ class AssetPipelineSummary:
 
 
 class AssetReviewPipeline:
+    MAX_VLM_CANDIDATES: int = MAX_VLM_CANDIDATES
+
     def __init__(
         self,
         matcher: AssetMatcher,
         vlm_service: VLMReviewService | None = None,
         cache: AssetHashCache | None = None,
+        max_vlm_candidates: int = MAX_VLM_CANDIDATES,
     ) -> None:
         self.matcher = matcher
         self.vlm = vlm_service
         self.cache = cache or AssetHashCache()
+        self.max_vlm_candidates = max_vlm_candidates
 
     async def review_references(
         self, references: list[dict[str, Any]]
@@ -53,27 +59,41 @@ class AssetReviewPipeline:
                 and match_res.status in ("multiple", "semantic_review")
                 and match_res.candidate_paths
             ):
-                candidate_path = match_res.candidate_paths[0]
-                try:
-                    image_bytes = candidate_path.read_bytes()
-                except OSError:
-                    image_bytes = b""
-
-                vlm_res = await self.vlm.verify_plate_photo(
-                    image_bytes=image_bytes,
-                    expected_feature=context.get("feature", ""),
-                    expected_site=context.get("site", ""),
+                expected_feature = (
+                    context.get("feature")
+                    or context.get("structure")
+                    or ""
+                )
+                expected_site = (
+                    context.get("site_point")
+                    or context.get("site")
+                    or context.get("location")
+                    or ""
                 )
 
-                if vlm_res.is_match:
-                    match_res = MatchedAssetResult(
-                        ref_type=match_res.ref_type,
-                        number=match_res.number,
-                        status="exact",
-                        matched_path=match_res.matched_path or candidate_path,
-                        candidate_paths=match_res.candidate_paths,
-                        rationale=vlm_res.rationale,
+                candidates_to_check = match_res.candidate_paths[: self.max_vlm_candidates]
+                for candidate_path in candidates_to_check:
+                    try:
+                        image_bytes = candidate_path.read_bytes()
+                    except OSError:
+                        image_bytes = b""
+
+                    vlm_res = await self.vlm.verify_plate_photo(
+                        image_bytes=image_bytes,
+                        expected_feature=expected_feature,
+                        expected_site=expected_site,
                     )
+
+                    if vlm_res.is_match:
+                        match_res = MatchedAssetResult(
+                            ref_type=match_res.ref_type,
+                            number=match_res.number,
+                            status="exact",
+                            matched_path=candidate_path,
+                            candidate_paths=match_res.candidate_paths,
+                            rationale=vlm_res.rationale,
+                        )
+                        break
 
             results.append(match_res)
             if match_res.status in status_counts:

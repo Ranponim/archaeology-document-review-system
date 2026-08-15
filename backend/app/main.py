@@ -16,7 +16,7 @@ from app.graph.project_repository import (
     ProjectNotFoundError,
     ProjectRepository,
 )
-from app.jobs.queue import enqueue_ingest
+from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
 from app.services.file_store import FileStore
 
 
@@ -47,6 +47,7 @@ def create_app(
     file_store: FileStore | None = None,
     project_repository=None,
     ingest_enqueuer=None,
+    ai_enqueuer=None,
     static_dir: Path | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -64,6 +65,7 @@ def create_app(
     application.state.file_store = file_store if file_store is not None else FileStore()
     application.state.project_repository = project_repository
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
+    application.state.ai_enqueuer = ai_enqueuer or enqueue_ai_analysis
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
