@@ -163,3 +163,95 @@ def test_asset_matcher_matches_sample_references():
     assert isinstance(result_blank, MatchedAssetResult)
     assert result_blank.status == "semantic_review"
     assert result_blank.matched_path is not None
+
+
+def test_asset_matcher_all_file_extensions(tmp_path):
+    drawings_dir = tmp_path / "drawings"
+    plates_dir = tmp_path / "plates"
+    drawings_dir.mkdir()
+    plates_dir.mkdir()
+
+    drawing_exts = [".ai", ".AI", ".eps", ".EPS", ".pdf", ".PDF", ".dwg", ".DWG", ".dxf", ".DXF"]
+    for idx, ext in enumerate(drawing_exts, start=1):
+        (drawings_dir / f"도면_{idx}{ext}").write_bytes(f"drawing_{idx}".encode("utf-8"))
+
+    plate_exts = [".jpg", ".JPG", ".jpeg", ".JPEG", ".png", ".PNG", ".tiff", ".TIFF", ".webp", ".WEBP"]
+    for idx, ext in enumerate(plate_exts, start=1):
+        (plates_dir / f"도판_{idx}{ext}").write_bytes(f"plate_{idx}".encode("utf-8"))
+
+    matcher = AssetMatcher(drawings_dir=drawings_dir, plates_dir=plates_dir)
+    summary = matcher.get_index_summary()
+    assert summary["drawing_files_count"] == len(drawing_exts)
+    assert summary["plate_files_count"] == len(plate_exts)
+
+    # Test matching for each format
+    for idx in range(1, len(drawing_exts) + 1):
+        res = matcher.match_reference("drawing", str(idx))
+        assert res.status == "exact"
+        assert res.matched_path is not None
+
+    for idx in range(1, len(plate_exts) + 1):
+        res = matcher.match_reference("plate", str(idx))
+        assert res.status == "exact"
+        assert res.matched_path is not None
+
+
+def test_asset_matcher_blank_caption_bracket_styles():
+    blank_texts = [
+        "출토유물 【도면】",
+        "출토유물 【 도판 】",
+        "출토유물 【도면  】",
+        "출토유물 【도면 : , 도판 : 】",
+        "출토유물 [도면]",
+        "출토유물 [ 도판 ]",
+        "출토유물 [도면 : , 도판 : ]",
+        "출토유물 (도면)",
+        "출토유물 (도판)",
+        "출토유물 (도면, 도판)",
+        "출토유물 (도면 : , 도판 : )",
+        "출토유물 <도면>",
+        "출토유물 < 도판 >",
+        "출토유물 <도면 : , 도판 : >",
+        "출토유물 〈도면〉",
+        "출토유물 《도판》",
+        "도면 :",
+        "도판 :",
+        "도면: ",
+        "도판:",
+        "도면 : , 도판 :",
+    ]
+    for text in blank_texts:
+        assert AssetMatcher._is_blank_caption_text(text), f"Failed to detect blank caption in: {text}"
+
+    non_blank_texts = [
+        "출토유물 (도면 57, 도판 85)",
+        "출토유물 【도면 57】",
+        "출토유물 [도판 85]",
+        "출토유물 <도면 1>",
+        "1. 조사지역의 위치 및 환경",
+        "도면 57",
+        "도판 85",
+    ]
+    for text in non_blank_texts:
+        assert not AssetMatcher._is_blank_caption_text(text), f"False positive blank caption in: {text}"
+
+
+def test_asset_matcher_bracket_styles_in_filenames(tmp_path):
+    drawings_dir = tmp_path / "drawings"
+    plates_dir = tmp_path / "plates"
+    drawings_dir.mkdir()
+    plates_dir.mkdir()
+
+    (drawings_dir / "[도면] 50_A.ai").write_bytes(b"cand1")
+    (plates_dir / "<도판> 60_A.jpg").write_bytes(b"cand2")
+
+    matcher = AssetMatcher(drawings_dir=drawings_dir, plates_dir=plates_dir)
+
+    res_drawing = matcher.match_reference("drawing", "50")
+    assert res_drawing.status == "semantic_review"
+    assert res_drawing.matched_path == drawings_dir / "[도면] 50_A.ai"
+
+    res_plate = matcher.match_reference("plate", "60")
+    assert res_plate.status == "semantic_review"
+    assert res_plate.matched_path == plates_dir / "<도판> 60_A.jpg"
+

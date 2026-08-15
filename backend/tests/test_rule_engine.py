@@ -75,6 +75,15 @@ def test_rule_engine_default_header_noise_patterns():
     assert engine._is_header_noise('학술조사보고서 | 45')
     assert engine._is_header_noise('백제문화유산연구원')
     assert engine._is_header_noise('학술조사')
+    assert engine._is_header_noise('10 | 발굴조사보고서')
+    assert engine._is_header_noise('지표조사보고서 | 20')
+    assert engine._is_header_noise('30 | 시굴조사')
+    assert engine._is_header_noise('문화유산')
+    assert engine._is_header_noise('발굴조사')
+    assert engine._is_header_noise('지표조사')
+    assert engine._is_header_noise('시굴조사')
+    assert engine._is_header_noise('보고서')
+    assert engine._is_header_noise('연구원')
     
     # Normal body lines should not be considered header noise
     assert not engine._is_header_noise('1. 조사지역의 위치 및 환경')
@@ -92,3 +101,19 @@ def test_rule_engine_custom_header_patterns():
     
     # Baekje header should NOT match when custom patterns are explicitly provided
     assert not engine._is_header_noise('105 | 백제문화유산연구원')
+
+
+def test_rule_engine_comprehensive_feature_id_patterns():
+    engine = RuleEngine()
+    feature_types = [
+        "토광묘", "주거지", "수혈유구", "수혈", "함정유구", "함정",
+        "석관묘", "석곽묘", "석실묘", "지석묘", "고분", "적석총",
+        "분구묘", "옹관묘", "가마", "가마터", "건물지", "우물",
+        "구", "배수로", "패총", "목관묘", "유구", "유물"
+    ]
+    for idx, ftype in enumerate(feature_types, start=1):
+        text = f"{idx}호 {ftype}"
+        assert engine.FEATURE_ID_PATTERN.search(text) is not None, f"Failed to match: {text}"
+        category = engine._classify_rule_category(None, f"{idx}호 {ftype} 발견")
+        assert category == "feature_or_artifact_id", f"Category mismatch for {ftype}"
+

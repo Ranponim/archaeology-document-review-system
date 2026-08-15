@@ -17,6 +17,13 @@ class MatchedAssetResult:
 
 
 class AssetMatcher:
+    DRAWING_EXTENSIONS: tuple[str, ...] = (
+        "*.ai", "*.AI", "*.eps", "*.EPS", "*.pdf", "*.PDF", "*.dwg", "*.DWG", "*.dxf", "*.DXF"
+    )
+    PLATE_EXTENSIONS: tuple[str, ...] = (
+        "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.png", "*.PNG", "*.tiff", "*.TIFF", "*.webp", "*.WEBP"
+    )
+
     def __init__(
         self,
         drawings_dir: Path,
@@ -34,19 +41,17 @@ class AssetMatcher:
     def _index_assets(self) -> None:
         drawing_files_set: set[Path] = set()
         if self.drawings_dir.is_dir():
-            drawing_files_set.update(self.drawings_dir.glob("**/*.ai"))
-            drawing_files_set.update(self.drawings_dir.glob("**/*.AI"))
+            for pat in self.DRAWING_EXTENSIONS:
+                drawing_files_set.update(self.drawings_dir.glob(f"**/{pat}"))
         if self.env_dir and self.env_dir.is_dir():
-            drawing_files_set.update(self.env_dir.glob("**/*.ai"))
-            drawing_files_set.update(self.env_dir.glob("**/*.AI"))
+            for pat in self.DRAWING_EXTENSIONS:
+                drawing_files_set.update(self.env_dir.glob(f"**/{pat}"))
         self._drawing_files = sorted(drawing_files_set)
 
         if self.plates_dir.is_dir():
             plate_files_set: set[Path] = set()
-            plate_files_set.update(self.plates_dir.glob("**/*.jpg"))
-            plate_files_set.update(self.plates_dir.glob("**/*.JPG"))
-            plate_files_set.update(self.plates_dir.glob("**/*.png"))
-            plate_files_set.update(self.plates_dir.glob("**/*.PNG"))
+            for pat in self.PLATE_EXTENSIONS:
+                plate_files_set.update(self.plates_dir.glob(f"**/{pat}"))
             self._plate_files = sorted(plate_files_set)
 
     def get_index_summary(self) -> dict[str, int]:
@@ -60,14 +65,8 @@ class AssetMatcher:
         if not text:
             return False
         patterns = [
-            r"도면\s*:\s*(?:,|\)|\]|\s*$)",
-            r"도판\s*:\s*(?:,|\)|\]|\s*$)",
-            r"【\s*도면\s*】",
-            r"【\s*도판\s*】",
-            r"\(\s*도면\s*[:\s]*,\s*도판\s*[:\s]*\)",
-            r"\(\s*도면\s*[:\s]*\)",
-            r"\(\s*도판\s*[:\s]*\)",
-            r"\(도면\s*,\s*도판\s*\)",
+            r"(?:도면|도판)\s*:\s*(?:[,/\]\)>〉》]|(?=도면|도판)|\s*$)",
+            r"[【\[\(<〈《]\s*(?:도면|도판)(?:\s*[:\s]*[,/]\s*(?:도면|도판))?\s*[:\s]*[】\]\)>〉》]",
         ]
         for pat in patterns:
             if re.search(pat, text):
@@ -90,7 +89,7 @@ class AssetMatcher:
         if self._context_has_blank_caption(context):
             return True
         for f in candidates:
-            if "【도면  】" in f.name or "【도면 】" in f.name or "【도판  】" in f.name or "【도판 】" in f.name:
+            if self._is_blank_caption_text(f.name):
                 return True
         return False
 
@@ -118,7 +117,7 @@ class AssetMatcher:
                 re.IGNORECASE,
             )
             bracket_pat = re.compile(
-                rf"【\s*도면\s*0*{re.escape(num_str)}\s*】",
+                rf"[【\[\(<〈《]\s*도면\s*0*{re.escape(num_str)}\s*[】\]\)>〉》]",
                 re.IGNORECASE,
             )
             exact_matches = [
@@ -181,7 +180,7 @@ class AssetMatcher:
                 re.IGNORECASE,
             )
             bracket_pat = re.compile(
-                rf"【\s*도판\s*0*{re.escape(num_str)}\s*】",
+                rf"[【\[\(<〈《]\s*도판\s*0*{re.escape(num_str)}\s*[】\]\)>〉》]",
                 re.IGNORECASE,
             )
             exact_matches = [
