@@ -1,8 +1,8 @@
 import subprocess
 from pathlib import Path
 
-import yaml
 import pytest
+import yaml
 
 
 @pytest.fixture
@@ -15,6 +15,13 @@ def test_compose_declares_required_services_and_volumes(compose):
     assert set(compose["services"]) == {"web", "worker", "neo4j", "redis"}
     assert compose["services"]["web"]["ports"] == ["8080:8080"]
     assert {"review_data", "neo4j_data"} <= set(compose["volumes"])
+
+
+def test_worker_receives_the_same_neo4j_credentials_as_the_database(compose):
+    worker_environment = compose["services"]["worker"]["environment"]
+
+    assert worker_environment["NEO4J_USER"] == "neo4j"
+    assert worker_environment["NEO4J_PASSWORD"] == "${NEO4J_PASSWORD}"
 
 
 def test_env_file_is_gitignored():

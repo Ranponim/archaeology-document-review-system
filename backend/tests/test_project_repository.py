@@ -8,6 +8,7 @@ from neo4j import GraphDatabase
 from app.domain.models import StoredFile
 from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
 from app.graph.schema import ensure_schema
+from app.jobs.ingest import ExtractionMetadata
 
 
 def _validated_test_uri() -> str:
@@ -377,3 +378,36 @@ def test_missing_project_does_not_leave_partial_document_nodes(
         database_=neo4j_database,
     )
     assert after[0]["count"] == before[0]["count"]
+
+
+def test_retrying_failed_ingest_clears_its_terminal_timestamp(
+    neo4j_driver, neo4j_database, stored_pdf
+):
+    repo = ProjectRepository(neo4j_driver, database=neo4j_database)
+    project = repo.create_project("task5-retry", None)
+    version = repo.add_document_version(project.id, stored_pdf, "source")
+
+    assert repo.claim_ingest(version.analysis_run_id) is not None
+    assert repo.fail_ingest(version.analysis_run_id, "api_error", True)
+    assert repo.claim_ingest(version.analysis_run_id) is not None
+
+    records, _, _ = neo4j_driver.execute_query(
+        """
+        MATCH (run:AnalysisRun {id: $analysis_run_id})
+        RETURN run.status AS status,
+               run.completedAt AS completedAt,
+               run.attemptCount AS attemptCount
+        """,
+        analysis_run_id=version.analysis_run_id,
+        database_=neo4j_database,
+    )
+    assert dict(records[0]) == {
+        "status": "running",
+        "completedAt": None,
+        "attemptCount": 2,
+    }
+    assert repo.complete_ingest(
+        version.analysis_run_id,
+        ExtractionMetadata("application/pdf", 1, False),
+        None,
+    )

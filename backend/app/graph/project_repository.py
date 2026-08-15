@@ -91,6 +91,8 @@ class ProjectRepository:
                        id: run.id,
                        status: run.status,
                        step: run.step,
+                       errorCode: run.errorCode,
+                       retryable: coalesce(run.retryable, false),
                        documentVersionId: version.id
                    }) AS analysisRuns
             """,
@@ -128,6 +130,8 @@ class ProjectRepository:
                 "status": value["status"],
                 "step": value["step"],
                 "document_version_id": value["documentVersionId"],
+                "error_code": value.get("errorCode"),
+                "retryable": value.get("retryable", False),
             }
             for value in record["analysisRuns"]
             if value["id"] is not None
@@ -201,3 +205,145 @@ class ProjectRepository:
         if not records:
             return {}
         return dict(records[0])
+
+    def claim_ingest(self, analysis_run_id: str):
+        from app.jobs.ingest import IngestContext
+
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})-[:ANALYZES]->
+                  (version:DocumentVersion)
+            WHERE run.step = 'ingest'
+              AND (run.status = 'queued'
+                   OR (run.status = 'failed' AND run.retryable = true))
+            SET run.status = 'running',
+                run.startedAt = datetime(),
+                run.completedAt = null,
+                run.attemptCount = coalesce(run.attemptCount, 0) + 1,
+                run.errorCode = null,
+                run.retryable = false
+            RETURN run.id AS analysisRunId,
+                   version.id AS documentVersionId,
+                   version.uri AS uri,
+                   version.sha256 AS sha256,
+                   version.mimeType AS mimeType
+            """,
+            analysis_run_id=analysis_run_id,
+            **self._query_config,
+        )
+        if not records:
+            return None
+        record = records[0]
+        return IngestContext(
+            analysis_run_id=record["analysisRunId"],
+            document_version_id=record["documentVersionId"],
+            uri=record["uri"],
+            sha256=record["sha256"],
+            mime_type=record["mimeType"],
+        )
+
+    def analysis_status(self, analysis_run_id: str) -> str:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            RETURN run.status AS status
+            """,
+            analysis_run_id=analysis_run_id,
+            **self._query_config,
+        )
+        if not records:
+            raise LookupError(analysis_run_id)
+        return records[0]["status"]
+
+    def find_cached_extraction(self, sha256: str, excluding_version_id: str):
+        from app.jobs.ingest import CachedExtraction, ExtractionMetadata
+
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {status: 'completed'})-[:ANALYZES]->
+                  (version:DocumentVersion {sha256: $sha256})
+            WHERE version.id <> $excluding_version_id
+              AND version.ingestMimeType IS NOT NULL
+            RETURN version.id AS documentVersionId,
+                   version.ingestMimeType AS mimeType,
+                   version.pageCount AS pageCount,
+                   version.textExtractable AS textExtractable
+            ORDER BY run.completedAt DESC
+            LIMIT 1
+            """,
+            sha256=sha256,
+            excluding_version_id=excluding_version_id,
+            **self._query_config,
+        )
+        if not records:
+            return None
+        record = records[0]
+        return CachedExtraction(
+            document_version_id=record["documentVersionId"],
+            metadata=ExtractionMetadata(
+                mime_type=record["mimeType"],
+                page_count=record["pageCount"],
+                text_extractable=record["textExtractable"],
+            ),
+        )
+
+    def complete_ingest(
+        self,
+        analysis_run_id: str,
+        metadata,
+        reused_from_version_id: str | None,
+    ) -> bool:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})-[:ANALYZES]->
+                  (version:DocumentVersion)
+            WHERE run.status = 'running'
+            SET run.status = 'completed',
+                run.completedAt = datetime(),
+                run.errorCode = null,
+                run.retryable = false,
+                version.ingestMimeType = $mime_type,
+                version.pageCount = $page_count,
+                version.textExtractable = $text_extractable,
+                version.reusedFromVersionId = $reused_from_version_id
+            RETURN run.id AS id
+            """,
+            analysis_run_id=analysis_run_id,
+            mime_type=metadata.mime_type,
+            page_count=metadata.page_count,
+            text_extractable=metadata.text_extractable,
+            reused_from_version_id=reused_from_version_id,
+            **self._query_config,
+        )
+        return bool(records)
+
+    def fail_ingest(self, analysis_run_id: str, code: str, retryable: bool) -> bool:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            WHERE run.status IN ['queued', 'running']
+            SET run.status = 'failed',
+                run.completedAt = datetime(),
+                run.errorCode = $code,
+                run.retryable = $retryable
+            RETURN run.id AS id
+            """,
+            analysis_run_id=analysis_run_id,
+            code=code,
+            retryable=retryable,
+            **self._query_config,
+        )
+        return bool(records)
+
+    def cancel_analysis_run(self, analysis_run_id: str) -> bool:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            WHERE run.status IN ['queued', 'running']
+            SET run.status = 'cancelled', run.completedAt = datetime()
+            RETURN run.id AS id
+            """,
+            analysis_run_id=analysis_run_id,
+            **self._query_config,
+        )
+        return bool(records)

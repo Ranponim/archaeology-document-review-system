@@ -57,6 +57,8 @@ class AnalysisRunResponse(ApiModel):
     status: str
     step: str
     document_version_id: str = Field(alias="documentVersionId")
+    error_code: str | None = Field(default=None, alias="errorCode")
+    retryable: bool = False
 
 
 class ProjectDetailResponse(ProjectResponse):

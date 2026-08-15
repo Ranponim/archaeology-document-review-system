@@ -15,6 +15,7 @@ class FakeProjectRepository:
         self.projects: dict[str, Project] = {}
         self.versions: dict[str, list[DocumentVersion]] = {}
         self.fail_document_write = False
+        self.failed_runs: dict[str, tuple[str, bool]] = {}
 
     def create_project(self, name: str, internal_code: str | None) -> Project:
         project = Project(id=str(uuid4()), name=name, internal_code=internal_code)
@@ -33,9 +34,19 @@ class FakeProjectRepository:
             "analysis_runs": [
                 {
                     "id": version.analysis_run_id,
-                    "status": "queued",
+                    "status": (
+                        "failed"
+                        if version.analysis_run_id in self.failed_runs
+                        else "queued"
+                    ),
                     "step": "ingest",
                     "document_version_id": version.id,
+                    "error_code": self.failed_runs.get(
+                        version.analysis_run_id, (None, False)
+                    )[0],
+                    "retryable": self.failed_runs.get(
+                        version.analysis_run_id, (None, False)
+                    )[1],
                 }
                 for version in versions
             ],
@@ -60,6 +71,10 @@ class FakeProjectRepository:
         self.versions[project_id].append(version)
         return version
 
+    def fail_ingest(self, analysis_run_id, code, retryable):
+        self.failed_runs[analysis_run_id] = (code, retryable)
+        return True
+
 
 @pytest.fixture
 def repository():
@@ -67,10 +82,18 @@ def repository():
 
 
 @pytest.fixture
-def client(tmp_path, repository):
+def enqueued_runs():
+    return []
+
+
+@pytest.fixture
+def client(tmp_path, repository, enqueued_runs):
     app = create_app(
         file_store=FileStore(tmp_path),
         project_repository=repository,
+        ingest_enqueuer=lambda run_id: (
+            enqueued_runs.append(run_id) or f"ingest-{run_id}"
+        ),
     )
     with TestClient(app, raise_server_exceptions=True) as test_client:
         yield test_client
@@ -91,7 +114,7 @@ def test_create_project_returns_public_project_fields(client):
 
 
 def test_upload_creates_queued_ingest_run_and_preserves_bytes(
-    client, repository, tmp_path
+    client, repository, tmp_path, enqueued_runs
 ):
     project = client.post("/api/projects", json={"name": "산노리"}).json()
 
@@ -107,6 +130,32 @@ def test_upload_creates_queued_ingest_run_and_preserves_bytes(
     version = repository.versions[project["id"]][0]
     assert version.id == body["documentVersionId"]
     assert (tmp_path / version.uri).read_bytes() == b"%PDF"
+    assert enqueued_runs == [body["analysisRunId"]]
+
+
+def test_upload_queue_failure_does_not_report_acceptance_and_marks_run_retryable(
+    client, repository
+):
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+
+    def unavailable_queue(_run_id):
+        raise ConnectionError("redis://secret-host:6379/0")
+
+    client.app.state.ingest_enqueuer = unavailable_queue
+
+    response = client.post(
+        f"/api/projects/{project['id']}/documents?stage=source",
+        files={"file": ("a.pdf", b"%PDF", "application/pdf")},
+    )
+
+    assert response.status_code == 500
+    version = repository.versions[project["id"]][0]
+    assert repository.failed_runs[version.analysis_run_id] == ("api_error", True)
+    assert "secret-host" not in response.text
+    detail = client.get(f"/api/projects/{project['id']}").json()
+    assert detail["analysisRuns"][0]["status"] == "failed"
+    assert detail["analysisRuns"][0]["errorCode"] == "api_error"
+    assert detail["analysisRuns"][0]["retryable"] is True
 
 
 def test_get_project_returns_versions_and_analysis_runs_without_storage_secrets(
@@ -261,36 +310,40 @@ def test_project_repository_reads_project_versions_and_queued_runs():
         def execute_query(self, _query, **kwargs):
             assert kwargs["project_id"] == "project-1"
             assert kwargs["database_"] == "isolated_test"
-            return [
-                {
-                    "project": {
-                        "id": "project-1",
-                        "name": "산노리",
-                        "internalCode": "NONSAN-001",
-                    },
-                    "documentVersions": [
-                        {
-                            "id": "version-1",
-                            "documentId": "document-1",
-                            "analysisRunId": "run-1",
-                            "uri": "incoming/project/hash/a.pdf",
-                            "sha256": "a" * 64,
-                            "sizeBytes": 4,
-                            "mimeType": "application/pdf",
-                            "originalName": "a.pdf",
-                            "stage": "source",
-                        }
-                    ],
-                    "analysisRuns": [
-                        {
-                            "id": "run-1",
-                            "status": "queued",
-                            "step": "ingest",
-                            "documentVersionId": "version-1",
-                        }
-                    ],
-                }
-            ], None, None
+            return (
+                [
+                    {
+                        "project": {
+                            "id": "project-1",
+                            "name": "산노리",
+                            "internalCode": "NONSAN-001",
+                        },
+                        "documentVersions": [
+                            {
+                                "id": "version-1",
+                                "documentId": "document-1",
+                                "analysisRunId": "run-1",
+                                "uri": "incoming/project/hash/a.pdf",
+                                "sha256": "a" * 64,
+                                "sizeBytes": 4,
+                                "mimeType": "application/pdf",
+                                "originalName": "a.pdf",
+                                "stage": "source",
+                            }
+                        ],
+                        "analysisRuns": [
+                            {
+                                "id": "run-1",
+                                "status": "queued",
+                                "step": "ingest",
+                                "documentVersionId": "version-1",
+                            }
+                        ],
+                    }
+                ],
+                None,
+                None,
+            )
 
     snapshot = ProjectRepository(
         SnapshotDriver(), database="isolated_test"
@@ -306,5 +359,7 @@ def test_project_repository_reads_project_versions_and_queued_runs():
             "status": "queued",
             "step": "ingest",
             "document_version_id": "version-1",
+            "error_code": None,
+            "retryable": False,
         }
     ]

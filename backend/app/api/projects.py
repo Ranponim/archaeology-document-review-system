@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
@@ -30,6 +31,8 @@ class ProjectRepositoryPort(Protocol):
         self, project_id: str, stored: StoredFile, stage: str
     ) -> DocumentVersion: ...
 
+    def fail_ingest(self, analysis_run_id: str, code: str, retryable: bool) -> bool: ...
+
 
 def get_file_store(request: Request) -> FileStore:
     return request.app.state.file_store
@@ -37,6 +40,10 @@ def get_file_store(request: Request) -> FileStore:
 
 def get_project_repository(request: Request) -> ProjectRepositoryPort:
     return request.app.state.project_repository
+
+
+def get_ingest_enqueuer(request: Request) -> Callable[[str], str]:
+    return request.app.state.ingest_enqueuer
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -78,6 +85,7 @@ async def upload_document(
     file: Annotated[UploadFile, File()],
     repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
     file_store: Annotated[FileStore, Depends(get_file_store)],
+    ingest_enqueuer: Annotated[Callable[[str], str], Depends(get_ingest_enqueuer)],
     stage: Annotated[Literal["source"], Query()] = "source",
 ) -> UploadResponse:
     normalized_project_id = str(project_id)
@@ -96,6 +104,19 @@ async def upload_document(
         stored,
         stage,
     )
+    try:
+        await run_in_threadpool(ingest_enqueuer, version.analysis_run_id)
+    except Exception:  # noqa: BLE001 - Redis details stay private
+        try:
+            await _run_repository(
+                repository.fail_ingest,
+                version.analysis_run_id,
+                "api_error",
+                True,
+            )
+        except ServerOperationError:
+            pass
+        raise ServerOperationError from None
     return UploadResponse(
         document_version_id=version.id,
         analysis_run_id=version.analysis_run_id,

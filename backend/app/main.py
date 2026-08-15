@@ -9,6 +9,7 @@ from app.api.projects import ServerOperationError
 from app.api.projects import router as projects_router
 from app.graph.client import create_driver
 from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
+from app.jobs.queue import enqueue_ingest
 from app.services.file_store import FileStore
 
 
@@ -38,6 +39,7 @@ def create_app(
     *,
     file_store: FileStore | None = None,
     project_repository=None,
+    ingest_enqueuer=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -53,6 +55,7 @@ def create_app(
     application = FastAPI(lifespan=lifespan)
     application.state.file_store = file_store if file_store is not None else FileStore()
     application.state.project_repository = project_repository
+    application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
