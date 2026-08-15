@@ -72,7 +72,7 @@ def client(tmp_path, repository):
         file_store=FileStore(tmp_path),
         project_repository=repository,
     )
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with TestClient(app, raise_server_exceptions=True) as test_client:
         yield test_client
 
 
@@ -195,7 +195,8 @@ def test_graph_failure_never_returns_202_or_leaks_file_metadata(
 
     assert response.status_code == 500
     assert set(response.json()) == {"code", "request_id"}
-    assert response.json()["code"] == "input_error"
+    assert response.json()["code"] == "server_error"
+    assert response.headers["X-Request-ID"] == response.json()["request_id"]
     assert "PRIVATE-ORIGINAL-BYTES" not in response.text
     assert "private.pdf" not in response.text
     expected_hash = hashlib.sha256(b"PRIVATE-ORIGINAL-BYTES").hexdigest()
@@ -207,6 +208,44 @@ def test_graph_failure_never_returns_202_or_leaks_file_metadata(
     # The immutable blob is intentionally retained for reconciliation. Deleting it
     # here could break a concurrent successful upload of the same content address.
     assert [path for path in tmp_path.rglob("*") if path.is_file()]
+
+
+def test_storage_failure_is_handled_before_asgi_and_sanitizes_server_error(
+    client, caplog
+):
+    class FailingFileStore:
+        async def store_upload(self, project_id, upload):
+            raise RuntimeError(
+                "storage failed: incoming/private.pdf "
+                + "f" * 64
+                + " PRIVATE-ORIGINAL-BYTES"
+            )
+
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+    client.app.state.file_store = FailingFileStore()
+
+    response = client.post(
+        f"/api/projects/{project['id']}/documents?stage=source",
+        files={
+            "file": (
+                "private.pdf",
+                b"PRIVATE-ORIGINAL-BYTES",
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "server_error"
+    assert response.headers["X-Request-ID"] == response.json()["request_id"]
+    for secret in (
+        "PRIVATE-ORIGINAL-BYTES",
+        "private.pdf",
+        "f" * 64,
+        "incoming/",
+    ):
+        assert secret not in response.text
+        assert secret not in caplog.text
 
 
 def test_get_missing_project_returns_sanitized_404(client):

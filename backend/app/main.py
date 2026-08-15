@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.api.projects import ServerOperationError
 from app.api.projects import router as projects_router
 from app.graph.client import create_driver
 from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
@@ -23,6 +24,13 @@ def _error_response(request: Request, status_code: int) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={"code": "input_error", "request_id": _request_id(request)},
+    )
+
+
+def _server_error_response(request: Request) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"code": "server_error", "request_id": _request_id(request)},
     )
 
 
@@ -65,9 +73,9 @@ def create_app(
     async def invalid_input(request: Request, _error: ValueError):
         return _error_response(request, 400)
 
-    @application.exception_handler(Exception)
-    async def unexpected_error(request: Request, _error: Exception):
-        return _error_response(request, 500)
+    @application.exception_handler(ServerOperationError)
+    async def server_operation_error(request: Request, _error: ServerOperationError):
+        return _server_error_response(request)
 
     application.include_router(projects_router)
     return application

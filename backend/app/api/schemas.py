@@ -65,5 +65,5 @@ class ProjectDetailResponse(ProjectResponse):
 
 
 class ErrorResponse(ApiModel):
-    code: Literal["input_error"]
+    code: Literal["input_error", "server_error"]
     request_id: str

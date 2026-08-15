@@ -13,7 +13,12 @@ from app.api.schemas import (
     UploadResponse,
 )
 from app.domain.models import DocumentVersion, Project, StoredFile
+from app.graph.project_repository import ProjectNotFoundError
 from app.services.file_store import FileStore
+
+
+class ServerOperationError(RuntimeError):
+    """A sanitized marker for an unexpected storage or repository failure."""
 
 
 class ProjectRepositoryPort(Protocol):
@@ -37,12 +42,21 @@ def get_project_repository(request: Request) -> ProjectRepositoryPort:
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
+async def _run_repository(operation, *args):
+    try:
+        return await run_in_threadpool(operation, *args)
+    except ProjectNotFoundError:
+        raise
+    except Exception:  # noqa: BLE001 - sanitize adapter failures at the API boundary
+        raise ServerOperationError from None
+
+
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
     payload: ProjectCreateRequest,
     repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
 ) -> ProjectResponse:
-    project = await run_in_threadpool(
+    project = await _run_repository(
         repository.create_project,
         payload.name,
         payload.internal_code,
@@ -69,9 +83,14 @@ async def upload_document(
     normalized_project_id = str(project_id)
     # Validate project existence before accepting original bytes. The write
     # transaction repeats the MATCH so a concurrent deletion still fails closed.
-    await run_in_threadpool(repository.get_project, normalized_project_id)
-    stored = await file_store.store_upload(project_id, file)
-    version = await run_in_threadpool(
+    await _run_repository(repository.get_project, normalized_project_id)
+    try:
+        stored = await file_store.store_upload(project_id, file)
+    except ValueError:
+        raise
+    except Exception:  # noqa: BLE001 - sanitize storage failures at the API boundary
+        raise ServerOperationError from None
+    version = await _run_repository(
         repository.add_document_version,
         normalized_project_id,
         stored,
@@ -88,7 +107,7 @@ async def get_project(
     project_id: UUID,
     repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
 ) -> ProjectDetailResponse:
-    snapshot = await run_in_threadpool(repository.get_project, str(project_id))
+    snapshot = await _run_repository(repository.get_project, str(project_id))
     project = snapshot["project"]
     versions = snapshot["document_versions"]
     runs = snapshot["analysis_runs"]
