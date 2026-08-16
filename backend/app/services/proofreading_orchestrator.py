@@ -250,6 +250,21 @@ class ProofreadingOrchestrator:
         if not body_sha256:
             body_sha256 = f"sha256_{body_version_id}"
 
+        # Gate G: a body file that parses to zero pages must not produce a
+        # normal completed result (anti-pattern #3).
+        if not parsed_body_pages:
+            if self.review_repo is not None:
+                self.review_repo.save_analysis_run(
+                    project_id=project_id,
+                    run_id=run_id,
+                    status="failed",
+                    step="ingest",
+                    error_code="ZERO_PAGES_PARSED",
+                )
+            raise ValueError(
+                f"Body document '{body_version_id}' produced zero parsed pages"
+            )
+
         # Persist body pages & text blocks into Neo4j
         if self.review_repo is not None and parsed_body_pages:
             self.review_repo.save_pages_and_blocks(

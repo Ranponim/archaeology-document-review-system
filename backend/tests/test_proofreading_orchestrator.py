@@ -4,6 +4,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
+from pypdf import PdfWriter
+
 from app.domain.canonical_models import (
     ArchaeologyObjectData,
     DrawingData,
@@ -438,25 +440,60 @@ async def test_orchestrator_vlm_integration(tmp_path: Path):
 
 
 @pytest.mark.anyio
-async def test_orchestrator_handles_missing_or_empty_inputs_gracefully():
+async def test_orchestrator_fails_closed_on_zero_parsed_body_pages():
+    """Gate G: a run whose body parses to zero pages must not return a normal
+    completed result — it must raise ValueError (previous behavior returned
+    status='completed' with 0 pages / 0 objects / 0 references)."""
     orchestrator = ProofreadingOrchestrator()
 
-    result = await orchestrator.run_proofreading(
-        project_id="proj_empty",
-        body_version_id="ver_empty",
-        body_pages=[],
-        plates=[],
-        drawings=[],
-        enable_vlm=False,
-        enable_ai_review=False,
-    )
+    with pytest.raises(ValueError, match="zero parsed pages"):
+        await orchestrator.run_proofreading(
+            project_id="proj_empty",
+            body_version_id="ver_empty",
+            body_pages=[],
+            plates=[],
+            drawings=[],
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
 
-    assert result.status == "completed"
-    assert result.pages_parsed == 0
-    assert result.objects_resolved == 0
-    assert len(result.candidates) == 0
-    assert len(result.evidences) == 0
-    assert result.summary["total_candidates"] == 0
+
+@pytest.mark.anyio
+async def test_orchestrator_zero_pages_persists_failed_run(tmp_path: Path):
+    """Gate G: the zero-page failure is persisted as status='failed',
+    step='ingest', error_code='ZERO_PAGES_PARSED' before the ValueError is
+    raised."""
+    driver = FakeNeo4jDriver()
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(review_repo=review_repo)
+
+    pdf_path = tmp_path / "empty_body.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with open(pdf_path, "wb") as f:
+        writer.write(f)
+
+    empty_parser = MagicMock()
+    empty_parser.parse_pdf.return_value = []
+    orchestrator.pdf_parser = empty_parser
+
+    with pytest.raises(ValueError, match="zero parsed pages"):
+        await orchestrator.run_proofreading(
+            project_id="proj_empty",
+            body_version_id="ver_empty",
+            body_pdf_path=pdf_path,
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
+
+    failed_saves = [
+        q
+        for q in driver.queries
+        if "AnalysisRun" in q["query"] and q["kwargs"].get("error_code")
+    ]
+    assert failed_saves, "expected a failed AnalysisRun save with error_code"
+    assert failed_saves[0]["kwargs"]["status"] == "failed"
+    assert failed_saves[0]["kwargs"]["error_code"] == "ZERO_PAGES_PARSED"
 
 
 @pytest.mark.anyio

@@ -269,11 +269,15 @@ class DrawingParser:
 
             if drawing_header_found:
                 raw_id, number, title, region_text = drawing_header_found
-                drawing_id = f"drawing_{number}"
+                drawing_id = (
+                    f"doc_drawing_{number}"
+                    if not document_version_id
+                    else f"{document_version_id}_drawing_{number}"
+                )
                 regions_dict = self.extract_regions_from_caption(region_text)
                 regions: list[DrawingRegionData] = []
                 for r_idx, (idx_num, r_cap) in enumerate(regions_dict.items(), start=1):
-                    region_id = f"region_{number}_{idx_num}"
+                    region_id = f"{drawing_id}_region_{idx_num}"
                     regions.append(
                         DrawingRegionData(
                             region_id=region_id,
@@ -333,11 +337,15 @@ class DrawingParser:
 
             if drawing_header_found:
                 raw_id, number, title, region_text = drawing_header_found
-                drawing_id = f"drawing_{number}"
+                drawing_id = (
+                    f"doc_drawing_{number}"
+                    if not document_version_id
+                    else f"{document_version_id}_drawing_{number}"
+                )
                 regions_dict = self.extract_regions_from_caption(region_text)
                 regions: list[DrawingRegionData] = []
                 for r_idx, (idx_num, r_cap) in enumerate(regions_dict.items(), start=1):
-                    region_id = f"region_{number}_{idx_num}"
+                    region_id = f"{drawing_id}_region_{idx_num}"
                     regions.append(
                         DrawingRegionData(
                             region_id=region_id,

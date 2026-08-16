@@ -289,6 +289,7 @@ class ReviewRepository:
         status: str = "pending",
         model: str | None = None,
         step: str | None = None,
+        error_code: str | None = None,
     ) -> None:
         if self._driver is None:
             return
@@ -299,6 +300,9 @@ class ReviewRepository:
         SET run.status = $status,
             run.model = $model,
             run.step = $step
+        FOREACH (_ IN CASE WHEN $error_code IS NOT NULL THEN [1] ELSE [] END |
+            SET run.errorCode = $error_code
+        )
         MERGE (proj)-[:HAS_RUN]->(run)
         """
         self._driver.execute_query(
@@ -308,6 +312,7 @@ class ReviewRepository:
             status=status,
             model=model,
             step=step,
+            error_code=error_code,
             **self._query_config(),
         )
 

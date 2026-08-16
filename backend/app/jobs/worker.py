@@ -61,21 +61,6 @@ class LocalMetadataExtractor:
             raise ConversionError("PDF metadata extraction failed") from error
 
         try:
-            from app.jobs.review_pipeline import ReviewPipeline
-
-            pipeline = ReviewPipeline(review_repo=self._review_repo)
-            pipeline.run_full_pipeline(
-                project_id=context.document_version_id,
-                version_files={"current": source},
-            )
-        except Exception as error:
-            logger.warning(
-                "ReviewPipeline execution failed for document %s: %s",
-                context.document_version_id,
-                error,
-            )
-
-        try:
             kind = getattr(context, "kind", "report_body") or "report_body"
             proj_id = getattr(context, "project_id", None) or context.document_version_id
             run_kind_ingest_job(
@@ -160,10 +145,6 @@ def run_ai_analysis_job(analysis_run_id: str, project_id: str, model: str) -> di
     """RQ entry point for AI analysis pipeline."""
     driver = create_driver()
     try:
-        review_repo = ReviewRepository(driver)
-        from app.jobs.review_pipeline import ReviewPipeline
-
-        pipeline = ReviewPipeline(review_repo=review_repo)
         return {
             "analysis_run_id": analysis_run_id,
             "project_id": project_id,

@@ -467,6 +467,8 @@ class ProjectRepository:
             WHERE run.step = 'ingest'
               AND (run.status = 'queued'
                    OR (run.status = 'failed' AND run.retryable = true))
+            OPTIONAL MATCH (project:Project)-[:HAS_DOCUMENT]->
+                           (document:Document)-[:HAS_VERSION]->(version)
             SET run.status = 'running',
                 run.startedAt = datetime(),
                 run.completedAt = null,
@@ -477,7 +479,9 @@ class ProjectRepository:
                    version.id AS documentVersionId,
                    version.uri AS uri,
                    version.sha256 AS sha256,
-                   version.mimeType AS mimeType
+                   version.mimeType AS mimeType,
+                   coalesce(document.kind, 'report_body') AS kind,
+                   project.id AS projectId
             """,
             analysis_run_id=analysis_run_id,
             **self._query_config,
@@ -491,6 +495,8 @@ class ProjectRepository:
             uri=record["uri"],
             sha256=record["sha256"],
             mime_type=record["mimeType"],
+            kind=record["kind"],
+            project_id=record["projectId"],
         )
 
     def analysis_status(self, analysis_run_id: str) -> str:

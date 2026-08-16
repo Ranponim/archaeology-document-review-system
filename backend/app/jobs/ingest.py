@@ -188,6 +188,21 @@ def run_ingest_job(
             else:
                 pages = parser.parse_pdf(path, version_id=version_id)
 
+            # Gate G: a real body file with zero parsed pages must fail
+            # closed, not return a normal completed result.
+            if not pages:
+                if review_repo is not None and analysis_run_id is not None:
+                    review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=analysis_run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="ZERO_PAGES_PARSED",
+                    )
+                raise ValueError(
+                    f"Body document '{version_id}' produced zero parsed pages"
+                )
+
             if review_repo is not None and pages:
                 review_repo.save_pages_and_blocks(version_id=version_id, pages=pages)
 

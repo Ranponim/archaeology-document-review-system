@@ -317,7 +317,12 @@ def test_enqueue_ingest_rejects_an_invalid_analysis_run_id(invalid_id):
         enqueue_ingest(invalid_id, queue=FakeQueue())
 
 
-def test_local_metadata_extractor_runs_review_pipeline_on_pdf(tmp_path, monkeypatch):
+def test_local_metadata_extractor_no_longer_invokes_legacy_review_pipeline(
+    tmp_path, monkeypatch
+):
+    """The production ingest worker must not run the legacy ReviewPipeline:
+    it persisted unscoped ``doc_ver_pN`` page ids and invented per-version
+    ids that collide across projects (task-1-5 review Issue 3.4)."""
     pdf_path = tmp_path / "document.pdf"
     writer = PdfWriter()
     writer.add_blank_page(width=100, height=100)
@@ -328,10 +333,10 @@ def test_local_metadata_extractor_runs_review_pipeline_on_pdf(tmp_path, monkeypa
 
     class SpyReviewPipeline:
         def __init__(self, review_repo=None):
-            self.review_repo = review_repo
+            pipeline_calls.append("constructed")
 
         def run_full_pipeline(self, project_id, version_files):
-            pipeline_calls.append((self.review_repo, project_id, version_files))
+            pipeline_calls.append("run_full_pipeline")
 
     monkeypatch.setattr("app.jobs.review_pipeline.ReviewPipeline", SpyReviewPipeline)
 
@@ -348,11 +353,7 @@ def test_local_metadata_extractor_runs_review_pipeline_on_pdf(tmp_path, monkeypa
 
     assert metadata.mime_type == "application/pdf"
     assert metadata.page_count == 1
-    assert len(pipeline_calls) == 1
-    repo, proj_id, vfiles = pipeline_calls[0]
-    assert repo is None
-    assert proj_id == "version-test"
-    assert vfiles == {"current": pdf_path.resolve()}
+    assert pipeline_calls == []
 
 
 def test_local_metadata_extractor_skips_review_pipeline_for_non_pdf(tmp_path, monkeypatch):

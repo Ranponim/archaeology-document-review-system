@@ -395,6 +395,62 @@ def test_drawing_parser_header_and_region_extraction():
     assert regions[2] == "단면도"
 
 
+def test_ingest_report_body_fails_closed_on_zero_parsed_pages(
+    sample_pdf: Path,
+):
+    """Gate G: a real body file whose parser returns zero pages must fail the
+    run (status='failed', step='ingest', error_code='ZERO_PAGES_PARSED') and
+    raise ValueError, never return a normal completed result."""
+    driver = FakeNeo4jDriver()
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+
+    mock_pdf_parser = MagicMock(spec=PDFParser)
+    mock_pdf_parser.parse_pdf.return_value = []
+
+    with pytest.raises(ValueError, match="zero parsed pages"):
+        run_ingest_job(
+            project_id="proj_1",
+            version_id="v_zero",
+            kind="report_body",
+            file_path=sample_pdf,
+            canonical_repo=CanonicalRepository(driver=driver),
+            review_repo=review_repo,
+            pdf_parser=mock_pdf_parser,
+            analysis_run_id="run_zero",
+        )
+
+    failed_saves = [
+        q
+        for q in driver.queries
+        if "AnalysisRun" in q["query"] and q["kwargs"].get("error_code")
+    ]
+    assert failed_saves, "expected a failed AnalysisRun save with error_code"
+    assert failed_saves[0]["kwargs"]["error_code"] == "ZERO_PAGES_PARSED"
+
+
+def test_ingest_zero_pages_guard_does_not_apply_to_plate_book(sample_pdf: Path):
+    """The zero-pages guard is body-only: a plate book with zero plates (e.g.
+    non-body kinds) must still complete normally."""
+    driver = FakeNeo4jDriver()
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+
+    mock_plate_parser = MagicMock(spec=PlateParser)
+    mock_plate_parser.parse.return_value = PlateIndex(plates_by_number={}, plates=[])
+
+    result = run_ingest_job(
+        project_id="proj_1",
+        version_id="v_plate_empty",
+        kind="plate_book",
+        file_path=sample_pdf,
+        canonical_repo=canonical_repo,
+        plate_parser=mock_plate_parser,
+    )
+
+    assert result.status == "completed"
+    assert result.plates_count == 0
+    assert result.panels_count == 0
+
+
 def test_worker_run_ingest_job_delegation(sample_pdf: Path):
     """Verify worker.run_ingest_job delegates properly when given explicit parameters."""
     driver = FakeNeo4jDriver()
