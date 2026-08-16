@@ -31,6 +31,7 @@ from app.graph.review_repository import ReviewRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.asset_matcher import AssetMatcher, ResolutionResult
 from app.services.asset_review_pipeline import AssetReviewPipeline
+from app.services.drawing_parser import DrawingIndex, DrawingParser
 from app.services.object_resolver import ObjectResolver
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateIndex, PlateParser
@@ -67,6 +68,7 @@ class ProofreadingOrchestrator:
         self,
         pdf_parser: PDFParser | None = None,
         plate_parser: PlateParser | None = None,
+        drawing_parser: DrawingParser | None = None,
         object_resolver: ObjectResolver | None = None,
         asset_matcher: AssetMatcher | None = None,
         rule_engine: RuleEngine | None = None,
@@ -79,6 +81,7 @@ class ProofreadingOrchestrator:
     ) -> None:
         self.pdf_parser = pdf_parser or PDFParser()
         self.plate_parser = plate_parser or PlateParser()
+        self.drawing_parser = drawing_parser or DrawingParser()
         self.object_resolver = object_resolver or ObjectResolver()
         self.asset_matcher = asset_matcher or AssetMatcher()
         self.rule_engine = rule_engine or RuleEngine()
@@ -300,7 +303,31 @@ class ProofreadingOrchestrator:
             self.canonical_repo.save_plates(plates=all_plates)
 
         # 4. Drawings Ingestion
-        all_drawings: list[DrawingData] = list(drawings or [])
+        active_drawing_index: DrawingIndex | None = None
+        all_drawings: list[DrawingData] = []
+        drawing_sha256: str | None = None
+
+        if drawings is not None:
+            all_drawings = list(drawings)
+            active_drawing_index = DrawingIndex(
+                drawings_by_number={d.number: d for d in all_drawings},
+                drawings=all_drawings,
+            )
+        elif drawing_pdf_path is not None:
+            dr_path = Path(drawing_pdf_path)
+            drawing_sha256 = self._compute_sha256(dr_path)
+            doc_v_id = drawing_version_id or "drawing_pdf"
+            active_drawing_index = self.drawing_parser.parse(
+                dr_path,
+                document_version_id=doc_v_id,
+            )
+            all_drawings = list(active_drawing_index.drawings)
+        else:
+            active_drawing_index = DrawingIndex()
+
+        if not drawing_sha256:
+            drawing_sha256 = f"sha256_{drawing_version_id or 'drawing'}"
+
         if self.canonical_repo is not None and all_drawings:
             self.canonical_repo.save_drawings(drawings=all_drawings)
 
@@ -371,7 +398,7 @@ class ProofreadingOrchestrator:
             resolution = self.asset_matcher.resolve_reference(
                 reference=ref,
                 plate_index=active_plate_index,
-                drawing_index=None,
+                drawing_index=active_drawing_index,
             )
             if resolution.status == ResolutionStatus.RESOLVED and resolution.target is not None:
                 resolved_refs_count += 1
@@ -513,7 +540,7 @@ class ProofreadingOrchestrator:
         rule_candidates = self.rule_engine.check_objects_consistency(
             objects_with_evidences=objects_with_evidences,
             plate_index=active_plate_index,
-            drawing_index=None,
+            drawing_index=active_drawing_index,
             plates=all_plates,
             drawings=all_drawings,
         )
@@ -670,6 +697,31 @@ class ProofreadingOrchestrator:
             drawings=all_drawings,
             summary=summary,
             errors=errors,
+        )
+
+    def ensure_canonical_graph_ingested(
+        self,
+        project_id: str,
+        version_id: str,
+        kind: str,
+        file_path: str | Path,
+        **kwargs: Any,
+    ):
+        """Invoke kind-aware canonical graph ingestion pipeline as a prerequisite."""
+        from app.jobs.ingest import run_ingest_job as run_kind_ingest_job
+
+        return run_kind_ingest_job(
+            project_id=project_id,
+            version_id=version_id,
+            kind=kind,
+            file_path=file_path,
+            canonical_repo=self.canonical_repo,
+            review_repo=self.review_repo,
+            pdf_parser=self.pdf_parser,
+            plate_parser=self.plate_parser,
+            drawing_parser=self.drawing_parser,
+            object_resolver=self.object_resolver,
+            **kwargs,
         )
 
 
