@@ -656,6 +656,7 @@ class ProofreadingOrchestrator:
             all_candidates.append(cand)
 
         # B. VLM Visual Observation via AssetReviewPipeline
+        vlm_candidates: list[CorrectionCandidateData] = []
         if enable_vlm and (self.asset_review_pipeline is not None or self.vlm_service is not None):
             pipeline = self.asset_review_pipeline
             if pipeline is None:
@@ -681,6 +682,20 @@ class ProofreadingOrchestrator:
                         for ev in vc.evidences:
                             if ev not in all_evidences:
                                 all_evidences.append(ev)
+                        # Attach the archaeology object the reference's source
+                        # block mentions (exactly one) so the VLM candidate
+                        # links ABOUT the object and its vlm_observation
+                        # evidence becomes reachable through the graph bundle.
+                        vc_obj_id = vc.archaeology_object_id
+                        if not vc_obj_id:
+                            matching_objects = [
+                                o.object_id
+                                for o in all_objects
+                                if ref.source_block_id
+                                and ref.source_block_id in o.source_block_ids
+                            ]
+                            if len(matching_objects) == 1:
+                                vc_obj_id = matching_objects[0]
                         cand = CorrectionCandidateData(
                             candidate_id=vc.candidate_id,
                             rule_category=vc.rule_category,
@@ -690,30 +705,86 @@ class ProofreadingOrchestrator:
                             proposed_text=vc.proposed_text,
                             evidence=vc.evidence,
                             evidence_list=vc.evidence_list,
-                            archaeology_object_id=vc.archaeology_object_id,
+                            archaeology_object_id=vc_obj_id,
                             confidence=vc.confidence,
                             analysis_run_id=run_id,
                         )
+                        vlm_candidates.append(cand)
                         all_candidates.append(cand)
                 except Exception as e:
                     errors.append(f"VLM review error for ref {ref.number}: {e}")
 
-        # C. Contextual LLM Review via AIReviewService
+            # Task 10: persist VLM observations as Evidence (linked via
+            # candidate SUPPORTED_BY) BEFORE refreshing the graph bundle, so
+            # the refreshed bundle reflects the vlm_observation evidence.
+            if self.review_repo is not None and vlm_candidates:
+                self.review_repo.save_candidates(
+                    project_id=project_id,
+                    candidates=vlm_candidates,
+                    analysis_run_id=run_id,
+                )
+
+            # Task 10: refresh graph evidence bundles for objects with new VLM
+            # observations so subsequent rule/LLM consumption sees the
+            # vlm_observation in visual_observations.
+            if self.canonical_repo is not None:
+                affected_object_ids = {
+                    c.archaeology_object_id
+                    for c in vlm_candidates
+                    if c.archaeology_object_id
+                }
+                for obj in all_objects:
+                    if obj.object_id not in affected_object_ids:
+                        continue
+                    try:
+                        refreshed = self.canonical_repo.get_object_evidence_bundle(
+                            obj.object_id, analysis_run_id=run_id
+                        )
+                    except Exception as exc:  # noqa: BLE001 - degrade explicitly
+                        warnings.append(
+                            f"graph evidence refresh failed for object '{obj.object_id}': "
+                            f"{exc} — keeping pre-VLM bundle"
+                        )
+                        continue
+                    if refreshed.has_graph_evidence():
+                        graph_bundles[obj.object_id] = refreshed
+
+        # C. Contextual LLM Review via AIReviewService — graph-first (Task 10)
         if enable_ai_review and self.ai_review_service is not None:
             for obj, obj_evs in objects_with_evidences:
                 if not obj_evs:
                     continue
                 try:
-                    ai_cands = await self.ai_review_service.review_object_evidence(
-                        archaeology_object=obj,
-                        evidences=obj_evs,
-                        references=all_references,
-                        project_id=project_id,
-                        version_stage=version_stage,
-                        analysis_run_id=run_id,
-                        plates=all_plates,
-                        drawings=all_drawings,
-                    )
+                    bundle = graph_bundles.get(obj.object_id)
+                    if bundle is not None:
+                        rule_findings = [
+                            rc
+                            for rc in rule_candidates
+                            if rc.archaeology_object_id == obj.object_id
+                        ]
+                        ai_cands = await self.ai_review_service.review_object_bundle(
+                            archaeology_object=obj,
+                            bundle=bundle,
+                            rule_findings=rule_findings,
+                            project_id=project_id,
+                            version_stage=version_stage,
+                            analysis_run_id=run_id,
+                        )
+                    else:
+                        warnings.append(
+                            f"no graph evidence for object '{obj.object_id}' — "
+                            "LLM review falls back to in-memory evidence (DEGRADED)"
+                        )
+                        ai_cands = await self.ai_review_service.review_object_evidence(
+                            archaeology_object=obj,
+                            evidences=obj_evs,
+                            references=all_references,
+                            project_id=project_id,
+                            version_stage=version_stage,
+                            analysis_run_id=run_id,
+                            plates=all_plates,
+                            drawings=all_drawings,
+                        )
                     for ac in ai_cands:
                         for ev in ac.evidences:
                             if ev not in all_evidences:
