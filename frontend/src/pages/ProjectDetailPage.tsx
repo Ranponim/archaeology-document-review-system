@@ -1,9 +1,10 @@
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ApiError,
   type CandidateFilters,
   type CorrectionCandidate,
+  type DocumentVersion,
   type Project,
   type ProjectDetail,
   type ReviewDecision,
@@ -27,6 +28,31 @@ type Props = {
 
 type TabType = 'split' | 'graph';
 
+const KIND_LABELS: Record<string, string> = {
+  report_body: '본문',
+  plate_book: '도판',
+  drawing_book: '도면',
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  '1차': '1차',
+  '2차': '2차',
+  '3차': '3차',
+  final: '최종',
+};
+
+function kindLabel(kind: string | undefined): string {
+  return kind ? KIND_LABELS[kind] ?? kind : '문서';
+}
+
+function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage] ?? stage;
+}
+
+function versionLabel(version: DocumentVersion): string {
+  return `${kindLabel(version.kind)} · ${stageLabel(version.stage)}`;
+}
+
 export function ProjectDetailPage({ project, onBack }: Props) {
   const [detail, setDetail] = useState<ProjectDetail>({
     ...project,
@@ -37,12 +63,19 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
 
+  // Upload form state
+  const [uploadKind, setUploadKind] = useState('report_body');
+  const [uploadStage, setUploadStage] = useState('1차');
+
   // Proofreading & Candidates State
   const [runningProofread, setRunningProofread] = useState(false);
   const [enableVlm, setEnableVlm] = useState(true);
   const [enableAiReview, setEnableAiReview] = useState(true);
-  const [versionStage, setVersionStage] = useState('1차');
+  const [bodyVersionId, setBodyVersionId] = useState('');
+  const [plateVersionId, setPlateVersionId] = useState('');
+  const [drawingVersionId, setDrawingVersionId] = useState('');
   const [runResult, setRunResult] = useState<RunTriggerResponse | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
 
   // Candidates & Metrics
   const [candidates, setCandidates] = useState<CorrectionCandidate[]>([]);
@@ -92,6 +125,20 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     void loadReviewData();
   }, [loadReviewData]);
 
+  useEffect(() => {
+    let isMounted = true;
+    getProject(project.id)
+      .then((next) => {
+        if (isMounted) setDetail(next);
+      })
+      .catch(() => {
+        if (isMounted) setErrorCode('server_error');
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [project.id]);
+
   // When selected candidate changes, fetch its traceability if not yet cached
   useEffect(() => {
     if (!selectedCandidateId) return;
@@ -140,6 +187,47 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     }, 2000);
   }, [project.id, loadReviewData]);
 
+  const bodyVersions = detail.documentVersions.filter(
+    (v) => v.kind === 'report_body' || v.kind === undefined,
+  );
+  const plateVersions = detail.documentVersions.filter((v) => v.kind === 'plate_book');
+  const drawingVersions = detail.documentVersions.filter((v) => v.kind === 'drawing_book');
+
+  useEffect(() => {
+    if (!bodyVersionId && bodyVersions.length > 0) {
+      setBodyVersionId(bodyVersions[0].id);
+    }
+  }, [bodyVersions, bodyVersionId]);
+
+  const pollRunStatus = useCallback(
+    async (runId: string) => {
+      let attempts = 0;
+      const maxAttempts = 30;
+      const tick = async () => {
+        attempts += 1;
+        try {
+          const next = await getProject(project.id);
+          setDetail(next);
+          const run = next.analysisRuns.find((r) => r.id === runId);
+          if (run) {
+            setRunStatus(run.status);
+            if (run.status === 'completed' || run.status === 'failed') {
+              void loadReviewData();
+              return;
+            }
+          }
+        } catch {
+          // transient failure; keep polling
+        }
+        if (attempts < maxAttempts) {
+          pollTimer.current = window.setTimeout(tick, 2000);
+        }
+      };
+      await tick();
+    },
+    [project.id, loadReviewData],
+  );
+
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || uploading) return;
@@ -147,7 +235,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     setUploading(true);
     setErrorCode(null);
     try {
-      const accepted = await uploadDocument(project.id, file);
+      const accepted = await uploadDocument(project.id, file, uploadKind, uploadStage);
       setDetail((current) => ({
         ...current,
         documentVersions: [
@@ -158,7 +246,8 @@ export function ProjectDetailPage({ project, onBack }: Props) {
             originalName: file.name,
             mimeType: file.type || 'application/octet-stream',
             sizeBytes: file.size,
-            stage: 'source',
+            stage: uploadStage,
+            kind: uploadKind,
           },
         ],
         analysisRuns: [
@@ -183,21 +272,34 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   }
 
   async function handleTriggerProofread() {
+    if (!bodyVersionId) return;
     setErrorCode(null);
     setRunningProofread(true);
+    setRunStatus('queued');
     try {
       const res = await triggerProofreadingRun(project.id, {
+        body_version_id: bodyVersionId,
+        plate_version_id: plateVersionId || null,
+        drawing_version_id: drawingVersionId || null,
         enable_vlm: enableVlm,
         enable_ai_review: enableAiReview,
-        version_stage: versionStage,
       });
       setRunResult(res);
-      await loadReviewData();
+      setRunStatus(res.status ?? 'queued');
+      const runId = res.run_id ?? res.runId;
+      if (runId) {
+        void pollRunStatus(runId);
+      }
     } catch (err) {
       setErrorCode(err instanceof Error ? err.message : '교정 분석 실행 중 오류가 발생했습니다.');
     } finally {
       setRunningProofread(false);
     }
+  }
+
+  function handleRunSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void handleTriggerProofread();
   }
 
   function handleDecisionSubmitted(newDecision: ReviewDecision) {
@@ -301,16 +403,45 @@ export function ProjectDetailPage({ project, onBack }: Props) {
             <p className="project-code-tag">코드: {project.internalCode}</p>
           )}
         </div>
-        <label className={`file-button ${uploading ? 'disabled' : ''}`}>
-          <span>{uploading ? '업로드 중…' : '원본 PDF 선택'}</span>
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            aria-label="원본 파일"
-            onChange={chooseFile}
-            disabled={uploading}
-          />
-        </label>
+        <div className="upload-form">
+          <div className="upload-field">
+            <label htmlFor="upload-kind">문서 종류</label>
+            <select
+              id="upload-kind"
+              value={uploadKind}
+              onChange={(e) => setUploadKind(e.target.value)}
+              disabled={uploading}
+            >
+              <option value="report_body">본문</option>
+              <option value="plate_book">도판</option>
+              <option value="drawing_book">도면</option>
+            </select>
+          </div>
+          <div className="upload-field">
+            <label htmlFor="upload-stage">교정 단계</label>
+            <select
+              id="upload-stage"
+              value={uploadStage}
+              onChange={(e) => setUploadStage(e.target.value)}
+              disabled={uploading}
+            >
+              <option value="1차">1차</option>
+              <option value="2차">2차</option>
+              <option value="3차">3차</option>
+              <option value="final">최종</option>
+            </select>
+          </div>
+          <label className={`file-button ${uploading ? 'disabled' : ''}`}>
+            <span>{uploading ? '업로드 중…' : '원본 PDF 선택'}</span>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              aria-label="원본 파일"
+              onChange={chooseFile}
+              disabled={uploading}
+            />
+          </label>
+        </div>
       </div>
 
       {errorCode && <p className="error-code">{errorCode}</p>}
@@ -322,53 +453,100 @@ export function ProjectDetailPage({ project, onBack }: Props) {
             <p className="section-label">AI & GRAPH PROOFREADING</p>
             <h2 id="proofread-panel-title">보고서 교정 분석 실행 및 현황</h2>
           </div>
-          <div className="proofread-controls">
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={enableVlm}
-                onChange={(e) => setEnableVlm(e.target.checked)}
-              />
-              <span>VLM 비전 검증</span>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={enableAiReview}
-                onChange={(e) => setEnableAiReview(e.target.checked)}
-              />
-              <span>AI 지능형 심층 분석</span>
-            </label>
-            <select
-              className="stage-select"
-              value={versionStage}
-              onChange={(e) => setVersionStage(e.target.value)}
-              aria-label="버전 단계"
-            >
-              <option value="1차">1차 교정본</option>
-              <option value="2차">2차 교정본</option>
-              <option value="최종">최종 감수본</option>
-            </select>
-            <button
-              type="button"
-              className="btn-trigger-run"
-              onClick={handleTriggerProofread}
-              disabled={runningProofread}
-            >
-              {runningProofread ? '교정 분석 실행 중...' : '▶ 교정 분석 시작'}
-            </button>
-          </div>
+          <form className="run-form" onSubmit={handleRunSubmit}>
+            <div className="run-form-fields">
+              <div className="run-field">
+                <label htmlFor="run-body-version">본문 버전</label>
+                <select
+                  id="run-body-version"
+                  value={bodyVersionId}
+                  onChange={(e) => setBodyVersionId(e.target.value)}
+                  aria-label="본문 버전"
+                >
+                  {bodyVersions.length === 0 && <option value="">본문 버전 없음</option>}
+                  {bodyVersions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {versionLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="run-field">
+                <label htmlFor="run-plate-version">도판 버전 (선택)</label>
+                <select
+                  id="run-plate-version"
+                  value={plateVersionId}
+                  onChange={(e) => setPlateVersionId(e.target.value)}
+                  aria-label="도판 버전"
+                >
+                  <option value="">선택 안 함</option>
+                  {plateVersions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {versionLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="run-field">
+                <label htmlFor="run-drawing-version">도면 버전 (선택)</label>
+                <select
+                  id="run-drawing-version"
+                  value={drawingVersionId}
+                  onChange={(e) => setDrawingVersionId(e.target.value)}
+                  aria-label="도면 버전"
+                >
+                  <option value="">선택 안 함</option>
+                  {drawingVersions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {versionLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="run-toggles">
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={enableVlm}
+                    onChange={(e) => setEnableVlm(e.target.checked)}
+                  />
+                  <span>VLM 비전 검증</span>
+                </label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={enableAiReview}
+                    onChange={(e) => setEnableAiReview(e.target.checked)}
+                  />
+                  <span>AI 지능형 심층 분석</span>
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="btn-trigger-run"
+                disabled={runningProofread || !bodyVersionId}
+              >
+                {runningProofread ? '교정 분석 실행 중...' : '▶ 새 검수 실행'}
+              </button>
+            </div>
+          </form>
         </div>
 
         {runResult && (
           <div className="run-result-banner">
-            <strong>✓ 교정 분석 완료 (Run ID: {runResult.run_id || runResult.runId})</strong>
-            <div className="run-stats-pills">
-              <span>파싱 페이지: {runResult.pages_parsed ?? runResult.pagesParsed ?? 0}</span>
-              <span>도판 객체 연계: {runResult.objects_resolved ?? runResult.objectsResolved ?? 0}</span>
-              <span>참조 해결: {runResult.references_resolved ?? runResult.referencesResolved ?? 0}</span>
-              <span>생성된 교정 후보: {runResult.candidates_count ?? runResult.candidatesCount ?? 0}건</span>
+            <div className="run-result-head">
+              <strong>검수 실행 (Run ID: {runResult.run_id || runResult.runId})</strong>
+              <span className={`status status-${runStatus ?? 'queued'}`}>
+                {runStatus ?? 'queued'}
+              </span>
             </div>
+            {runResult.warnings && runResult.warnings.length > 0 && (
+              <ul className="run-warnings">
+                {runResult.warnings.map((warning, idx) => (
+                  <li key={idx}>{warning}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -385,6 +563,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                 <article className="run-card" key={version.id}>
                   <div>
                     <strong>{version.originalName}</strong>
+                    <span className="version-kind-label">{versionLabel(version)}</span>
                     <span>{Math.max(1, Math.ceil(version.sizeBytes / 1024))} KB</span>
                   </div>
                   <div className="status-column">
@@ -531,7 +710,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
             <p>조건에 일치하는 교정 후보가 없습니다.</p>
             {candidates.length === 0 && (
               <p className="muted">
-                상단의 <strong>[교정 분석 시작]</strong> 버튼을 눌러 PDF 원본을 분석하세요.
+                상단의 <strong>[새 검수 실행]</strong> 버튼을 눌러 PDF 원본을 분석하세요.
               </p>
             )}
           </div>

@@ -11,6 +11,8 @@ export type DocumentVersion = {
   mimeType: string;
   sizeBytes: number;
   stage: string;
+  /** report_body | plate_book | drawing_book; tracked locally because the API omits it. */
+  kind?: string;
 };
 
 export type AnalysisRun = {
@@ -180,12 +182,6 @@ export type RunTriggerPayload = {
   plate_version_id?: string | null;
   drawingVersionId?: string | null;
   drawing_version_id?: string | null;
-  bodyPdfPath?: string | null;
-  body_pdf_path?: string | null;
-  platePdfPath?: string | null;
-  plate_pdf_path?: string | null;
-  drawingPdfPath?: string | null;
-  drawing_pdf_path?: string | null;
   enableVlm?: boolean;
   enable_vlm?: boolean;
   enableAiReview?: boolean;
@@ -210,6 +206,7 @@ export type RunTriggerResponse = {
   candidates_count?: number;
   summary?: Record<string, unknown>;
   errors?: string[];
+  warnings?: string[];
 };
 
 export type ReviewDecisionPayload = {
@@ -293,11 +290,14 @@ export async function createProject(name: string): Promise<Project> {
 export async function uploadDocument(
   projectId: string,
   file: File,
+  kind: string,
+  stage: string,
 ): Promise<UploadAccepted> {
   const body = new FormData();
   body.append('file', file);
+  const params = new URLSearchParams({ kind, stage });
   const response = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/documents?stage=source`,
+    `/api/projects/${encodeURIComponent(projectId)}/documents?${params.toString()}`,
     { method: 'POST', body },
   );
   return decode<UploadAccepted>(response);
@@ -321,9 +321,6 @@ export async function triggerProofreadingRun(
         body_version_id: payload.body_version_id ?? payload.bodyVersionId ?? null,
         plate_version_id: payload.plate_version_id ?? payload.plateVersionId ?? null,
         drawing_version_id: payload.drawing_version_id ?? payload.drawingVersionId ?? null,
-        body_pdf_path: payload.body_pdf_path ?? payload.bodyPdfPath ?? null,
-        plate_pdf_path: payload.plate_pdf_path ?? payload.platePdfPath ?? null,
-        drawing_pdf_path: payload.drawing_pdf_path ?? payload.drawingPdfPath ?? null,
         enable_vlm: payload.enable_vlm ?? payload.enableVlm ?? true,
         enable_ai_review: payload.enable_ai_review ?? payload.enableAiReview ?? true,
         version_stage: payload.version_stage ?? payload.versionStage ?? '1차',

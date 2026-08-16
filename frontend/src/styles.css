@@ -326,6 +326,91 @@ code {
   border-radius: 4px;
 }
 
+.upload-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.upload-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.upload-field label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334036;
+}
+
+.upload-field select {
+  padding: 8px 10px;
+  border: 1px solid #9fa89f;
+  border-radius: 4px;
+  background: #fffefb;
+  font-size: 0.88rem;
+}
+
+.run-form-fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.run-field label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334036;
+}
+
+.run-field select {
+  min-width: 150px;
+  padding: 8px 10px;
+  border: 1px solid #9fa89f;
+  border-radius: 4px;
+  background: #fffefb;
+  font-size: 0.88rem;
+}
+
+.run-toggles {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+.run-result-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.run-warnings {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #7e411b;
+  font-size: 0.86rem;
+}
+
+.run-warnings li {
+  margin: 2px 0;
+}
+
+.version-kind-label {
+  font-weight: 700;
+  color: #9a5426;
+}
+
 /* =========================================================================
    Metrics Overview Section
    ========================================================================= */
