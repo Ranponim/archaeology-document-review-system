@@ -11,7 +11,7 @@ from app.graph.project_repository import (
     ProjectNotFoundError,
     ProjectRepository,
 )
-from app.graph.schema import CONSTRAINTS, ensure_schema
+from app.graph.schema import CONSTRAINTS, INDEXES, ensure_schema
 from app.jobs.ingest import ExtractionMetadata
 
 
@@ -229,7 +229,7 @@ def test_ensure_schema_targets_the_explicit_test_database():
 
     ensure_schema(driver, database="isolated_test")
 
-    assert driver.query_count == len(CONSTRAINTS) + 2
+    assert driver.query_count == len(CONSTRAINTS) + len(INDEXES)
 
 
 def test_project_repository_targets_the_explicit_test_database(stored_pdf):

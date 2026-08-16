@@ -10,6 +10,25 @@ CONSTRAINTS = (
     ("caption_id_unique", "Caption"),
     ("correction_candidate_id_unique", "CorrectionCandidate"),
     ("evidence_id_unique", "Evidence"),
+    ("reference_id_unique", "Reference"),
+    ("plate_id_unique", "Plate"),
+    ("plate_panel_id_unique", "PlatePanel"),
+    ("drawing_id_unique", "Drawing"),
+    ("drawing_region_id_unique", "DrawingRegion"),
+    ("archaeology_object_id_unique", "ArchaeologyObject"),
+    ("original_asset_id_unique", "OriginalAsset"),
+    ("review_decision_id_unique", "ReviewDecision"),
+)
+
+INDEXES = (
+    ("document_version_sha256", "DocumentVersion", ("sha256",)),
+    ("correction_candidate_category", "CorrectionCandidate", ("rule_category",)),
+    ("plate_number", "Plate", ("number",)),
+    ("drawing_number", "Drawing", ("number",)),
+    ("drawing_region_number", "DrawingRegion", ("number",)),
+    ("archaeology_object_canonical_name", "ArchaeologyObject", ("canonical_name",)),
+    ("reference_type_number", "Reference", ("ref_type", "number")),
+    ("evidence_kind", "Evidence", ("kind",)),
 )
 
 
@@ -21,13 +40,10 @@ def ensure_schema(driver: Driver, database: str | None = None) -> None:
             f"FOR (node:{label}) REQUIRE node.id IS UNIQUE",
             **query_config,
         )
-    driver.execute_query(
-        "CREATE INDEX document_version_sha256 IF NOT EXISTS "
-        "FOR (node:DocumentVersion) ON (node.sha256)",
-        **query_config,
-    )
-    driver.execute_query(
-        "CREATE INDEX correction_candidate_category IF NOT EXISTS "
-        "FOR (node:CorrectionCandidate) ON (node.rule_category)",
-        **query_config,
-    )
+    for name, label, props in INDEXES:
+        props_str = ", ".join(f"node.{p}" for p in props)
+        driver.execute_query(
+            f"CREATE INDEX {name} IF NOT EXISTS "
+            f"FOR (node:{label}) ON ({props_str})",
+            **query_config,
+        )

@@ -99,7 +99,10 @@ class ReviewRepository:
         )
 
     def save_candidates(
-        self, project_id: str, candidates: list[CorrectionCandidateData]
+        self,
+        project_id: str,
+        candidates: list[CorrectionCandidateData],
+        analysis_run_id: str | None = None,
     ) -> None:
         if self._driver is None:
             return
@@ -133,3 +136,108 @@ class ReviewRepository:
             candidates=cand_params,
             **self._query_config(),
         )
+
+        if analysis_run_id:
+            link_run_cypher = """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            UNWIND $candidate_ids AS cid
+            MATCH (cand:CorrectionCandidate {id: cid})
+            MERGE (run)-[:PRODUCED]->(cand)
+            """
+            self._driver.execute_query(
+                link_run_cypher,
+                analysis_run_id=analysis_run_id,
+                candidate_ids=[c.candidate_id for c in candidates],
+                **self._query_config(),
+            )
+
+    def save_analysis_run(
+        self,
+        project_id: str,
+        run_id: str,
+        status: str = "pending",
+        model: str | None = None,
+        step: str | None = None,
+    ) -> None:
+        if self._driver is None:
+            return
+
+        cypher = """
+        MATCH (proj:Project {id: $project_id})
+        MERGE (run:AnalysisRun {id: $run_id})
+        SET run.status = $status,
+            run.model = $model,
+            run.step = $step
+        MERGE (proj)-[:HAS_RUN]->(run)
+        """
+        self._driver.execute_query(
+            cypher,
+            project_id=project_id,
+            run_id=run_id,
+            status=status,
+            model=model,
+            step=step,
+            **self._query_config(),
+        )
+
+    def save_review_decision(
+        self,
+        decision_id: str,
+        candidate_id: str,
+        decision_status: str,
+        note: str = "",
+        reviewer: str = "",
+        previous_decision_id: str | None = None,
+    ) -> None:
+        if self._driver is None:
+            return
+
+        cypher = """
+        MATCH (cand:CorrectionCandidate {id: $candidate_id})
+        MERGE (dec:ReviewDecision {id: $decision_id})
+        SET dec.decision_status = $decision_status,
+            dec.note = $note,
+            dec.reviewer = $reviewer
+        MERGE (cand)-[:HAS_DECISION]->(dec)
+        WITH dec
+        WHERE $previous_decision_id IS NOT NULL
+        OPTIONAL MATCH (prev:ReviewDecision {id: $previous_decision_id})
+        FOREACH (_ IN CASE WHEN prev IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (dec)-[:SUPERSEDES]->(prev)
+        )
+        """
+        self._driver.execute_query(
+            cypher,
+            decision_id=decision_id,
+            candidate_id=candidate_id,
+            decision_status=decision_status,
+            note=note,
+            reviewer=reviewer,
+            previous_decision_id=previous_decision_id,
+            **self._query_config(),
+        )
+
+    def get_candidates(self, project_id: str) -> list[dict[str, Any]]:
+        if self._driver is None:
+            return []
+
+        cypher = """
+        MATCH (proj:Project {id: $project_id})-[:HAS_CANDIDATE]->(cand:CorrectionCandidate)
+        OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
+        OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
+        RETURN properties(cand) AS candidate,
+               properties(ev) AS evidence,
+               collect(DISTINCT properties(dec)) AS decisions
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            project_id=project_id,
+            **self._query_config(),
+        )
+        results = []
+        for row in records:
+            cand_dict = dict(row["candidate"]) if row.get("candidate") else {}
+            cand_dict["evidence"] = dict(row["evidence"]) if row.get("evidence") else None
+            cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or [])]
+            results.append(cand_dict)
+        return results

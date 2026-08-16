@@ -16,6 +16,7 @@ from app.graph.project_repository import (
     ProjectNotFoundError,
     ProjectRepository,
 )
+from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
 from app.services.file_store import FileStore
 
@@ -56,6 +57,7 @@ def create_app(
             driver = create_driver()
             app.state.neo4j_driver = driver
             app.state.project_repository = ProjectRepository(driver)
+            ensure_schema(driver)
         yield
         driver = getattr(app.state, "neo4j_driver", None)
         if driver is not None:
