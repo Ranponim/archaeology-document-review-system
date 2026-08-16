@@ -1,7 +1,24 @@
 from dataclasses import dataclass
 import difflib
+from enum import Enum
 import re
 from app.domain.document_structure import ParsedPage
+
+
+class AlignmentStatus(str, Enum):
+    EXACT = "exact"
+    PROBABLE = "probable"
+    MANUAL_REVIEW = "manual_review"
+    UNMATCHED = "unmatched"
+
+
+@dataclass(frozen=True, slots=True)
+class AlignedPagePair:
+    page_a: ParsedPage | None
+    page_b: ParsedPage | None
+    similarity_score: float
+    status: AlignmentStatus | str
+    method: str = "dtw_weighted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,9 +27,33 @@ class AlignedPageRow:
     pages: dict[str, ParsedPage | None]
     similarity_score: float
     sequence_matcher_ratio: float
+    status: AlignmentStatus | str = AlignmentStatus.UNMATCHED
+
 
 
 class PageAligner:
+    EXACT_THRESHOLD: float = 0.85
+    PROBABLE_THRESHOLD: float = 0.60
+    MANUAL_REVIEW_THRESHOLD: float = 0.30
+
+    @classmethod
+    def classify_status(
+        cls,
+        similarity: float,
+        has_gap: bool = False,
+        exact_threshold: float = EXACT_THRESHOLD,
+        probable_threshold: float = PROBABLE_THRESHOLD,
+        manual_review_threshold: float = MANUAL_REVIEW_THRESHOLD,
+    ) -> AlignmentStatus:
+        """Classify alignment status based on similarity score and gap presence."""
+        if has_gap or similarity < manual_review_threshold:
+            return AlignmentStatus.UNMATCHED
+        if similarity >= exact_threshold:
+            return AlignmentStatus.EXACT
+        if similarity >= probable_threshold:
+            return AlignmentStatus.PROBABLE
+        return AlignmentStatus.MANUAL_REVIEW
+
     @staticmethod
     def _clean_for_ngrams(text: str) -> str:
         return re.sub(r"\s+", "", text)
@@ -247,16 +288,27 @@ class PageAligner:
                         w_sims.append(self.calculate_weighted_similarity(t_a, t_b))
                         s_sims.append(self.calculate_sequence_matcher_ratio(t_a, t_b))
 
+            has_gap = any(row_pages.get(st) is None for st in stages)
+
             if w_sims:
                 avg_w = sum(w_sims) / len(w_sims)
                 avg_s = sum(s_sims) / len(s_sims)
+                min_w = min(w_sims)
+                if min_w < self.MANUAL_REVIEW_THRESHOLD:
+                    status = AlignmentStatus.UNMATCHED
+                elif has_gap:
+                    status = AlignmentStatus.UNMATCHED
+                else:
+                    status = self.classify_status(avg_w, has_gap=has_gap)
             else:
                 if len(stages) <= 1:
                     avg_w = 1.0
                     avg_s = 1.0
+                    status = AlignmentStatus.EXACT
                 else:
                     avg_w = 0.0
                     avg_s = 0.0
+                    status = AlignmentStatus.UNMATCHED
 
             rows.append(
                 AlignedPageRow(
@@ -264,10 +316,68 @@ class PageAligner:
                     pages=row_pages,
                     similarity_score=avg_w,
                     sequence_matcher_ratio=avg_s,
+                    status=status,
                 )
             )
 
         return rows
+
+    def align_page_pair(
+        self,
+        page_a: ParsedPage | None,
+        page_b: ParsedPage | None,
+        method: str = "weighted_similarity",
+    ) -> AlignedPagePair:
+        """Aligns a single pair of pages with similarity score and status."""
+        if page_a is None or page_b is None:
+            return AlignedPagePair(
+                page_a=page_a,
+                page_b=page_b,
+                similarity_score=0.0,
+                status=AlignmentStatus.UNMATCHED,
+                method=method,
+            )
+        sim = self.calculate_weighted_similarity(
+            page_a.normalized_text, page_b.normalized_text
+        )
+        status = self.classify_status(sim)
+        return AlignedPagePair(
+            page_a=page_a,
+            page_b=page_b,
+            similarity_score=sim,
+            status=status,
+            method=method,
+        )
+
+    def align_pairwise(
+        self,
+        pages_a: list[ParsedPage],
+        pages_b: list[ParsedPage],
+        gap_cost: float = 1.0,
+        method: str = "dtw_weighted",
+    ) -> list[AlignedPagePair]:
+        """Aligns two lists of pages using DTW and returns a list of AlignedPagePair."""
+        pairs = self._align_pairwise_dtw(pages_a, pages_b, gap_cost=gap_cost)
+        result: list[AlignedPagePair] = []
+        for p_a, p_b in pairs:
+            if p_a is None or p_b is None:
+                sim = 0.0
+                status = AlignmentStatus.UNMATCHED
+            else:
+                sim = self.calculate_weighted_similarity(
+                    p_a.normalized_text, p_b.normalized_text
+                )
+                status = self.classify_status(sim)
+            result.append(
+                AlignedPagePair(
+                    page_a=p_a,
+                    page_b=p_b,
+                    similarity_score=sim,
+                    status=status,
+                    method=method,
+                )
+            )
+        return result
 
     def find_best_matching_page(
         self, target_page: ParsedPage, candidate_pages: list[ParsedPage]
