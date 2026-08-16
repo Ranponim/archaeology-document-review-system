@@ -643,6 +643,14 @@ code {
   background: #9c322b;
 }
 
+.status-dot-modified {
+  background: #b6851a;
+}
+
+.status-dot-deferred {
+  background: #5a6b7a;
+}
+
 .cand-cat {
   font-weight: 700;
   color: #9a5426;
@@ -761,6 +769,16 @@ code {
 .status-badge.status-rejected {
   background: #fae1de;
   color: #8c231c;
+}
+
+.status-badge.status-modified {
+  background: #fdf0cf;
+  color: #7a5a08;
+}
+
+.status-badge.status-deferred {
+  background: #e3e9ef;
+  color: #3d4d5c;
 }
 
 .status-badge.status-pending_review {
@@ -1112,6 +1130,12 @@ code {
   border-color: #9a5426;
 }
 
+.btn-defer.active {
+  background: #5a6b7a;
+  color: #ffffff;
+  border-color: #5a6b7a;
+}
+
 .btn-primary-action {
   padding: 12px 24px;
   font-size: 0.94rem;
@@ -1194,6 +1218,13 @@ code {
   border-radius: 4px;
   background: #faeedc;
   color: #8f4d1c;
+}
+
+.badge-def {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #e3e9ef;
+  color: #3d4d5c;
 }
 
 .timeline-content {

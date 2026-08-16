@@ -155,16 +155,7 @@ class ReviewDecisionRequest(ApiModel):
     @classmethod
     def decision_valid(cls, v: str) -> str:
         s = v.strip().lower()
-        if s not in (
-            "accept",
-            "accepted",
-            "reject",
-            "rejected",
-            "modify",
-            "modified",
-            "confirmed",
-            "layout_noise",
-        ):
+        if s not in ("accepted", "rejected", "modified", "deferred"):
             raise ValueError(f"Invalid decision: {v}")
         return s
 
@@ -183,6 +174,9 @@ class CandidateResponse(ApiModel):
     confidence: float = 1.0
     severity: str = "medium"
     decisions: list[ReviewDecisionResponse | dict[str, Any]] = Field(default_factory=list)
+    latest_decision: ReviewDecisionResponse | dict[str, Any] | None = Field(
+        default=None, alias="latestDecision"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -217,6 +211,9 @@ class TraceabilityResponse(ApiModel):
     bbox: list[float] | tuple[float, float, float, float] | None = None
     source_sha256: str | None = Field(default=None, alias="sourceSha256")
     decisions: list[ReviewDecisionResponse | dict[str, Any]] = Field(default_factory=list)
+    latest_decision: ReviewDecisionResponse | dict[str, Any] | None = Field(
+        default=None, alias="latestDecision"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -272,6 +269,7 @@ class ReviewMetricsResponse(ApiModel):
     accepted_candidates: int = Field(default=0, alias="acceptedCandidates")
     rejected_candidates: int = Field(default=0, alias="rejectedCandidates")
     modified_candidates: int = Field(default=0, alias="modifiedCandidates")
+    deferred_candidates: int = Field(default=0, alias="deferredCandidates")
     by_category: dict[str, int] = Field(default_factory=dict, alias="byCategory")
     by_severity: dict[str, int] = Field(default_factory=dict, alias="bySeverity")
     by_status: dict[str, int] = Field(default_factory=dict, alias="byStatus")

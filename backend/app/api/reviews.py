@@ -250,11 +250,14 @@ async def record_candidate_decision(
     )
 
     updated_cand = await run_in_threadpool(review_repository.get_candidate, candidate_id)
-    prev_id = None
     if updated_cand and updated_cand.get("decisions"):
         for d in updated_cand["decisions"]:
             if d.get("id") == decision_id:
-                return ReviewDecisionResponse.model_validate(d)
+                record = dict(d)
+                record.setdefault("candidate_id", candidate_id)
+                record.setdefault("decision", record.get("decision_status"))
+                record.setdefault("note", record.get("note") or note)
+                return ReviewDecisionResponse.model_validate(record)
         latest = updated_cand["decisions"][-1]
         prev_id = latest.get("previous_decision_id")
 

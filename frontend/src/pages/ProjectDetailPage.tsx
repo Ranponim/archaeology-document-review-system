@@ -97,7 +97,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   const loadReviewData = useCallback(async () => {
     try {
       const filters: CandidateFilters = {};
-      if (filterStatus !== 'all') filters.status = filterStatus;
+      if (filterStatus === 'pending_review') filters.status = filterStatus;
       if (filterSeverity !== 'all') filters.severity = filterSeverity;
       if (filterCategory !== 'all') filters.rule_category = filterCategory;
 
@@ -303,20 +303,14 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   }
 
   function handleDecisionSubmitted(newDecision: ReviewDecision) {
-    // Update local candidate list
     setCandidates((prev) =>
       prev.map((c) => {
         if (c.id === newDecision.candidate_id || c.id === newDecision.candidateId) {
-          const updatedStatus =
-            newDecision.decision_status === 'reject' || newDecision.decision === 'reject'
-              ? 'layout_noise'
-              : 'confirmed';
-          const updatedProposed = newDecision.modified_text || c.proposed_text || c.proposedText;
           return {
             ...c,
-            status: updatedStatus,
-            proposed_text: updatedProposed,
+            proposed_text: newDecision.modified_text || c.proposed_text || c.proposedText,
             decisions: [newDecision, ...(c.decisions || [])],
+            latest_decision: newDecision,
           };
         }
         return c;
@@ -334,6 +328,14 @@ export function ProjectDetailPage({ project, onBack }: Props) {
 
   // Filter candidates by search query
   const filteredCandidates = candidates.filter((c) => {
+    const latest =
+      c.latest_decision ?? c.latestDecision ?? null;
+    const outcome = latest?.decision_status ?? latest?.decision ?? null;
+    if (filterStatus === 'accepted' && outcome !== 'accepted') return false;
+    if (filterStatus === 'rejected' && outcome !== 'rejected') return false;
+    if (filterStatus === 'modified' && outcome !== 'modified') return false;
+    if (filterStatus === 'deferred' && outcome !== 'deferred') return false;
+    if (filterStatus === 'pending_review' && outcome !== null) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     const orig = (c.original_text || c.originalText || '').toLowerCase();
@@ -359,18 +361,25 @@ export function ProjectDetailPage({ project, onBack }: Props) {
 
   // Metrics computation helpers
   const totalCount = metrics?.total_candidates ?? metrics?.totalCandidates ?? candidates.length;
+  const decisionCounts = candidates.reduce(
+    (acc, c) => {
+      const latest = c.latest_decision ?? c.latestDecision ?? null;
+      const outcome = latest?.decision_status ?? latest?.decision ?? null;
+      if (outcome === 'accepted') acc.accepted += 1;
+      else if (outcome === 'rejected') acc.rejected += 1;
+      else if (outcome === 'modified') acc.modified += 1;
+      else if (outcome === 'deferred') acc.deferred += 1;
+      else acc.pending += 1;
+      return acc;
+    },
+    { pending: 0, accepted: 0, rejected: 0, modified: 0, deferred: 0 },
+  );
   const pendingCount =
-    metrics?.pending_candidates ??
-    metrics?.pendingCandidates ??
-    candidates.filter((c) => c.status === 'pending_review' || c.status === 'unresolved').length;
+    metrics?.pending_candidates ?? metrics?.pendingCandidates ?? decisionCounts.pending;
   const acceptedCount =
-    metrics?.accepted_candidates ??
-    metrics?.acceptedCandidates ??
-    candidates.filter((c) => c.status === 'confirmed' || c.status === 'accepted').length;
+    metrics?.accepted_candidates ?? metrics?.acceptedCandidates ?? decisionCounts.accepted;
   const rejectedCount =
-    metrics?.rejected_candidates ??
-    metrics?.rejectedCandidates ??
-    candidates.filter((c) => c.status === 'layout_noise' || c.status === 'rejected').length;
+    metrics?.rejected_candidates ?? metrics?.rejectedCandidates ?? decisionCounts.rejected;
   const completionRate =
     metrics?.completion_rate ??
     metrics?.completionRate ??
@@ -658,8 +667,10 @@ export function ProjectDetailPage({ project, onBack }: Props) {
             >
               <option value="all">전체 상태</option>
               <option value="pending_review">검수 대기</option>
-              <option value="confirmed">승인 완료</option>
-              <option value="layout_noise">반려 (노이즈)</option>
+              <option value="accepted">승인 완료</option>
+              <option value="rejected">반려</option>
+              <option value="modified">수정 승인</option>
+              <option value="deferred">보류</option>
             </select>
           </div>
 

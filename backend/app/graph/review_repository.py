@@ -12,6 +12,61 @@ from app.graph.project_repository import DocumentVersionNotFoundError
 from app.services.page_aligner import AlignedPageRow, AlignmentStatus
 
 
+DECISION_VALUES: tuple[str, ...] = ("accepted", "rejected", "modified", "deferred")
+
+
+def compute_latest_decision(decisions: list[dict]) -> dict | None:
+    """Most recent ReviewDecision by created_at (chronologically last append)."""
+    if not decisions:
+        return None
+    return max(decisions, key=lambda d: str(d.get("created_at") or "") or str(d.get("id") or ""))
+
+
+def compute_review_metrics(project_id: str, candidates: list[dict]) -> dict[str, Any]:
+    """Metrics from the latest ReviewDecision per candidate; the frozen
+    candidate.status (generation status) never counts as an expert outcome."""
+    total = len(candidates)
+    accepted = rejected = modified = deferred = 0
+    by_cat: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    for c in candidates:
+        latest = compute_latest_decision(c.get("decisions") or [])
+        outcome = latest.get("decision_status") if latest else None
+        if outcome == "accepted":
+            accepted += 1
+        elif outcome == "rejected":
+            rejected += 1
+        elif outcome == "modified":
+            modified += 1
+        elif outcome == "deferred":
+            deferred += 1
+        cat = c.get("rule_category") or c.get("category") or "unknown"
+        by_cat[cat] = by_cat.get(cat, 0) + 1
+        st = c.get("status") or "unknown"
+        by_status[st] = by_status.get(st, 0) + 1
+
+    resolved = accepted + rejected + modified + deferred
+    pending = total - resolved
+    completion = resolved / total if total > 0 else 0.0
+    heuristically_accurate = accepted + rejected + modified
+    accuracy = accepted / heuristically_accurate if heuristically_accurate > 0 else 0.0
+
+    return {
+        "project_id": project_id,
+        "total_candidates": total,
+        "pending_candidates": pending,
+        "accepted_candidates": accepted,
+        "rejected_candidates": rejected,
+        "modified_candidates": modified,
+        "deferred_candidates": deferred,
+        "by_category": by_cat,
+        "by_status": by_status,
+        "by_severity": {"high": 0, "medium": total, "low": 0},
+        "completion_rate": completion,
+        "accuracy_rate": accuracy,
+    }
+
+
 class ReviewRepository:
     def __init__(self, driver: Driver | None, database: str | None = None) -> None:
         self._driver = driver
@@ -581,16 +636,21 @@ class ReviewRepository:
         previous_decision_id: str | None = None,
         modified_text: str | None = None,
     ) -> None:
+        """Append an expert ReviewDecision record (Gate F).
+
+        Exactly one of accepted | rejected | modified | deferred. The
+        candidate generation status (pending_review) is never touched;
+        earlier decisions stay queryable and are chained through SUPERSEDES
+        plus a persisted previous_decision_id property.
+        """
         if self._driver is None:
             return
 
-        cand_status = "confirmed"
-        if decision_status in ("reject", "rejected", "layout_noise"):
-            cand_status = "layout_noise"
-        elif decision_status in ("accept", "accepted", "confirmed"):
-            cand_status = "confirmed"
-        elif decision_status in ("modify", "modified"):
-            cand_status = "confirmed"
+        normalized = str(decision_status).strip().lower()
+        if normalized not in DECISION_VALUES:
+            raise ValueError(
+                f"decision_status must be one of {DECISION_VALUES}, got {decision_status!r}"
+            )
 
         cypher = """
         MATCH (cand:CorrectionCandidate {id: $candidate_id})
@@ -603,9 +663,9 @@ class ReviewRepository:
             dec.note = $note,
             dec.reviewer = $reviewer,
             dec.modified_text = $modified_text,
+            dec.previous_decision_id = CASE WHEN prev IS NOT NULL THEN prev.id ELSE null END,
             dec.created_at = toString(datetime())
         MERGE (cand)-[:HAS_DECISION]->(dec)
-        SET cand.status = $candidate_status
         FOREACH (_ IN CASE WHEN $modified_text IS NOT NULL THEN [1] ELSE [] END |
             SET cand.proposed_text = $modified_text
         )
@@ -617,12 +677,11 @@ class ReviewRepository:
             cypher,
             decision_id=decision_id,
             candidate_id=candidate_id,
-            decision_status=decision_status,
+            decision_status=normalized,
             note=note,
             reviewer=reviewer,
             previous_decision_id=previous_decision_id,
             modified_text=modified_text,
-            candidate_status=cand_status,
             **self._query_config(),
         )
 
@@ -654,7 +713,9 @@ class ReviewRepository:
         ev_list = [dict(e) for e in (row.get("evidences") or []) if e]
         cand_dict["evidence"] = ev_list[0] if ev_list else None
         cand_dict["evidences"] = ev_list
-        cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
+        decisions = [dict(d) for d in (row.get("decisions") or []) if d]
+        cand_dict["decisions"] = decisions
+        cand_dict["latest_decision"] = compute_latest_decision(decisions)
         if row.get("obj_id"):
             cand_dict["archaeology_object_id"] = row["obj_id"]
         return cand_dict
@@ -711,6 +772,7 @@ class ReviewRepository:
             "archaeology_object": obj_props,
             "evidence": evidences,
             "decisions": decisions,
+            "latest_decision": compute_latest_decision(decisions),
         }
 
     def get_candidates(
@@ -751,7 +813,9 @@ class ReviewRepository:
             ev_list = [dict(e) for e in (row.get("evidences") or []) if e]
             cand_dict["evidence"] = ev_list[0] if ev_list else None
             cand_dict["evidences"] = ev_list
-            cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
+            decisions = [dict(d) for d in (row.get("decisions") or []) if d]
+            cand_dict["decisions"] = decisions
+            cand_dict["latest_decision"] = compute_latest_decision(decisions)
             if row.get("obj_id"):
                 cand_dict["archaeology_object_id"] = row["obj_id"]
             results.append(cand_dict)
@@ -766,6 +830,7 @@ class ReviewRepository:
                 "accepted_candidates": 0,
                 "rejected_candidates": 0,
                 "modified_candidates": 0,
+                "deferred_candidates": 0,
                 "by_category": {},
                 "by_status": {},
                 "by_severity": {},
@@ -774,41 +839,4 @@ class ReviewRepository:
             }
 
         candidates = self.get_candidates(project_id)
-        total = len(candidates)
-        pending = sum(1 for c in candidates if c.get("status") in ("pending_review", "unresolved"))
-        accepted = sum(1 for c in candidates if c.get("status") in ("confirmed", "accepted"))
-        rejected = sum(1 for c in candidates if c.get("status") in ("layout_noise", "rejected"))
-        modified = sum(
-            1
-            for c in candidates
-            if any(
-                d.get("decision_status") in ("modify", "modified")
-                for d in c.get("decisions", [])
-            )
-        )
-
-        by_cat: dict[str, int] = {}
-        by_status: dict[str, int] = {}
-        for c in candidates:
-            cat = c.get("rule_category") or c.get("category") or "unknown"
-            by_cat[cat] = by_cat.get(cat, 0) + 1
-            st = c.get("status") or "unknown"
-            by_status[st] = by_status.get(st, 0) + 1
-
-        resolved = accepted + rejected + modified
-        completion = (total - pending) / total if total > 0 else 0.0
-        accuracy = accepted / resolved if resolved > 0 else 0.0
-
-        return {
-            "project_id": project_id,
-            "total_candidates": total,
-            "pending_candidates": pending,
-            "accepted_candidates": accepted,
-            "rejected_candidates": rejected,
-            "modified_candidates": modified,
-            "by_category": by_cat,
-            "by_status": by_status,
-            "by_severity": {"high": 0, "medium": total, "low": 0},
-            "completion_rate": completion,
-            "accuracy_rate": accuracy,
-        }
+        return compute_review_metrics(project_id, candidates)

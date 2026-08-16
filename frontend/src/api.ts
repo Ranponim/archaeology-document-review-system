@@ -80,13 +80,15 @@ export type Evidence = {
   };
 };
 
+export type ReviewDecisionValue = 'accepted' | 'rejected' | 'modified' | 'deferred';
+
 export type ReviewDecision = {
   id: string;
   candidateId?: string;
   candidate_id?: string;
-  decisionStatus?: string;
-  decision_status?: string;
-  decision?: string | null;
+  decisionStatus?: ReviewDecisionValue;
+  decision_status?: ReviewDecisionValue;
+  decision?: ReviewDecisionValue | null;
   note?: string;
   rationale?: string | null;
   reviewer?: string;
@@ -132,6 +134,8 @@ export type CorrectionCandidate = {
   confidence?: number;
   severity?: 'low' | 'medium' | 'high' | string;
   decisions?: ReviewDecision[];
+  latestDecision?: ReviewDecision | null;
+  latest_decision?: ReviewDecision | null;
 };
 
 export type CandidateFilters = {
@@ -173,6 +177,8 @@ export type TraceabilityResponse = {
   sourceSha256?: string | null;
   source_sha256?: string | null;
   decisions?: ReviewDecision[];
+  latestDecision?: ReviewDecision | null;
+  latest_decision?: ReviewDecision | null;
 };
 
 export type RunTriggerPayload = {
@@ -210,7 +216,7 @@ export type RunTriggerResponse = {
 };
 
 export type ReviewDecisionPayload = {
-  decision: string;
+  decision: ReviewDecisionValue;
   reviewer: string;
   rationale?: string;
   note?: string;
@@ -231,6 +237,8 @@ export type ReviewMetrics = {
   rejected_candidates?: number;
   modifiedCandidates?: number;
   modified_candidates?: number;
+  deferredCandidates?: number;
+  deferred_candidates?: number;
   byCategory?: Record<string, number>;
   by_category?: Record<string, number>;
   bySeverity?: Record<string, number>;

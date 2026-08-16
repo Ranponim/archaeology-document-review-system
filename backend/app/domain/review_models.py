@@ -10,6 +10,15 @@ RuleCategory = Literal[
     "direction_period_term",
 ]
 
+RuleCategory = Literal[
+    "figure_plate_table_photo_ref",
+    "annotation_resolution",
+    "feature_or_artifact_id",
+    "numeric_value",
+    "site_or_area_name",
+    "direction_period_term",
+]
+
 ChangeType = Literal["added", "deleted", "modified", "moved"]
 ReviewStatus = Literal[
     "confirmed",
@@ -18,6 +27,8 @@ ReviewStatus = Literal[
     "unresolved",
     "pending_review",
 ]
+
+ReviewDecisionValue = Literal["accepted", "rejected", "modified", "deferred"]
 
 EvidenceKind = Literal[
     "text_claim",
@@ -103,6 +114,25 @@ class CorrectionCandidateData:
 class RuleCheckResult:
     candidates: list[CorrectionCandidateData]
     summary: dict[str, dict[str, int] | int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewDecisionData:
+    id: str
+    candidate_id: str
+    decision_status: ReviewDecisionValue | str
+    note: str = ""
+    reviewer: str = ""
+    modified_text: str | None = None
+    previous_decision_id: str | None = None
+    created_at: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.decision_status not in ("accepted", "rejected", "modified", "deferred"):
+            raise ValueError(
+                f"decision_status must be one of accepted|rejected|modified|deferred, "
+                f"got {self.decision_status!r}"
+            )
 
 
 Evidence = EvidenceData

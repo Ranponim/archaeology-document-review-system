@@ -22,7 +22,9 @@ export function SplitViewInspector({
   onDecisionSubmitted,
 }: Props) {
   const [reviewer, setReviewer] = useState('고고학 전문 검수관');
-  const [decisionType, setDecisionType] = useState<'accept' | 'reject' | 'modify'>('accept');
+  const [decisionType, setDecisionType] = useState<
+    'accepted' | 'rejected' | 'modified' | 'deferred'
+  >('accepted');
   const [rationale, setRationale] = useState('');
   const [modifiedText, setModifiedText] = useState(
     candidate.proposed_text ?? candidate.proposedText ?? '',
@@ -37,6 +39,9 @@ export function SplitViewInspector({
   const category = candidate.rule_category ?? candidate.category ?? '일반 검수';
   const severity = candidate.severity ?? 'medium';
   const status = candidate.status ?? 'pending_review';
+  const latestDecision: ReviewDecision | null =
+    candidate.latest_decision ?? candidate.latestDecision ?? null;
+  const latestOutcome = latestDecision?.decision_status ?? latestDecision?.decision ?? null;
 
   // Primary and secondary evidence resolution
   const primaryEvidence: Evidence | undefined =
@@ -117,13 +122,20 @@ export function SplitViewInspector({
       reviewer: reviewer.trim(),
       rationale: rationale.trim(),
       note: rationale.trim(),
-      modified_text: decisionType === 'modify' ? modifiedText.trim() : null,
+      modified_text: decisionType === 'modified' ? modifiedText.trim() : null,
+    };
+
+    const decisionLabel: Record<string, string> = {
+      accepted: '승인',
+      rejected: '반려',
+      modified: '수정',
+      deferred: '보류',
     };
 
     try {
       const result = await submitReviewDecision(projectId, candidate.id, payload);
       setActionSuccess(
-        `검수 판정 [${decisionType === 'accept' ? '승인' : decisionType === 'reject' ? '반려' : '수정'}]이 성공적으로 기록되었습니다.`,
+        `검수 판정 [${decisionLabel[decisionType] ?? decisionType}]이 성공적으로 기록되었습니다.`,
       );
       if (onDecisionSubmitted) {
         onDecisionSubmitted(result);
@@ -149,12 +161,16 @@ export function SplitViewInspector({
       <header className="inspector-header">
         <div className="inspector-title-group">
           <div className="badge-row">
-            <span className={`status-badge status-${status}`}>
-              {status === 'confirmed' || status === 'accepted'
+            <span className={`status-badge status-${latestOutcome ?? status}`}>
+              {latestOutcome === 'accepted'
                 ? '✓ 승인 완료'
-                : status === 'layout_noise' || status === 'rejected'
-                  ? '✕ 반려 (노이즈)'
-                  : '⏳ 검수 대기'}
+                : latestOutcome === 'rejected'
+                  ? '✕ 반려'
+                  : latestOutcome === 'modified'
+                    ? '✎ 수정 승인'
+                    : latestOutcome === 'deferred'
+                      ? '⏸ 보류'
+                      : '⏳ 검수 대기'}
             </span>
             <span className={`severity-tag severity-${severity}`}>
               중요도: {severity.toUpperCase()}
@@ -331,30 +347,37 @@ export function SplitViewInspector({
               <div className="decision-buttons-group">
                 <button
                   type="button"
-                  className={`btn-decision btn-accept ${decisionType === 'accept' ? 'active' : ''}`}
-                  onClick={() => setDecisionType('accept')}
+                  className={`btn-decision btn-accept ${decisionType === 'accepted' ? 'active' : ''}`}
+                  onClick={() => setDecisionType('accepted')}
                 >
                   ✓ 승인 (Accept)
                 </button>
                 <button
                   type="button"
-                  className={`btn-decision btn-reject ${decisionType === 'reject' ? 'active' : ''}`}
-                  onClick={() => setDecisionType('reject')}
+                  className={`btn-decision btn-reject ${decisionType === 'rejected' ? 'active' : ''}`}
+                  onClick={() => setDecisionType('rejected')}
                 >
                   ✕ 반려 (Reject)
                 </button>
                 <button
                   type="button"
-                  className={`btn-decision btn-modify ${decisionType === 'modify' ? 'active' : ''}`}
-                  onClick={() => setDecisionType('modify')}
+                  className={`btn-decision btn-modify ${decisionType === 'modified' ? 'active' : ''}`}
+                  onClick={() => setDecisionType('modified')}
                 >
                   ✎ 수정 승인 (Modify)
+                </button>
+                <button
+                  type="button"
+                  className={`btn-decision btn-defer ${decisionType === 'deferred' ? 'active' : ''}`}
+                  onClick={() => setDecisionType('deferred')}
+                >
+                  ⏸ 보류 (Defer)
                 </button>
               </div>
             </div>
           </div>
 
-          {decisionType === 'modify' && (
+          {decisionType === 'modified' && (
             <div className="form-field full-width">
               <label htmlFor="modified-text-input">수정할 본문 텍스트</label>
               <textarea
@@ -404,10 +427,12 @@ export function SplitViewInspector({
             {decisions.map((dec, index) => (
               <div className="decision-timeline-item" key={dec.id || index}>
                 <div className="timeline-badge">
-                  {dec.decision_status === 'accept' || dec.decisionStatus === 'accept' || dec.decision === 'accept' ? (
+                  {dec.decision_status === 'accepted' || dec.decisionStatus === 'accepted' || dec.decision === 'accepted' ? (
                     <span className="badge-acc">승인</span>
-                  ) : dec.decision_status === 'reject' || dec.decisionStatus === 'reject' || dec.decision === 'reject' ? (
+                  ) : dec.decision_status === 'rejected' || dec.decisionStatus === 'rejected' || dec.decision === 'rejected' ? (
                     <span className="badge-rej">반려</span>
+                  ) : dec.decision_status === 'deferred' || dec.decisionStatus === 'deferred' || dec.decision === 'deferred' ? (
+                    <span className="badge-def">보류</span>
                   ) : (
                     <span className="badge-mod">수정</span>
                   )}

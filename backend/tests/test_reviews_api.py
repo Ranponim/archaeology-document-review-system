@@ -193,6 +193,7 @@ class FakeReviewRepository:
             "evidence": ev_list[0] if ev_list else None,
             "evidences": ev_list,
             "decisions": [],
+            "latest_decision": None,
         }
 
     def get_candidates(
@@ -236,7 +237,9 @@ class FakeReviewRepository:
         if not cand:
             raise KeyError(f"Candidate {candidate_id} not found")
 
-        # Determine previous decision ID if not explicitly provided
+        if decision_status not in ("accepted", "rejected", "modified", "deferred"):
+            raise ValueError(f"decision_status must be one of accepted|rejected|modified|deferred")
+
         prev_id = previous_decision_id
         if prev_id is None and cand["decisions"]:
             prev_id = cand["decisions"][-1]["id"]
@@ -251,19 +254,18 @@ class FakeReviewRepository:
             "reviewer": reviewer,
             "modified_text": modified_text,
             "previous_decision_id": prev_id,
+            "created_at": f"2026-08-17T00:00:0{len(cand['decisions'])}Z",
         }
         self.decisions.append(decision_record)
         cand["decisions"].append(decision_record)
+        if modified_text is not None:
+            cand["proposed_text"] = modified_text
 
-        # Update candidate status according to verdict
-        if decision_status in ("accept", "accepted", "confirmed"):
-            cand["status"] = "confirmed"
-        elif decision_status in ("reject", "rejected", "layout_noise"):
-            cand["status"] = "layout_noise"
-        elif decision_status in ("modify", "modified"):
-            cand["status"] = "confirmed"
-            if modified_text is not None:
-                cand["proposed_text"] = modified_text
+        latest = max(
+            cand["decisions"],
+            key=lambda d: str(d.get("created_at") or "") or str(d.get("id") or ""),
+        )
+        cand["latest_decision"] = latest
 
     def get_candidate_traceability(self, candidate_id: str) -> dict[str, Any]:
         cand = self.candidates.get(candidate_id)
@@ -306,36 +308,42 @@ class FakeReviewRepository:
     def get_metrics(self, project_id: str) -> dict[str, Any]:
         cands = [c for c in self.candidates.values() if c.get("project_id") == project_id]
         total = len(cands)
-        pending = sum(1 for c in cands if c.get("status") in ("pending_review", "unresolved"))
-        confirmed = sum(1 for c in cands if c.get("status") == "confirmed")
-        rejected = sum(1 for c in cands if c.get("status") == "layout_noise")
-        modified = sum(
-            1 for c in cands if any(d.get("decision_status") in ("modify", "modified") for d in c.get("decisions", []))
-        )
-
+        accepted = rejected = modified = deferred = 0
         by_cat: dict[str, int] = {}
         by_status: dict[str, int] = {}
         for c in cands:
+            latest = c.get("latest_decision")
+            outcome = latest.get("decision_status") if latest else None
+            if outcome == "accepted":
+                accepted += 1
+            elif outcome == "rejected":
+                rejected += 1
+            elif outcome == "modified":
+                modified += 1
+            elif outcome == "deferred":
+                deferred += 1
             cat = c.get("rule_category", "unknown")
             by_cat[cat] = by_cat.get(cat, 0) + 1
             st = c.get("status", "unknown")
             by_status[st] = by_status.get(st, 0) + 1
 
-        resolved = confirmed + rejected + modified
-        completion = resolved / total if total > 0 else 0.0
-        accuracy = confirmed / resolved if resolved > 0 else 0.0
+        resolved = accepted + rejected + modified + deferred
+        pending = total - resolved
+        accuracy_denom = accepted + rejected + modified
+        accuracy = accepted / accuracy_denom if accuracy_denom > 0 else 0.0
 
         return {
             "project_id": project_id,
             "total_candidates": total,
             "pending_candidates": pending,
-            "accepted_candidates": confirmed,
+            "accepted_candidates": accepted,
             "rejected_candidates": rejected,
             "modified_candidates": modified,
+            "deferred_candidates": deferred,
             "by_category": by_cat,
             "by_status": by_status,
             "by_severity": {"high": 0, "medium": total, "low": 0},
-            "completion_rate": completion,
+            "completion_rate": resolved / total if total > 0 else 0.0,
             "accuracy_rate": accuracy,
         }
 
@@ -415,7 +423,7 @@ def api_client():
         project_id="p1",
         cand_id="cand_2",
         rule_category="feature_or_artifact_id",
-        status="confirmed",
+        status="pending_review",
         original_text="1호 토광묘",
         proposed_text="2호 토광묘",
         archaeology_object_id="obj_2",
@@ -566,9 +574,8 @@ def test_list_candidates_filter_by_status(api_client):
     resp = client.get("/api/v1/projects/p1/candidates?status=pending_review")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total"] == 1
-    assert data["candidates"][0]["id"] == "cand_1"
-    assert data["candidates"][0]["status"] == "pending_review"
+    assert data["total"] == 2
+    assert all(c["status"] == "pending_review" for c in data["candidates"])
 
 
 def test_list_candidates_filter_by_rule_category(api_client):
@@ -603,7 +610,7 @@ def test_list_candidates_missing_project_returns_404(api_client):
 def test_record_accept_decision(api_client):
     client, rev_repo = api_client
     payload = {
-        "decision": "accept",
+        "decision": "accepted",
         "reviewer": "김고고",
         "rationale": "도면 실측값 대조 결과 30m가 맞음",
     }
@@ -611,44 +618,68 @@ def test_record_accept_decision(api_client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["candidateId"] == "cand_1"
-    assert data["decisionStatus"] in ("accept", "accepted", "confirmed")
+    assert data["decisionStatus"] == "accepted"
     assert data["reviewer"] == "김고고"
 
-    # Verify candidate status updated
+    # Candidate generation status is untouched; the decision appends instead
     cand = rev_repo.get_candidate("cand_1")
-    assert cand["status"] == "confirmed"
+    assert cand["status"] == "pending_review"
+    assert cand["latest_decision"]["decision_status"] == "accepted"
     assert len(cand["decisions"]) == 1
 
 
 def test_record_reject_decision(api_client):
     client, rev_repo = api_client
     payload = {
-        "decision": "reject",
+        "decision": "rejected",
         "reviewer": "박전문가",
-        "rationale": "본문 서술이 정확함, 노이즈 판정",
+        "rationale": "본문 서술이 정확함",
     }
     resp = client.post("/api/v1/projects/p1/candidates/cand_1/decision", json=payload)
     assert resp.status_code == 200
     data = resp.json()
     assert data["candidateId"] == "cand_1"
-    assert data["decisionStatus"] in ("reject", "rejected", "layout_noise")
+    assert data["decisionStatus"] == "rejected"
 
     cand = rev_repo.get_candidate("cand_1")
-    assert cand["status"] == "layout_noise"
+    assert cand["status"] == "pending_review"
+    assert cand["latest_decision"]["decision_status"] == "rejected"
+
+
+def test_record_decision_rejects_layout_noise_as_decision_value(api_client):
+    """layout_noise is a rule classification only — never an expert decision
+    (anti-pattern #11); confirmed is not a decision value either (Gate F)."""
+    client, _ = api_client
+    for bad in ("layout_noise", "confirmed"):
+        resp = client.post(
+            "/api/v1/projects/p1/candidates/cand_1/decision",
+            json={"decision": bad, "reviewer": "박전문가"},
+        )
+        assert resp.status_code == 422, f"{bad} must be rejected as a decision value"
+
+
+def test_record_defer_decision(api_client):
+    client, rev_repo = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/candidates/cand_1/decision",
+        json={"decision": "deferred", "reviewer": "연구원C", "rationale": "추가 자료 확인 필요"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["decisionStatus"] == "deferred"
+    assert rev_repo.get_candidate("cand_1")["latest_decision"]["decision_status"] == "deferred"
 
 
 def test_record_modify_decision_and_audit_trail_supersedes(api_client):
     client, rev_repo = api_client
-    # First decision: accept
     client.post(
         "/api/v1/projects/p1/candidates/cand_1/decision",
-        json={"decision": "accept", "reviewer": "연구원A", "rationale": "1차 수용"},
+        json={"decision": "accepted", "reviewer": "연구원A", "rationale": "1차 수용"},
     )
     first_dec_id = rev_repo.get_candidate("cand_1")["decisions"][0]["id"]
 
-    # Second decision: modify (overrides first decision)
     payload = {
-        "decision": "modify",
+        "decision": "modified",
         "reviewer": "책임연구원B",
         "rationale": "실제 도면 재확인 결과 35m로 최종 수정",
         "modifiedText": "35m",
@@ -656,7 +687,7 @@ def test_record_modify_decision_and_audit_trail_supersedes(api_client):
     resp = client.post("/api/v1/projects/p1/candidates/cand_1/decision", json=payload)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["decisionStatus"] in ("modify", "modified", "confirmed")
+    assert data["decisionStatus"] == "modified"
     assert data["modifiedText"] == "35m"
     assert data["previousDecisionId"] == first_dec_id
 
@@ -664,13 +695,15 @@ def test_record_modify_decision_and_audit_trail_supersedes(api_client):
     assert cand["proposed_text"] == "35m"
     assert len(cand["decisions"]) == 2
     assert cand["decisions"][1]["previous_decision_id"] == first_dec_id
+    assert cand["latest_decision"]["decision_status"] == "modified"
+    assert cand["status"] == "pending_review"
 
 
 def test_record_decision_missing_candidate_returns_404(api_client):
     client, _ = api_client
     resp = client.post(
         "/api/v1/projects/p1/candidates/nonexistent_cand/decision",
-        json={"decision": "accept", "reviewer": "김고고"},
+        json={"decision": "accepted", "reviewer": "김고고"},
     )
     assert resp.status_code == 404
     assert resp.json()["code"] == "input_error"
@@ -703,18 +736,28 @@ def test_get_candidate_traceability_missing_candidate_returns_404(api_client):
 # 5. GET /api/v1/projects/{project_id}/metrics
 # =============================================================================
 
-def test_get_review_metrics(api_client):
+def test_get_review_metrics_uses_latest_decision(api_client):
     client, _ = api_client
     resp = client.get("/api/v1/projects/p1/metrics")
     assert resp.status_code == 200
     data = resp.json()
     assert data["projectId"] == "p1"
     assert data["totalCandidates"] == 2
-    assert data["pendingCandidates"] == 1
-    assert data["acceptedCandidates"] == 1
+    assert data["pendingCandidates"] == 2
+    assert data["acceptedCandidates"] == 0
+    assert data["deferredCandidates"] == 0
     assert "byCategory" in data
     assert "completionRate" in data
     assert "accuracyRate" in data
+
+    client.post(
+        "/api/v1/projects/p1/candidates/cand_1/decision",
+        json={"decision": "accepted", "reviewer": "김고고"},
+    )
+    resp = client.get("/api/v1/projects/p1/metrics")
+    data = resp.json()
+    assert data["acceptedCandidates"] == 1
+    assert data["pendingCandidates"] == 1
 
 
 def test_get_review_metrics_missing_project_returns_404(api_client):
