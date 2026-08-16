@@ -34,6 +34,7 @@ from app.services.asset_matcher import AssetMatcher, ResolutionResult
 from app.services.asset_review_pipeline import AssetReviewPipeline
 from app.services.drawing_parser import DrawingIndex, DrawingParser
 from app.services.object_resolver import ObjectResolver
+from app.services.page_aligner import PageAligner
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateIndex, PlateParser
 from app.services.rule_engine import RuleEngine
@@ -125,6 +126,8 @@ class ProofreadingOrchestrator:
         enable_ai_review: bool = True,
         version_stage: str = "1차",
         project_repo: Any | None = None,
+        version_pages: dict[str, list[ParsedPage]] | None = None,
+        version_ids: dict[str, str] | None = None,
     ) -> OrchestratorResult:
         run_id = analysis_run_id or f"run_{uuid.uuid4().hex[:12]}"
         errors: list[str] = []
@@ -273,6 +276,16 @@ class ProofreadingOrchestrator:
             self.review_repo.save_pages_and_blocks(
                 version_id=body_version_id,
                 pages=parsed_body_pages,
+            )
+
+        # Task 8: persist version lineage (PRECEDES) and page alignment
+        # (ALIGNED_TO) when multiple body versions are available.
+        if version_pages and len(version_pages) >= 2:
+            self.persist_version_alignment(
+                project_id=project_id,
+                version_pages=version_pages,
+                version_ids=version_ids or {},
+                run_id=run_id,
             )
 
         # 3. Parse / Ingest Plate Book
@@ -780,6 +793,35 @@ class ProofreadingOrchestrator:
             errors=errors,
             warnings=warnings,
         )
+
+    def persist_version_alignment(
+        self,
+        project_id: str,
+        version_pages: dict[str, list[ParsedPage]],
+        version_ids: dict[str, str],
+        run_id: str,
+    ) -> None:
+        """Run PageAligner over parsed body versions and persist PRECEDES +
+        ALIGNED_TO into the canonical graph (Task 8).
+
+        version_pages maps stage -> parsed pages; version_ids maps stage ->
+        version_id. A single version persists no ALIGNED_TO rows and does not
+        error (the DocumentVersion node is already persisted by ingest).
+        """
+        if self.review_repo is None:
+            return
+        if not version_pages:
+            return
+
+        aligner = PageAligner()
+        rows = aligner.align_parallel_ranges(version_pages)
+
+        ordered = [
+            (version_ids[st], st) for st in version_pages if st in version_ids
+        ]
+        if len(ordered) >= 2:
+            self.review_repo.save_version_precedes(project_id, ordered)
+        self.review_repo.save_aligned_pages(rows, version_pages, run_id)
 
     def ensure_canonical_graph_ingested(
         self,

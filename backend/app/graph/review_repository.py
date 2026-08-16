@@ -8,6 +8,8 @@ from app.domain.document_structure import (
     make_page_id,
 )
 from app.domain.review_models import CorrectionCandidateData, EvidenceData
+from app.graph.project_repository import DocumentVersionNotFoundError
+from app.services.page_aligner import AlignedPageRow, AlignmentStatus
 
 
 class ReviewRepository:
@@ -151,6 +153,133 @@ class ReviewRepository:
             pages=page_params,
             **self._query_config(),
         )
+
+    def save_version_precedes(
+        self, project_id: str, versions: list[tuple[str, str]]
+    ) -> None:
+        """MERGE (v1:DocumentVersion)-[:PRECEDES]->(v2:DocumentVersion) for the
+        ordered version list (1차→2차→3차).
+
+        Versions are passed as an ordered list of (version_id, stage). Existing
+        DocumentVersion nodes are hard-MATCHed by id; if any node is missing the
+        method fails closed (raises) rather than silently skipping (plan §3
+        Gate G). project_id is accepted for API symmetry; versions are matched
+        by id.
+        """
+        if self._driver is None:
+            return
+        if len(versions) < 2:
+            return
+
+        pairs = [
+            {"from_id": versions[i][0], "to_id": versions[i + 1][0]}
+            for i in range(len(versions) - 1)
+        ]
+        cypher = """
+        UNWIND $pairs AS p
+        MATCH (v1:DocumentVersion {id: p.from_id})
+        MATCH (v2:DocumentVersion {id: p.to_id})
+        MERGE (v1)-[:PRECEDES]->(v2)
+        RETURN count(*) AS matched
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            pairs=pairs,
+            **self._query_config(),
+        )
+        if records and records[0].get("matched") is not None:
+            matched = records[0]["matched"]
+            if matched != len(pairs):
+                raise DocumentVersionNotFoundError(
+                    "One or more DocumentVersion nodes missing for PRECEDES "
+                    f"(expected {len(pairs)} pairs, matched {matched})"
+                )
+
+    def save_aligned_pages(
+        self,
+        rows: list[AlignedPageRow],
+        pages_by_version: dict[str, list[ParsedPage]],
+        run_id: str,
+    ) -> None:
+        """MERGE (pageA)-[:ALIGNED_TO {score,status,method,run_id}]->(pageB) for
+        each unordered version pair of a row with >=2 versions present and a
+        status in the allowed set {exact, probable, manual_review}.
+
+        Page nodes already exist (inserted by the Task 2 body graph) and are
+        hard-MATCHed by id (page_id = make_page_id(version_id, physical_page)).
+        Unmatched rows and rows with fewer than two versions produce no edge.
+        """
+        if self._driver is None:
+            return
+
+        page_ids: dict[str, dict[int, str]] = {}
+        for stage, pages in pages_by_version.items():
+            page_ids[stage] = {
+                p.physical_page: (p.page_id or make_page_id(stage, p.physical_page))
+                for p in pages
+            }
+
+        edges: list[dict[str, Any]] = []
+        for row in rows:
+            status = (
+                str(row.status.value)
+                if isinstance(row.status, AlignmentStatus)
+                else str(row.status)
+            )
+            if status not in ("exact", "probable", "manual_review"):
+                continue
+            present = [(st, pg) for st, pg in row.pages.items() if pg is not None]
+            if len(present) < 2:
+                continue
+            for idx_a in range(len(present)):
+                for idx_b in range(idx_a + 1, len(present)):
+                    st_a, page_a = present[idx_a]
+                    st_b, page_b = present[idx_b]
+                    from_id = (
+                        page_ids.get(st_a, {}).get(page_a.physical_page)
+                        or page_a.page_id
+                        or make_page_id(st_a, page_a.physical_page)
+                    )
+                    to_id = (
+                        page_ids.get(st_b, {}).get(page_b.physical_page)
+                        or page_b.page_id
+                        or make_page_id(st_b, page_b.physical_page)
+                    )
+                    edges.append(
+                        {
+                            "from_id": from_id,
+                            "to_id": to_id,
+                            "score": row.similarity_score,
+                            "status": status,
+                            "method": getattr(row, "method", "dtw_weighted"),
+                            "run_id": run_id,
+                            "row_id": row.row_id,
+                        }
+                    )
+
+        if not edges:
+            return
+
+        cypher = """
+        UNWIND $edges AS e
+        MATCH (a:Page {id: e.from_id})
+        MATCH (b:Page {id: e.to_id})
+        SET a.alignment_row = e.row_id, b.alignment_row = e.row_id
+        MERGE (a)-[:ALIGNED_TO {score: e.score, status: e.status, method: e.method, run_id: e.run_id}]->(b)
+        RETURN count(*) AS matched
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            edges=edges,
+            **self._query_config(),
+        )
+        if records and records[0].get("matched") is not None:
+            matched = records[0]["matched"]
+            if matched != len(edges):
+                raise LookupError(
+                    "One or more Page nodes missing for ALIGNED_TO "
+                    f"(expected {len(edges)} edges, matched {matched})"
+                )
 
     def save_candidates(
         self,

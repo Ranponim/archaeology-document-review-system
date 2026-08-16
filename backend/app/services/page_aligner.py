@@ -177,17 +177,37 @@ class PageAligner:
                 up_cost = D[i - 1][j] + gap_cost
                 left_cost = D[i][j - 1] + gap_cost
 
-                # Prefer match (diagonal) on ties to maintain alignment
-                if abs(D[i][j] - diag_cost) < 1e-9:
+                diag_optimal = abs(D[i][j] - diag_cost) < 1e-9
+                up_optimal = abs(D[i][j] - up_cost) < 1e-9
+                left_optimal = abs(D[i][j] - left_cost) < 1e-9
+
+                # Prefer a real match only when the diagonal similarity clears
+                # the manual-review floor. Never manufacture a match for
+                # unrelated pages: when the diagonal is below the floor, prefer
+                # a gap over the diagonal even when their costs tie (plan Task 8
+                # DTW fix). A unique-min diagonal below the floor is kept
+                # (cost-optimal) and reclassified by the post-pass.
+                if diag_optimal and sim[i - 1][j - 1] >= self.MANUAL_REVIEW_THRESHOLD:
                     alignment.append((ref_pages[i - 1], other_pages[j - 1]))
                     i -= 1
                     j -= 1
-                elif abs(D[i][j] - up_cost) < 1e-9:
+                elif up_optimal:
                     alignment.append((ref_pages[i - 1], None))
                     i -= 1
-                else:
+                elif left_optimal:
                     alignment.append((None, other_pages[j - 1]))
                     j -= 1
+                elif diag_optimal:
+                    alignment.append((ref_pages[i - 1], other_pages[j - 1]))
+                    i -= 1
+                    j -= 1
+                else:
+                    if up_cost <= left_cost:
+                        alignment.append((ref_pages[i - 1], None))
+                        i -= 1
+                    else:
+                        alignment.append((None, other_pages[j - 1]))
+                        j -= 1
             elif i > 0:
                 alignment.append((ref_pages[i - 1], None))
                 i -= 1

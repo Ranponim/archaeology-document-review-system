@@ -405,3 +405,37 @@ def test_align_pairwise_multi_page_with_insertions_and_rejection():
         )
 
 
+def test_dtw_unrelated_pages_never_confident():
+    """Unrelated pages must never be classified exact/probable by DTW."""
+    p_arch = _make_dummy_page(
+        1, "논산 산노리 유적 1호 토광묘 발굴조사 개요 및 지형 환경 분석"
+    )
+    p_astronomy = _make_dummy_page(
+        1, "천문 관측 기록 망원경 분광기 항성 분광형 분류 적색왜성 흑점 주기"
+    )
+    aligner = PageAligner()
+    pairs = aligner.align_pairwise([p_arch], [p_astronomy])
+    for p in pairs:
+        assert p.status in (AlignmentStatus.UNMATCHED, AlignmentStatus.MANUAL_REVIEW)
+        assert p.status not in (AlignmentStatus.EXACT, AlignmentStatus.PROBABLE)
+
+
+def test_dtw_tie_break_prefers_gap_for_unrelated_pages():
+    """When match cost ties with gap cost for unrelated pages, DTW must prefer
+    a gap over manufacturing a diagonal match (plan Task 8 DTW fix)."""
+    p_arch = _make_dummy_page(
+        1, "논산 산노리 유적 1호 토광묘 발굴조사 개요 및 지형 환경 분석"
+    )
+    p_astronomy = _make_dummy_page(
+        1, "천문 관측 기록 망원경 분광기 항성 분광형 분류 적색왜성 흑점 주기"
+    )
+    aligner = PageAligner()
+    # gap_cost=0.5 makes the diagonal match cost (1.0) tie with the accumulated
+    # gap cost, so the old tie-break would emit a diagonal match between
+    # unrelated pages. The fix must prefer a gap instead.
+    pairs = aligner.align_pairwise([p_arch], [p_astronomy, p_astronomy], gap_cost=0.5)
+    assert not any(p.page_a is not None and p.page_b is not None for p in pairs)
+    for p in pairs:
+        assert p.status in (AlignmentStatus.UNMATCHED, AlignmentStatus.MANUAL_REVIEW)
+
+
