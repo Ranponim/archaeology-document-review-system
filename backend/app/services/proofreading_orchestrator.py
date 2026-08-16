@@ -59,6 +59,38 @@ class OrchestratorResult:
     warnings: list[str] = field(default_factory=list)
 
 
+STAGE_ORDER = {"1차": 0, "2차": 1, "3차": 2, "final": 3}
+
+
+def _ordered_stage_versions(
+    version_pages: dict[str, list[ParsedPage]],
+    version_ids: dict[str, str],
+) -> list[tuple[str, str]]:
+    """Order stages by explicit rank (1차<2차<3차<final) and fail closed when a
+    stage is missing from version_ids or the chain is non-contiguous (never
+    silently bridge 1차→3차)."""
+    missing = [st for st in version_pages if st not in version_ids]
+    if missing:
+        raise ValueError(
+            "version_ids missing entries for stages: " + ", ".join(sorted(missing))
+        )
+    ordered = sorted(
+        ((version_ids[st], st) for st in version_pages),
+        key=lambda pair: STAGE_ORDER.get(pair[1], len(STAGE_ORDER)),
+    )
+    for i in range(len(ordered) - 1):
+        prev_stage = ordered[i][1]
+        next_stage = ordered[i + 1][1]
+        prev_rank = STAGE_ORDER.get(prev_stage, len(STAGE_ORDER))
+        next_rank = STAGE_ORDER.get(next_stage, len(STAGE_ORDER))
+        if next_rank != prev_rank + 1:
+            raise ValueError(
+                f"Cannot build PRECEDES across a missing stage: "
+                f"'{prev_stage}' -> '{next_stage}'"
+            )
+    return ordered
+
+
 class ProofreadingOrchestrator:
     """End-to-End Canonical Proofreading Orchestrator.
 
@@ -887,9 +919,7 @@ class ProofreadingOrchestrator:
         aligner = PageAligner()
         rows = aligner.align_parallel_ranges(version_pages)
 
-        ordered = [
-            (version_ids[st], st) for st in version_pages if st in version_ids
-        ]
+        ordered = _ordered_stage_versions(version_pages, version_ids)
         if len(ordered) >= 2:
             self.review_repo.save_version_precedes(project_id, ordered)
         self.review_repo.save_aligned_pages(rows, version_pages, run_id)

@@ -21,9 +21,11 @@ from app.api.schemas import (
     TraceabilityResponse,
 )
 from app.config import DATA_ROOT
+from app.domain.document_structure import ParsedPage
+from app.domain.models import VersionInput
 from app.graph.project_repository import DocumentVersionNotFoundError
 from app.graph.review_repository import ReviewRepository
-from app.services.proofreading_orchestrator import ProofreadingOrchestrator
+from app.services.orchestrator_factory import build_proofreading_orchestrator
 
 
 class CandidateNotFoundError(RuntimeError):
@@ -33,6 +35,8 @@ class CandidateNotFoundError(RuntimeError):
 
 
 router = APIRouter(prefix="/api/v1/projects", tags=["reviews"])
+
+BODY_STAGES = ("1차", "2차", "3차", "final")
 
 
 def get_review_repository(request: Request) -> Any:
@@ -48,9 +52,70 @@ def get_review_repository(request: Request) -> Any:
 def get_orchestrator(request: Request) -> Any:
     orch = getattr(request.app.state, "orchestrator", None)
     if orch is None:
-        rev_repo = get_review_repository(request)
-        orch = ProofreadingOrchestrator(review_repo=rev_repo)
+        driver = getattr(request.app.state, "neo4j_driver", None)
+        if driver is not None:
+            orch = build_proofreading_orchestrator(driver)
+            request.app.state.orchestrator = orch
     return orch
+
+
+def _resolve_stored_pdf_path(version: VersionInput) -> Path | None:
+    if not version.uri:
+        return None
+    candidate = DATA_ROOT / version.uri
+    if candidate.is_file():
+        return candidate
+    if Path(version.uri).is_file():
+        return Path(version.uri)
+    return None
+
+
+async def _resolve_body_versions_for_alignment(
+    project_repository: ProjectRepositoryPort,
+    project_id: str,
+    primary_body_version: VersionInput,
+    primary_stage: str,
+    primary_pdf_path: str | None,
+    pdf_parser: Any,
+) -> tuple[dict[str, list[ParsedPage]], dict[str, str]]:
+    """Resolve every report_body DocumentVersion by stage, parse its stored PDF,
+    and build version_pages/version_ids so PRECEDES + ALIGNED_TO persist on a
+    real run (Task 8 M1 fold-in). Fail closed when a stored body PDF is missing
+    (plan §3 Gate G)."""
+    version_pages: dict[str, list[ParsedPage]] = {}
+    version_ids: dict[str, str] = {}
+    for stage in BODY_STAGES:
+        if stage == primary_stage and primary_body_version is not None:
+            stage_version = primary_body_version
+        else:
+            stage_version = await _run_repository(
+                project_repository.resolve_version_input,
+                project_id,
+                "report_body",
+                stage,
+            )
+        if stage_version is None:
+            continue
+        if stage == primary_stage and primary_pdf_path:
+            stage_pdf_path = Path(primary_pdf_path)
+        else:
+            stage_pdf_path = _resolve_stored_pdf_path(stage_version)
+        if stage_pdf_path is None or not stage_pdf_path.is_file():
+            raise DocumentVersionNotFoundError(
+                f"Stored PDF for body version '{stage_version.version_id}' "
+                f"(stage '{stage}') not found for project '{project_id}'"
+            )
+        pages = await run_in_threadpool(
+            pdf_parser.parse_pdf, stage_pdf_path, version_id=stage_version.version_id
+        )
+        if not pages:
+            raise ValueError(
+                f"Body version '{stage_version.version_id}' (stage '{stage}') "
+                "produced zero parsed pages"
+            )
+        version_pages[stage] = pages
+        version_ids[stage] = stage_version.version_id
+    return version_pages, version_ids
 
 
 # =============================================================================
@@ -69,7 +134,6 @@ async def trigger_proofreading_run(
     payload: RunTriggerRequest,
     project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
     orchestrator: Annotated[Any, Depends(get_orchestrator)],
-    review_repository: Annotated[Any, Depends(get_review_repository)],
 ) -> RunTriggerResponse:
     # Ensure project exists
     await _run_repository(project_repository.get_project, project_id)
@@ -115,12 +179,24 @@ async def trigger_proofreading_run(
                 f"DocumentVersion '{drawing_version_id}' not found for project '{project_id}'"
             )
 
-    orch = orchestrator
-    if orch is None:
-        orch = ProofreadingOrchestrator(
-            review_repo=review_repository,
-            project_repo=project_repository,
+    if orchestrator is None:
+        raise ServerOperationError("Proofreading orchestrator not configured")
+
+    # Task 8 M1 fold-in: resolve all body versions by stage so PRECEDES and
+    # ALIGNED_TO persist on real runs. Fail closed when a stored body PDF is
+    # missing (Gate G).
+    pdf_parser = getattr(orchestrator, "pdf_parser", None)
+    if pdf_parser is not None:
+        version_pages, version_ids = await _resolve_body_versions_for_alignment(
+            project_repository=project_repository,
+            project_id=project_id,
+            primary_body_version=body_version,
+            primary_stage=payload.version_stage,
+            primary_pdf_path=payload.body_pdf_path,
+            pdf_parser=pdf_parser,
         )
+    else:
+        version_pages, version_ids = None, None
 
     body_pdf_path = payload.body_pdf_path
     if body_pdf_path is None and body_version.uri:
@@ -130,7 +206,7 @@ async def trigger_proofreading_run(
         elif Path(body_version.uri).is_file():
             body_pdf_path = Path(body_version.uri)
 
-    res = await orch.run_proofreading(
+    res = await orchestrator.run_proofreading(
         project_id=project_id,
         body_version_id=body_version.version_id,
         plate_version_id=plate_version_id,
@@ -141,6 +217,8 @@ async def trigger_proofreading_run(
         enable_vlm=payload.enable_vlm,
         enable_ai_review=payload.enable_ai_review,
         version_stage=payload.version_stage,
+        version_pages=version_pages,
+        version_ids=version_ids,
     )
 
     return RunTriggerResponse(
@@ -153,6 +231,7 @@ async def trigger_proofreading_run(
         candidates_count=len(res.candidates),
         summary=res.summary,
         errors=res.errors,
+        warnings=res.warnings,
     )
 
 

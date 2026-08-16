@@ -92,7 +92,7 @@ def test_compose_recovers_same_analysis_run_after_redis_outage():
             "NEO4J_PORT": "17687",
             "REDIS_PORT": "16379",
             "NEO4J_PASSWORD": "task5-smoke-password",
-            "AI_API_KEY": "unused-in-foundation",
+            "OPENROUTER_API_KEY": "unused-in-foundation",
             "DATA_ROOT": "/data",
         }
     )

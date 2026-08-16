@@ -25,6 +25,7 @@ from app.graph.review_repository import ReviewRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
 from app.services.file_store import FileStore
+from app.services.orchestrator_factory import build_proofreading_orchestrator
 
 
 def _request_id(request: Request) -> str:
@@ -70,6 +71,10 @@ def create_app(
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
                 app.state.review_repository = ReviewRepository(driver)
+        if getattr(app.state, "orchestrator", None) is None:
+            driver = getattr(app.state, "neo4j_driver", None)
+            if driver is not None:
+                app.state.orchestrator = build_proofreading_orchestrator(driver)
         yield
         driver = getattr(app.state, "neo4j_driver", None)
         if driver is not None:

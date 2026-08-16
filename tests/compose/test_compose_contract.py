@@ -26,6 +26,16 @@ def test_worker_receives_the_same_neo4j_credentials_as_the_database(compose):
     assert worker_environment["NEO4J_PASSWORD"] == "${NEO4J_PASSWORD}"
 
 
+def test_web_and_worker_receive_the_unified_openrouter_api_key(compose):
+    web = compose["services"]["web"]
+    worker = compose["services"]["worker"]
+
+    assert web["environment"]["OPENROUTER_API_KEY"] == "${OPENROUTER_API_KEY}"
+    assert worker["environment"]["OPENROUTER_API_KEY"] == "${OPENROUTER_API_KEY}"
+    assert "AI_API_KEY" not in web["environment"]
+    assert "AI_API_KEY" not in worker["environment"]
+
+
 def test_web_service_runs_fastapi_on_the_local_web_port(compose):
     web = compose["services"]["web"]
 
@@ -45,6 +55,7 @@ def test_web_service_runs_fastapi_on_the_local_web_port(compose):
     assert web["environment"]["REDIS_URL"] == "redis://redis:6379/0"
     assert web["environment"]["NEO4J_URI"] == "bolt://neo4j:7687"
     assert "AI_API_KEY" not in web["environment"]
+    assert web["environment"]["OPENROUTER_API_KEY"] == "${OPENROUTER_API_KEY}"
 
 
 def test_worker_uses_the_same_frontend_capable_application_build(compose):

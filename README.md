@@ -26,7 +26,7 @@ notepad .env
 ```
 
 `NEO4J_PASSWORD`를 새 비밀번호로 바꾸고, 외부 AI 기능을 사용하기 전
-`AI_API_KEY`를 설정한다. `DATA_ROOT=/data`는 컨테이너 내부 데이터 경로이므로 그대로
+`OPENROUTER_API_KEY`를 설정한다. `DATA_ROOT=/data`는 컨테이너 내부 데이터 경로이므로 그대로
 둔다. `.env`와 API 키는 Git이나 브라우저로 전달되지 않는다.
 
 ```powershell

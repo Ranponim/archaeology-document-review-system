@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 import httpx
+from app.config import get_openrouter_api_key
 from app.jobs.ingest import ApiError, RateLimitedError
 
 
@@ -15,7 +16,7 @@ class OpenRouterConfig:
 
     @classmethod
     def from_env(cls) -> "OpenRouterConfig":
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        api_key = get_openrouter_api_key()
         base_url = os.environ.get(
             "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/responses"
         )

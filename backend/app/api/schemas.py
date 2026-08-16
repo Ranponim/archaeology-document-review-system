@@ -273,6 +273,7 @@ class RunTriggerResponse(ApiModel):
     candidates_count: int = Field(default=0, alias="candidatesCount")
     summary: dict[str, Any] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ReviewMetricsResponse(ApiModel):
