@@ -1333,6 +1333,61 @@ code {
   min-width: 900px;
 }
 
+.pathway-segment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #d5cec0;
+}
+
+.branch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.property-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef1ec;
+  border: 1px solid #d5dccf;
+  font-size: 0.62rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.chip-key {
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+  color: #556257;
+}
+
+.chip-value {
+  font-family: ui-monospace, monospace;
+  color: #1e2520;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .graph-node {
   flex: 1;
   min-width: 120px;

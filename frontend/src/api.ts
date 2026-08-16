@@ -77,6 +77,7 @@ export type Evidence = {
     id?: string;
     original_name?: string;
     stage?: string;
+    sha256?: string;
   };
 };
 
@@ -112,6 +113,9 @@ export type ArchaeologyObject = {
   description?: string;
   captions?: string[];
   vlm_verdict?: string;
+  canonical_name?: string;
+  site?: string;
+  period?: string;
   properties?: Record<string, unknown>;
 };
 

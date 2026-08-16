@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  type ArchaeologyObject,
   type CorrectionCandidate,
   type Evidence,
   type ReviewDecision,
@@ -12,23 +13,251 @@ type Props = {
   loading?: boolean;
 };
 
-type SelectedNodeType =
+/**
+ * Graph node model. Every node is derived from a field that the backend
+ * traceability payload actually returns — never synthesized.
+ */
+export type GraphNodeKind =
   | 'candidate'
-  | 'evidence'
-  | 'doc_ver'
-  | 'page'
-  | 'bbox'
-  | 'sha256'
   | 'arch_obj'
-  | 'decision'
-  | null;
+  | 'evidence'
+  | 'page'
+  | 'doc_ver'
+  | 'decision';
+
+export type GraphNode = {
+  id: string;
+  kind: GraphNodeKind;
+  typeTag: string;
+  title: string;
+  subtitle?: string;
+  statusPill?: string;
+  /** Property rows shown in the detail inspector. */
+  properties: Array<{ key: string; value: string }>;
+  /** Property chips rendered directly on the node card (e.g. bbox, source_sha256). */
+  chips?: Array<{ key: string; value: string }>;
+};
+
+export type GraphEdge = {
+  from: string;
+  to: string;
+  label: string;
+};
+
+export type GraphModel = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+};
+
+function fmt(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => (typeof v === 'number' ? v.toFixed(3) : String(v))).join(', ')}]`;
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function prop(key: string, value: unknown): { key: string; value: string } | null {
+  if (value === null || value === undefined || value === '') return null;
+  return { key, value: fmt(value) };
+}
+
+function compact(
+  rows: Array<{ key: string; value: string } | null>,
+): Array<{ key: string; value: string }> {
+  return rows.filter((r): r is { key: string; value: string } => r !== null);
+}
+
+/**
+ * Build the node/edge model strictly from the API-returned traceability payload.
+ *
+ * Real relationships (from backend `get_candidate_traceability`):
+ *   (candidate)-[:ABOUT]->(archaeology_object)
+ *   (candidate)-[:SUPPORTED_BY]->(evidence)
+ *   (evidence)-[:EXTRACTED_FROM]->(page)
+ *   (evidence)-[:FROM_VERSION]->(document_version)
+ *   (candidate)-[:HAS_DECISION]->(review_decision)
+ *
+ * No edge is drawn unless the corresponding node is present in the payload.
+ * bbox / source_sha256 are node properties and render as chips, never as edges.
+ */
+export function buildGraphModel(
+  candidate: CorrectionCandidate,
+  traceability?: TraceabilityResponse | null,
+): GraphModel {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  const candProps = traceability?.candidate ?? null;
+  const candId = candProps?.id ?? candidate.id;
+  const candNode: GraphNode = {
+    id: candId,
+    kind: 'candidate',
+    typeTag: 'CorrectionCandidate',
+    title: `후보: ${candId.slice(0, 14)}`,
+    subtitle: candProps?.rule_category ?? candidate.rule_category ?? candidate.category ?? '검수',
+    statusPill: candProps?.status ?? candidate.status,
+    properties: compact([
+      prop('id', candId),
+      prop(
+        'rule_category',
+        candProps?.rule_category ?? candidate.rule_category ?? candidate.category,
+      ),
+      prop('status', candProps?.status ?? candidate.status),
+      prop(
+        'original_text',
+        candProps?.original_text ?? candidate.original_text ?? candidate.originalText,
+      ),
+      prop(
+        'proposed_text',
+        candProps?.proposed_text ?? candidate.proposed_text ?? candidate.proposedText,
+      ),
+      prop('confidence', candProps?.confidence ?? candidate.confidence),
+    ]),
+  };
+  nodes.push(candNode);
+
+  // (candidate)-[:ABOUT]->(archaeology_object) — only when the object is returned.
+  const archObj: ArchaeologyObject | null =
+    traceability?.archaeology_object ?? traceability?.archaeologyObject ?? null;
+  if (archObj && archObj.id) {
+    const objNode: GraphNode = {
+      id: archObj.id,
+      kind: 'arch_obj',
+      typeTag: 'ArchaeologyObject',
+      title: archObj.id.slice(0, 14),
+      subtitle: archObj.canonical_name ?? archObj.title ?? '도판/도면 객체',
+      properties: compact([
+        prop('id', archObj.id),
+        prop('canonical_name', archObj.canonical_name),
+        prop('title', archObj.title),
+        prop('object_type', archObj.object_type ?? archObj.objectType),
+        prop('site', archObj.site),
+        prop('period', archObj.period),
+      ]),
+    };
+    nodes.push(objNode);
+    edges.push({ from: candId, to: archObj.id, label: 'ABOUT' });
+  }
+
+  // (candidate)-[:SUPPORTED_BY]->(evidence) -> EXTRACTED_FROM / FROM_VERSION.
+  const evidences: Evidence[] = Array.isArray(traceability?.evidence)
+    ? traceability.evidence
+    : traceability?.evidence
+      ? [traceability.evidence]
+      : [];
+  evidences.forEach((ev, idx) => {
+    const evId = ev.id ?? `evidence_${idx}`;
+    const evNode: GraphNode = {
+      id: evId,
+      kind: 'evidence',
+      typeTag: 'Evidence',
+      title: evId.slice(0, 14),
+      subtitle: `방법: ${ev.method ?? 'rule'}`,
+      properties: compact([
+        prop('id', evId),
+        prop('kind', ev.kind),
+        prop('value', ev.value),
+        prop('confidence', ev.confidence),
+        prop('method', ev.method),
+        prop('rationale', ev.rationale),
+      ]),
+      chips: compact([
+        prop('bbox', ev.bbox),
+        prop('source_sha256', ev.source_sha256 ?? ev.sourceSha256),
+      ]),
+    };
+    nodes.push(evNode);
+    edges.push({ from: candId, to: evId, label: 'SUPPORTED_BY' });
+
+    // (evidence)-[:EXTRACTED_FROM]->(page) — only when the page is returned.
+    const page = ev.page;
+    if (page && page.id) {
+      const pageId = page.id;
+      const pageNode: GraphNode = {
+        id: pageId,
+        kind: 'page',
+        typeTag: 'Page',
+        title: pageId.slice(0, 14),
+        subtitle: `물리 ${page.physical_page ?? '?'}쪽 (인쇄 ${page.printed_page ?? '?'}쪽)`,
+        properties: compact([
+          prop('id', pageId),
+          prop('physical_page', page.physical_page),
+          prop('printed_page', page.printed_page),
+          prop('header', page.header),
+        ]),
+      };
+      nodes.push(pageNode);
+      edges.push({ from: evId, to: pageId, label: 'EXTRACTED_FROM' });
+    }
+
+    // (evidence)-[:FROM_VERSION]->(document_version) — only when returned.
+    const docVer = ev.document_version;
+    if (docVer && docVer.id) {
+      const dvId = docVer.id;
+      const dvNode: GraphNode = {
+        id: dvId,
+        kind: 'doc_ver',
+        typeTag: 'DocumentVersion',
+        title: dvId.slice(0, 14),
+        subtitle: `단계: ${docVer.stage ?? 'source'}`,
+        properties: compact([
+          prop('id', dvId),
+          prop('stage', docVer.stage),
+          prop('sha256', docVer.sha256),
+        ]),
+      };
+      nodes.push(dvNode);
+      edges.push({ from: evId, to: dvId, label: 'FROM_VERSION' });
+    }
+  });
+
+  // (candidate)-[:HAS_DECISION]->(review_decision) — only when decisions exist.
+  const decisions: ReviewDecision[] = [
+    ...(candidate.decisions ?? []),
+    ...(traceability?.decisions ?? []),
+  ].filter((dec, idx, arr) => dec && arr.findIndex((item) => item?.id === dec.id) === idx);
+  decisions.forEach((dec) => {
+    const decId = dec.id;
+    const decNode: GraphNode = {
+      id: decId,
+      kind: 'decision',
+      typeTag: 'ReviewDecision',
+      title: decId.slice(0, 14),
+      subtitle: dec.reviewer ?? '검수관',
+      statusPill: dec.decision_status ?? dec.decision ?? undefined,
+      properties: compact([
+        prop('id', decId),
+        prop('decision_status', dec.decision_status ?? dec.decision),
+        prop('reviewer', dec.reviewer),
+        prop('note', dec.note ?? dec.rationale),
+        prop('created_at', dec.created_at ?? dec.createdAt),
+        prop('previous_decision_id', dec.previous_decision_id),
+      ]),
+    };
+    nodes.push(decNode);
+    edges.push({ from: candId, to: decId, label: 'HAS_DECISION' });
+  });
+
+  return { nodes, edges };
+}
+
+const NODE_KIND_LABEL: Record<GraphNodeKind, string> = {
+  candidate: 'CorrectionCandidate (교정 후보)',
+  arch_obj: 'ArchaeologyObject (표준 고고학 유물/도판 객체)',
+  evidence: 'Evidence (검수 근거 데이터)',
+  page: 'Page (보고서 페이지 노드)',
+  doc_ver: 'DocumentVersion (문서 버전 정보)',
+  decision: 'ReviewDecision (검수 판정 이력)',
+};
 
 export function EvidenceGraphExplorer({
   candidate,
   traceability,
   loading = false,
 }: Props) {
-  const [selectedNode, setSelectedNode] = useState<SelectedNodeType>('candidate');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeEvidenceIndex, setActiveEvidenceIndex] = useState(0);
 
   if (loading) {
@@ -40,79 +269,102 @@ export function EvidenceGraphExplorer({
     );
   }
 
-  // Gather all evidences
   const allEvidences: Evidence[] = [
     ...(candidate.evidences ?? []),
     ...(Array.isArray(traceability?.evidence) ? traceability.evidence : []),
     ...(candidate.evidence ? [candidate.evidence] : []),
-  ].filter(
-    (ev, idx, arr) => ev && arr.findIndex((item) => item?.id === ev.id) === idx,
-  );
+  ].filter((ev, idx, arr) => ev && arr.findIndex((item) => item?.id === ev.id) === idx);
 
-  const currentEvidence: Evidence | undefined =
+  const model = buildGraphModel(candidate, traceability);
+  const nodeById = new Map(model.nodes.map((n) => [n.id, n]));
+
+  const selectedNode =
+    (selectedNodeId ? nodeById.get(selectedNodeId) : undefined) ??
+    model.nodes.find((n) => n.kind === 'candidate') ??
+    model.nodes[0];
+
+  const activeEvidence: Evidence | undefined =
     allEvidences[activeEvidenceIndex] ?? allEvidences[0] ?? candidate.evidence;
+  const activeEvidenceNode = activeEvidence
+    ? nodeById.get(activeEvidence.id ?? '')
+    : undefined;
+  const activePageNode = activeEvidence?.page?.id
+    ? nodeById.get(activeEvidence.page.id)
+    : undefined;
+  const activeDocVerNode = activeEvidence?.document_version?.id
+    ? nodeById.get(activeEvidence.document_version.id)
+    : undefined;
 
-  const archObj = traceability?.archaeology_object ?? traceability?.archaeologyObject;
-  const archObjId =
-    candidate.archaeology_object_id ??
-    candidate.archaeologyObjectId ??
-    archObj?.id ??
-    '도판-식별자-연계';
+  const chain: Array<{ node: GraphNode; edgeToNext?: string }> = [];
+  const candNode = model.nodes.find((n) => n.kind === 'candidate');
+  if (candNode) {
+    chain.push({ node: candNode });
+    if (activeEvidenceNode) {
+      chain[chain.length - 1].edgeToNext = 'SUPPORTED_BY';
+      chain.push({ node: activeEvidenceNode });
+      if (activePageNode) {
+        chain[chain.length - 1].edgeToNext = 'EXTRACTED_FROM';
+        chain.push({ node: activePageNode });
+      }
+      if (activeDocVerNode) {
+        chain[chain.length - 1].edgeToNext = 'FROM_VERSION';
+        chain.push({ node: activeDocVerNode });
+      }
+    }
+  }
 
-  const docVersionId =
-    currentEvidence?.document_version_id ??
-    currentEvidence?.documentVersionId ??
-    traceability?.document_version_id ??
-    traceability?.documentVersionId ??
-    'doc_ver_default';
-
-  const pageId =
-    currentEvidence?.page_id ??
-    currentEvidence?.pageId ??
-    traceability?.page_id ??
-    `p_${currentEvidence?.physical_page_from ?? 1}`;
-
-  const physicalPage =
-    currentEvidence?.physical_page_from ??
-    currentEvidence?.physicalPageFrom ??
-    currentEvidence?.page?.physical_page ??
-    '1';
-
-  const printedPage =
-    currentEvidence?.printed_page_from ??
-    currentEvidence?.printedPageFrom ??
-    currentEvidence?.page?.printed_page ??
-    '-';
-
-  const bbox = currentEvidence?.bbox ?? traceability?.bbox;
-  const bboxStr = Array.isArray(bbox)
-    ? `[${bbox.map((v) => (typeof v === 'number' ? v.toFixed(3) : String(v))).join(', ')}]`
-    : 'N/A';
-
-  const sourceSha256 =
-    currentEvidence?.source_sha256 ??
-    currentEvidence?.sourceSha256 ??
-    traceability?.source_sha256 ??
-    traceability?.sourceSha256 ??
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-
-  const decisions: ReviewDecision[] = [
-    ...(candidate.decisions ?? []),
-    ...(traceability?.decisions ?? []),
-  ].filter(
-    (dec, idx, arr) => dec && arr.findIndex((item) => item?.id === dec.id) === idx,
+  const branchEdges = model.edges.filter(
+    (e) => e.from === candNode?.id && e.label !== 'SUPPORTED_BY',
   );
+
+  function renderNode(node: GraphNode) {
+    const isActive = selectedNode?.id === node.id;
+    return (
+      <div
+        className={`graph-node node-${node.kind} ${isActive ? 'active' : ''}`}
+        onClick={() => setSelectedNodeId(node.id)}
+        role="button"
+        tabIndex={0}
+        data-testid={`graph-node-${node.kind}`}
+      >
+        <div className="node-type-tag">{node.typeTag}</div>
+        <div className="node-title">{node.title}</div>
+        {node.subtitle && <div className="node-sub">{node.subtitle}</div>}
+        {node.statusPill && <div className="node-status-pill">{node.statusPill}</div>}
+        {node.chips && node.chips.length > 0 && (
+          <div className="node-chip-row">
+            {node.chips.map((chip) => (
+              <span className="property-chip" key={chip.key} title={`${chip.key}: ${chip.value}`}>
+                <span className="chip-key">{chip.key}</span>
+                <span className="chip-value">{chip.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderEdge(label: string) {
+    return (
+      <div className="path-edge" data-testid={`graph-edge-${label}`}>
+        <span className="edge-label">[:{label}]</span>
+        <div className="edge-line" />
+      </div>
+    );
+  }
 
   return (
     <div className="evidence-graph-explorer" data-testid="evidence-graph-explorer">
-      {/* Header & Explanation */}
       <div className="graph-header">
         <div>
           <span className="section-label">NEO4J KNOWLEDGE GRAPH PROVENANCE</span>
           <h3 className="graph-title">교정 후보 및 근거 출처 경로</h3>
           <p className="graph-desc">
-            본 교정 후보가 어떤 원본 문서, 페이지, 바운딩 박스, 불변 SHA256 해시를 거쳐
-            표준 고고학 유물 객체와 연계되었는지 완결된 계보(Provenance)를 시각화합니다.
+            본 교정 후보가 실제 Neo4j에서 조회된 경로를 그대로 시각화합니다. 후보는
+            [:ABOUT]으로 표준 고고학 객체와, [:SUPPORTED_BY]로 근거(Evidence)와 연결되고,
+            근거는 [:EXTRACTED_FROM]으로 페이지, [:FROM_VERSION]으로 문서 버전과 연결됩니다.
+            바운딩 박스와 원본 SHA-256 해시는 근거 노드의 속성으로 표시됩니다.
           </p>
         </div>
         {allEvidences.length > 1 && (
@@ -133,300 +385,89 @@ export function EvidenceGraphExplorer({
         )}
       </div>
 
-      {/* Step-by-Step Pathway Visualization */}
       <div className="graph-pathway-container">
         <div className="pathway-track">
-          {/* Node 1: Candidate */}
-          <div
-            className={`graph-node node-candidate ${selectedNode === 'candidate' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('candidate')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">CorrectionCandidate</div>
-            <div className="node-title">후보: {candidate.id.slice(0, 14)}</div>
-            <div className="node-sub">{candidate.rule_category ?? candidate.category ?? '검수'}</div>
-            <div className="node-status-pill">{candidate.status}</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:SUPPORTED_BY]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 2: Evidence */}
-          <div
-            className={`graph-node node-evidence ${selectedNode === 'evidence' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('evidence')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">Evidence Node</div>
-            <div className="node-title">{currentEvidence?.id ? currentEvidence.id.slice(0, 14) : 'ev_primary'}</div>
-            <div className="node-sub">방법: {currentEvidence?.method ?? 'rule'}</div>
-            <div className="node-conf">신뢰도: {Math.round((currentEvidence?.confidence ?? 1) * 100)}%</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:FROM_VERSION]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 3: DocumentVersion */}
-          <div
-            className={`graph-node node-docver ${selectedNode === 'doc_ver' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('doc_ver')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">DocumentVersion</div>
-            <div className="node-title">{docVersionId.slice(0, 14)}</div>
-            <div className="node-sub">단계: {currentEvidence?.document_version?.stage ?? 'source'}</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:EXTRACTED_FROM]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 4: Page */}
-          <div
-            className={`graph-node node-page ${selectedNode === 'page' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('page')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">Page</div>
-            <div className="node-title">{pageId}</div>
-            <div className="node-sub">물리 {physicalPage}쪽 (인쇄 {printedPage}쪽)</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:HAS_BBOX]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 5: BBox */}
-          <div
-            className={`graph-node node-bbox ${selectedNode === 'bbox' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('bbox')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">BoundingBox</div>
-            <div className="node-title">영역 좌표</div>
-            <div className="node-sub mono">{bboxStr.length > 16 ? `${bboxStr.slice(0, 15)}...` : bboxStr}</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:VERIFIED_HASH]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 6: SHA256 */}
-          <div
-            className={`graph-node node-sha256 ${selectedNode === 'sha256' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('sha256')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">Source SHA256</div>
-            <div className="node-title">무결성 해시</div>
-            <div className="node-sub mono">{sourceSha256.slice(0, 10)}...</div>
-          </div>
-
-          <div className="path-edge">
-            <span className="edge-label">[:ABOUT]</span>
-            <div className="edge-line" />
-          </div>
-
-          {/* Node 7: ArchaeologyObject */}
-          <div
-            className={`graph-node node-archobj ${selectedNode === 'arch_obj' ? 'active' : ''}`}
-            onClick={() => setSelectedNode('arch_obj')}
-            role="button"
-            tabIndex={0}
-          >
-            <div className="node-type-tag">ArchaeologyObject</div>
-            <div className="node-title">{archObjId}</div>
-            <div className="node-sub">{archObj?.title || '도판/도면 객체'}</div>
-          </div>
+          {chain.map((item, idx) => (
+            <div className="pathway-segment" key={item.node.id}>
+              {renderNode(item.node)}
+              {item.edgeToNext && renderEdge(item.edgeToNext)}
+            </div>
+          ))}
         </div>
+
+        {branchEdges.length > 0 && (
+          <div className="graph-branches">
+            {branchEdges.map((edge) => {
+              const target = nodeById.get(edge.to);
+              if (!target) return null;
+              return (
+                <div className="branch-row" key={`${edge.from}-${edge.label}-${edge.to}`}>
+                  {renderEdge(edge.label)}
+                  {renderNode(target)}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Interactive Node Property Inspector */}
       <div className="node-detail-panel">
         <div className="detail-header">
           <h4>
             노드 상세 속성 (Node Properties):{' '}
             <span className="selected-node-name">
-              {selectedNode === 'candidate' && 'CorrectionCandidate (교정 후보)'}
-              {selectedNode === 'evidence' && 'Evidence (검수 근거 데이터)'}
-              {selectedNode === 'doc_ver' && 'DocumentVersion (문서 버전 정보)'}
-              {selectedNode === 'page' && 'Page (보고서 페이지 노드)'}
-              {selectedNode === 'bbox' && 'BoundingBox (문서 내 추출 영역 좌표)'}
-              {selectedNode === 'sha256' && 'Source SHA256 (원본 파일 무결성 해시)'}
-              {selectedNode === 'arch_obj' && 'ArchaeologyObject (표준 고고학 유물/도판 객체)'}
-              {selectedNode === 'decision' && 'ReviewDecision (검수 판정 이력)'}
+              {NODE_KIND_LABEL[selectedNode.kind]}
             </span>
           </h4>
         </div>
 
         <div className="detail-body">
-          {selectedNode === 'candidate' && (
+          {selectedNode.properties.length === 0 ? (
+            <p className="muted">이 노드에 반환된 속성이 없습니다.</p>
+          ) : (
             <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">id</span>
-                <span className="prop-val mono">{candidate.id}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">rule_category</span>
-                <span className="prop-val">{candidate.rule_category ?? candidate.category}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">status</span>
-                <span className="prop-val">{candidate.status}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">original_text</span>
-                <span className="prop-val">{candidate.original_text ?? candidate.originalText}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">proposed_text</span>
-                <span className="prop-val">{candidate.proposed_text ?? candidate.proposedText}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">archaeology_object_id</span>
-                <span className="prop-val">{archObjId}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'evidence' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">evidence_id</span>
-                <span className="prop-val mono">{currentEvidence?.id ?? 'ev_primary'}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">kind</span>
-                <span className="prop-val">{currentEvidence?.kind ?? 'claim'}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">method</span>
-                <span className="prop-val">{currentEvidence?.method ?? 'rule'}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">rationale</span>
-                <span className="prop-val">{currentEvidence?.rationale ?? '대조 규칙 감지'}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">confidence</span>
-                <span className="prop-val">{currentEvidence?.confidence ?? 1.0}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'doc_ver' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">document_version_id</span>
-                <span className="prop-val mono">{docVersionId}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">stage</span>
-                <span className="prop-val">{currentEvidence?.document_version?.stage ?? 'source'}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'page' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">page_id</span>
-                <span className="prop-val mono">{pageId}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">physical_page</span>
-                <span className="prop-val">{physicalPage}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">printed_page</span>
-                <span className="prop-val">{printedPage}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'bbox' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">bbox [x0, y0, x1, y1]</span>
-                <span className="prop-val mono">{bboxStr}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">설명</span>
-                <span className="prop-val">
-                  PDF 뷰어 및 바운딩 박스 하이라이트 렌더링에 사용되는 정규화 좌표계
-                </span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'sha256' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">source_sha256</span>
-                <span className="prop-val mono select-all">{sourceSha256}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">보증 상태</span>
-                <span className="prop-val">✓ 원본 PDF 바이트 무결성 검증 완료 (불변 증거)</span>
-              </div>
-            </div>
-          )}
-
-          {selectedNode === 'arch_obj' && (
-            <div className="property-grid">
-              <div className="prop-row">
-                <span className="prop-key">id</span>
-                <span className="prop-val mono">{archObjId}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">title</span>
-                <span className="prop-val">{archObj?.title || '삼국시대 유물편 및 도면'}</span>
-              </div>
-              <div className="prop-row">
-                <span className="prop-key">object_type</span>
-                <span className="prop-val">{archObj?.object_type || 'plate / drawing object'}</span>
-              </div>
+              {selectedNode.properties.map((row) => (
+                <div className="prop-row" key={row.key}>
+                  <span className="prop-key">{row.key}</span>
+                  <span className="prop-val mono">{row.value}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* Decision Node Links if available */}
-      {decisions.length > 0 && (
+      {model.nodes.some((n) => n.kind === 'decision') && (
         <div className="decision-graph-section">
           <span className="section-label">AUDIT DECISION CHAIN</span>
           <h4>연결된 감사 결정 노드 (Chained Decisions)</h4>
           <div className="decision-node-chain">
-            {decisions.map((dec, idx) => (
-              <div key={dec.id || idx} className="dec-node-card">
-                <div className="dec-node-header">
-                  <span className="dec-node-id mono">{dec.id}</span>
-                  <span className={`dec-node-status status-${dec.decision_status || dec.decision}`}>
-                    {dec.decision_status || dec.decision}
-                  </span>
-                </div>
-                <div className="dec-node-reviewer">검수자: {dec.reviewer}</div>
-                <div className="dec-node-time">{dec.created_at || dec.createdAt}</div>
-                {dec.previous_decision_id && (
-                  <div className="dec-node-supersedes">
-                    ➔ [:SUPERSEDES] ➔ {dec.previous_decision_id}
+            {model.nodes
+              .filter((n) => n.kind === 'decision')
+              .map((node) => (
+                <div key={node.id} className="dec-node-card">
+                  <div className="dec-node-header">
+                    <span className="dec-node-id mono">{node.id}</span>
+                    {node.statusPill && (
+                      <span className={`dec-node-status status-${node.statusPill}`}>
+                        {node.statusPill}
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className="dec-node-reviewer">검수자: {node.subtitle}</div>
+                  {node.properties.find((p) => p.key === 'created_at') && (
+                    <div className="dec-node-time">
+                      {node.properties.find((p) => p.key === 'created_at')?.value}
+                    </div>
+                  )}
+                  {node.properties.find((p) => p.key === 'previous_decision_id') && (
+                    <div className="dec-node-supersedes">
+                      ➔ [:SUPERSEDES] ➔{' '}
+                      {node.properties.find((p) => p.key === 'previous_decision_id')?.value}
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
         </div>
       )}
