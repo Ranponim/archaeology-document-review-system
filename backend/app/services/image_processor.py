@@ -52,3 +52,96 @@ class ImageProcessor:
                 return output_buffer.getvalue()
         except Exception:
             return image_bytes
+
+    @staticmethod
+    def is_valid_image(image_bytes: bytes) -> bool:
+        """Check if image_bytes represents valid decodable image data."""
+        if not image_bytes:
+            return False
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                img.verify()
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def crop_region(
+        image_bytes: bytes,
+        bbox: tuple[float, float, float, float] | list[float] | None,
+        max_dimension: int = 768,
+        quality: int = 75,
+    ) -> bytes:
+        """Crop region from image bytes based on bbox and prepare for VLM.
+
+        Rejects empty or corrupt image bytes gracefully by returning b"".
+        Handles both absolute coordinates (x0, y0, x1, y1) and normalized (0..1) coordinates.
+        """
+        if not image_bytes:
+            return b""
+
+        try:
+            from PIL import Image
+        except ImportError:
+            return b""
+
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                width, height = img.size
+                if width <= 0 or height <= 0:
+                    return b""
+
+                if bbox and len(bbox) == 4:
+                    x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+                    if x1 <= x0 or y1 <= y0:
+                        return b""
+                    left, top, right, bottom = x0, y0, x1, y1
+
+                    # Check if normalized coords
+                    if 0.0 <= left <= 1.0 and 0.0 <= top <= 1.0 and right <= 1.0 and bottom <= 1.0 and (right > 0.0 or bottom > 0.0) and (width > 1 and height > 1):
+                        crop_box = (
+                            int(round(left * width)),
+                            int(round(top * height)),
+                            int(round(right * width)),
+                            int(round(bottom * height)),
+                        )
+                    else:
+                        crop_box = (
+                            int(round(max(0.0, left))),
+                            int(round(max(0.0, top))),
+                            int(round(min(float(width), right))),
+                            int(round(min(float(height), bottom))),
+                        )
+
+                    # Validate crop box dimensions
+                    if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+                        return b""
+
+                    img = img.crop(crop_box)
+
+                # Resize maintaining aspect ratio if largest dimension exceeds max_dimension
+                cur_w, cur_h = img.size
+                if max(cur_w, cur_h) > max_dimension:
+                    if cur_w >= cur_h:
+                        new_width = max_dimension
+                        new_height = max(1, int(round(cur_h * (max_dimension / cur_w))))
+                    else:
+                        new_height = max_dimension
+                        new_width = max(1, int(round(cur_w * (max_dimension / cur_h))))
+
+                    resample_filter = getattr(
+                        getattr(Image, "Resampling", Image),
+                        "LANCZOS",
+                        getattr(Image, "LANCZOS", 1),
+                    )
+                    img = img.resize((new_width, new_height), resample=resample_filter)
+
+                output_buffer = io.BytesIO()
+                img.save(output_buffer, format="JPEG", quality=quality)
+                return output_buffer.getvalue()
+        except Exception:
+            return b""

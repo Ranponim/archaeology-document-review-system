@@ -1,8 +1,18 @@
 import json
 from pathlib import Path
 import pytest
+from app.domain.canonical_models import (
+    DrawingData,
+    DrawingRegionData,
+    PlateData,
+    PlatePanelData,
+    ReferenceData,
+    ResolutionStatus,
+)
+from app.domain.review_models import CorrectionCandidateData, EvidenceData
 from app.services.asset_cache import AssetHashCache
-from app.services.asset_matcher import AssetMatcher
+from app.services.asset_matcher import AssetMatcher, ResolutionResult
+from app.services.image_processor import ImageProcessor
 from app.services.vlm_review_service import VLMReviewService
 from app.services.asset_review_pipeline import (
     AssetReviewPipeline,
@@ -340,3 +350,279 @@ async def test_asset_review_pipeline_semantic_review_resolved_by_second_candidat
     assert summary.results[0].status == "exact"
     assert summary.results[0].matched_path == cand2
     assert "Resolved blank caption drawing 40" in summary.results[0].rationale
+
+
+def _create_test_image_bytes(width: int = 200, height: int = 200, color: tuple = (255, 0, 0)) -> bytes:
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_image_processor_crop_region_valid_bbox():
+    import io
+    from PIL import Image
+
+    img_bytes = _create_test_image_bytes(width=200, height=200)
+
+    # 1. Absolute coordinates: (10, 20, 110, 120) -> width 100, height 100
+    cropped = ImageProcessor.crop_region(img_bytes, bbox=(10, 20, 110, 120))
+    assert cropped != b""
+    with Image.open(io.BytesIO(cropped)) as img:
+        assert img.size == (100, 100)
+
+    # 2. Normalized coordinates: (0.1, 0.1, 0.5, 0.5) on 200x200 -> (20, 20, 100, 100) -> 80x80
+    cropped_norm = ImageProcessor.crop_region(img_bytes, bbox=(0.1, 0.1, 0.5, 0.5))
+    assert cropped_norm != b""
+    with Image.open(io.BytesIO(cropped_norm)) as img:
+        assert img.size == (80, 80)
+
+
+def test_image_processor_crop_region_empty_and_corrupt_rejection():
+    # Empty bytes
+    assert ImageProcessor.crop_region(b"", bbox=(0, 0, 50, 50)) == b""
+
+    # Corrupted / non-image bytes
+    assert ImageProcessor.crop_region(b"not_an_image_payload", bbox=(0, 0, 50, 50)) == b""
+
+    # Inverted / zero area bbox
+    img_bytes = _create_test_image_bytes(100, 100)
+    assert ImageProcessor.crop_region(img_bytes, bbox=(50, 50, 50, 50)) == b""
+    assert ImageProcessor.crop_region(img_bytes, bbox=(80, 80, 20, 20)) == b""
+
+
+@pytest.mark.anyio
+async def test_review_canonical_reference_plate_panel_produces_pending_review_candidate_with_vlm_evidence(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path / "cache")
+    mock_client = MockOpenRouterMultimodalClient()
+    vlm_service = VLMReviewService(client=mock_client, cache=cache)
+    matcher = AssetMatcher(drawings_dir=tmp_path / "drawings", plates_dir=tmp_path / "plates")
+    pipeline = AssetReviewPipeline(matcher=matcher, vlm_service=vlm_service, cache=cache)
+
+    panel = PlatePanelData(
+        panel_id="panel_45_1",
+        plate_id="plate_45",
+        panel_index=1,
+        caption="2호 토광묘",
+        bbox=(10.0, 10.0, 110.0, 110.0),
+        physical_page=47,
+        source_sha256="plate_hash_45",
+    )
+    resolution = ResolutionResult(
+        status=ResolutionStatus.RESOLVED,
+        target=panel,
+        identity_source="plate_pdf",
+        identity_evidence=["【도판 45】"],
+    )
+    reference = ReferenceData(
+        ref_type="plate",
+        number="45",
+        source_sha256="doc_hash_45",
+        physical_page=10,
+        raw_text="도판 45",
+    )
+    img_bytes = _create_test_image_bytes(200, 200)
+
+    candidates = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=img_bytes,
+        expected_feature="2호 토광묘",
+        expected_site="2지점",
+        document_version_id="doc_ver_1",
+        page_id="page_47",
+    )
+
+    assert len(candidates) == 1
+    cand = candidates[0]
+    assert isinstance(cand, CorrectionCandidateData)
+    assert cand.status == "pending_review"  # Strictly pending_review, no auto-accepted
+    assert cand.rule_category == "figure_plate_table_photo_ref"
+    assert cand.evidence is not None
+    assert isinstance(cand.evidence, EvidenceData)
+    assert cand.evidence.kind == "vlm_observation"
+    assert cand.evidence.source_sha256 == "plate_hash_45"
+    assert cand.evidence.document_version_id == "doc_ver_1"
+    assert cand.evidence.page_id == "page_47"
+    assert cand.evidence.region_id == "panel_45_1"
+    assert cand.evidence.bbox == (10.0, 10.0, 110.0, 110.0)
+    assert cand.evidence.confidence > 0.0
+    assert mock_client.call_count == 1
+
+
+@pytest.mark.anyio
+async def test_review_canonical_reference_drawing_region(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path / "cache")
+    mock_client = MockOpenRouterMultimodalClient()
+    vlm_service = VLMReviewService(client=mock_client, cache=cache)
+    matcher = AssetMatcher(drawings_dir=tmp_path / "drawings", plates_dir=tmp_path / "plates")
+    pipeline = AssetReviewPipeline(matcher=matcher, vlm_service=vlm_service, cache=cache)
+
+    region = DrawingRegionData(
+        region_id="drawing_reg_57",
+        drawing_id="drawing_57",
+        number="57",
+        title="2호 토광묘 실측도",
+        bbox=(0.05, 0.05, 0.85, 0.85),
+        physical_page=58,
+        source_sha256="draw_hash_57",
+    )
+    resolution = ResolutionResult(
+        status=ResolutionStatus.RESOLVED,
+        target=region,
+        identity_source="drawing_pdf",
+        identity_evidence=["【도면 57】"],
+    )
+    reference = ReferenceData(
+        ref_type="drawing",
+        number="57",
+        source_sha256="doc_hash_57",
+        physical_page=12,
+        raw_text="도면 57",
+    )
+    img_bytes = _create_test_image_bytes(200, 200)
+
+    candidates = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=img_bytes,
+        expected_feature="2호 토광묘",
+        expected_site="2지점",
+        document_version_id="doc_ver_1",
+    )
+
+    assert len(candidates) == 1
+    cand = candidates[0]
+    assert cand.status == "pending_review"
+    assert cand.evidence is not None
+    assert cand.evidence.kind == "vlm_observation"
+    assert cand.evidence.source_sha256 == "draw_hash_57"
+    assert cand.evidence.region_id == "drawing_reg_57"
+    assert cand.evidence.bbox == (0.05, 0.05, 0.85, 0.85)
+    assert mock_client.call_count == 1
+
+
+@pytest.mark.anyio
+async def test_review_canonical_reference_rejects_arbitrary_filename_coincidences(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path / "cache")
+    mock_client = MockOpenRouterMultimodalClient()
+    vlm_service = VLMReviewService(client=mock_client, cache=cache)
+    matcher = AssetMatcher(drawings_dir=tmp_path / "drawings", plates_dir=tmp_path / "plates")
+    pipeline = AssetReviewPipeline(matcher=matcher, vlm_service=vlm_service, cache=cache)
+
+    # Missing/unresolved reference or arbitrary string target
+    resolution = ResolutionResult(
+        status=ResolutionStatus.MISSING,
+        target=None,
+        identity_source="plate_pdf",
+        identity_evidence=[],
+    )
+    reference = ReferenceData(
+        ref_type="plate",
+        number="91",
+        source_sha256="doc_hash_91",
+        physical_page=15,
+        raw_text="도판 91",
+    )
+
+    candidates = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=b"decoy_random_91.jpg_bytes",
+    )
+
+    # Invariant: VLM MUST NEVER be called on non-resolved or arbitrary filename matches
+    assert mock_client.call_count == 0
+    assert len(candidates) == 1
+    assert candidates[0].status == "pending_review"
+    assert candidates[0].evidence is None or candidates[0].evidence.kind != "vlm_observation"
+
+
+@pytest.mark.anyio
+async def test_review_canonical_reference_handles_empty_or_corrupt_image_gracefully(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path / "cache")
+    mock_client = MockOpenRouterMultimodalClient()
+    vlm_service = VLMReviewService(client=mock_client, cache=cache)
+    matcher = AssetMatcher(drawings_dir=tmp_path / "drawings", plates_dir=tmp_path / "plates")
+    pipeline = AssetReviewPipeline(matcher=matcher, vlm_service=vlm_service, cache=cache)
+
+    panel = PlatePanelData(
+        panel_id="panel_corrupt",
+        plate_id="plate_99",
+        panel_index=1,
+        caption="99호",
+        bbox=(0, 0, 50, 50),
+        source_sha256="sha_99",
+    )
+    resolution = ResolutionResult(
+        status=ResolutionStatus.RESOLVED,
+        target=panel,
+    )
+    reference = ReferenceData(
+        ref_type="plate",
+        number="99",
+        source_sha256="sha_99",
+    )
+
+    # 1. Empty bytes
+    cand_empty = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=b"",
+    )
+    assert len(cand_empty) == 1
+    assert cand_empty[0].status == "pending_review"
+    assert mock_client.call_count == 0
+
+    # 2. Corrupted bytes
+    cand_corrupt = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=b"completely_corrupt_bytes",
+    )
+    assert len(cand_corrupt) == 1
+    assert cand_corrupt[0].status == "pending_review"
+    assert mock_client.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_review_canonical_reference_never_auto_promotes_to_accepted(tmp_path):
+    cache = AssetHashCache(cache_dir=tmp_path / "cache")
+    mock_client = MockOpenRouterMultimodalClient()
+    vlm_service = VLMReviewService(client=mock_client, cache=cache)
+    matcher = AssetMatcher(drawings_dir=tmp_path / "drawings", plates_dir=tmp_path / "plates")
+    pipeline = AssetReviewPipeline(matcher=matcher, vlm_service=vlm_service, cache=cache)
+
+    panel = PlatePanelData(
+        panel_id="panel_1",
+        plate_id="plate_1",
+        panel_index=1,
+        caption="1호 토광묘",
+        source_sha256="hash_1",
+    )
+    resolution = ResolutionResult(status=ResolutionStatus.RESOLVED, target=panel)
+    reference = ReferenceData(ref_type="plate", number="1", source_sha256="hash_1")
+    img_bytes = _create_test_image_bytes(100, 100)
+
+    candidates = await pipeline.review_canonical_reference(
+        reference=reference,
+        resolution=resolution,
+        vlm_service=vlm_service,
+        image_bytes=img_bytes,
+        expected_feature="1호 토광묘",
+    )
+
+    assert len(candidates) == 1
+    # Candidate status must strictly be pending_review (never "accepted" or "confirmed")
+    assert candidates[0].status == "pending_review"
+    assert candidates[0].status != "accepted"
+    assert candidates[0].status != "confirmed"
+
