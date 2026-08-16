@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.domain.canonical_models import ArchaeologyObjectData
-from app.domain.models import Project
+from app.domain.models import Document, DocumentVersion, Project, VersionInput
 from app.domain.review_models import (
     CorrectionCandidateData,
     EvidenceData,
@@ -16,22 +16,97 @@ from app.services.proofreading_orchestrator import (
 )
 
 
+
 class FakeProjectRepository:
     def __init__(self):
         self.projects = {
             "p1": Project(id="p1", name="산노리 유적", internal_code="NONSAN-001")
+        }
+        self.documents = {
+            "p1": [
+                Document(id="doc_body_1", project_id="p1", kind="report_body", title="본문"),
+                Document(id="doc_plate_1", project_id="p1", kind="plate_pdf", title="도판"),
+            ]
+        }
+        self.versions = {
+            "p1": [
+                DocumentVersion(
+                    id="ver_body_01",
+                    document_id="doc_body_1",
+                    analysis_run_id="run_1",
+                    uri="incoming/p1/sha_b/body.pdf",
+                    sha256="sha256_body_hash",
+                    size_bytes=10000,
+                    mime_type="application/pdf",
+                    original_name="body.pdf",
+                    stage="1차",
+                ),
+                DocumentVersion(
+                    id="ver_plate_01",
+                    document_id="doc_plate_1",
+                    analysis_run_id="run_2",
+                    uri="incoming/p1/sha_p/plate.pdf",
+                    sha256="sha256_plate_hash",
+                    size_bytes=20000,
+                    mime_type="application/pdf",
+                    original_name="plate.pdf",
+                    stage="1차",
+                ),
+            ]
         }
 
     def get_project(self, project_id: str) -> dict:
         if project_id not in self.projects:
             raise ProjectNotFoundError(project_id)
         return {
+            "project": self.projects[project_id],
             "id": project_id,
             "name": self.projects[project_id].name,
             "internal_code": self.projects[project_id].internal_code,
-            "document_versions": [],
+            "documents": self.documents.get(project_id, []),
+            "document_versions": self.versions.get(project_id, []),
             "analysis_runs": [],
         }
+
+    def get_document_version_by_id(self, version_id: str) -> DocumentVersion | None:
+        for v_list in self.versions.values():
+            for v in v_list:
+                if v.id == version_id:
+                    return v
+        return None
+
+    def resolve_version_input(
+        self,
+        project_id: str,
+        kind: str,
+        stage: str | None = None,
+        version_id: str | None = None,
+    ) -> VersionInput | None:
+        if project_id not in self.projects:
+            return None
+        v_list = self.versions.get(project_id, [])
+        doc_map = {d.id: d for d in self.documents.get(project_id, [])}
+        for v in v_list:
+            doc = doc_map.get(v.document_id)
+            doc_kind = doc.kind if doc else "report_body"
+            if doc_kind != kind:
+                continue
+            if stage is not None and v.stage != stage:
+                continue
+            if version_id is not None and v.id != version_id:
+                continue
+            return VersionInput(
+                version_id=v.id,
+                document_id=v.document_id,
+                project_id=project_id,
+                kind=doc_kind,
+                stage=v.stage,
+                uri=v.uri,
+                sha256=v.sha256,
+                mime_type=v.mime_type,
+            )
+        return None
+
 
 
 class FakeReviewRepository:

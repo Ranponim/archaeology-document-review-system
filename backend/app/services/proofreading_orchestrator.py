@@ -26,6 +26,7 @@ from app.domain.review_models import (
     EvidenceData,
 )
 from app.graph.canonical_repository import CanonicalRepository
+from app.graph.project_repository import DocumentVersionNotFoundError
 from app.graph.review_repository import ReviewRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.asset_matcher import AssetMatcher, ResolutionResult
@@ -74,6 +75,7 @@ class ProofreadingOrchestrator:
         canonical_repo: CanonicalRepository | None = None,
         review_repo: ReviewRepository | None = None,
         vlm_service: VLMReviewService | None = None,
+        project_repo: Any | None = None,
     ) -> None:
         self.pdf_parser = pdf_parser or PDFParser()
         self.plate_parser = plate_parser or PlateParser()
@@ -85,6 +87,7 @@ class ProofreadingOrchestrator:
         self.canonical_repo = canonical_repo
         self.review_repo = review_repo
         self.vlm_service = vlm_service
+        self.project_repo = project_repo
 
     @staticmethod
     def _compute_sha256(path: Path | str) -> str:
@@ -116,9 +119,98 @@ class ProofreadingOrchestrator:
         enable_vlm: bool = True,
         enable_ai_review: bool = True,
         version_stage: str = "1차",
+        project_repo: Any | None = None,
     ) -> OrchestratorResult:
         run_id = analysis_run_id or f"run_{uuid.uuid4().hex[:12]}"
         errors: list[str] = []
+        effective_project_repo = project_repo or self.project_repo
+
+        # 0. Fail-closed validation for body_version_id
+        if not body_version_id or not str(body_version_id).strip():
+            if self.review_repo is not None:
+                self.review_repo.save_analysis_run(
+                    project_id=project_id,
+                    run_id=run_id,
+                    status="failed",
+                    step="ingest",
+                    error_code="INVALID_BODY_VERSION_ID",
+                )
+            raise DocumentVersionNotFoundError("body_version_id cannot be empty")
+
+        ver = None
+        if effective_project_repo is not None:
+            ver = effective_project_repo.get_document_version_by_id(body_version_id)
+            if ver is None:
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="DOCUMENT_VERSION_NOT_FOUND",
+                    )
+                raise DocumentVersionNotFoundError(
+                    f"DocumentVersion '{body_version_id}' not found for project '{project_id}'"
+                )
+
+        # 0. Fail-closed validation for input file paths
+        if body_pages is None:
+            if body_pdf_path is None and ver is not None and getattr(ver, "uri", None):
+                from app.config import DATA_ROOT
+                cand_path = DATA_ROOT / ver.uri
+                if cand_path.is_file():
+                    body_pdf_path = cand_path
+                elif Path(ver.uri).is_file():
+                    body_pdf_path = Path(ver.uri)
+
+            if body_pdf_path is None:
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="BODY_PDF_NOT_PROVIDED",
+                    )
+                raise ValueError("Neither body_pages nor body_pdf_path was provided")
+
+            p_path = Path(body_pdf_path)
+            if not p_path.is_file():
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="FILE_NOT_FOUND",
+                    )
+                raise FileNotFoundError(f"Body PDF file not found at '{body_pdf_path}'")
+
+        if plate_pdf_path is not None:
+            pl_path = Path(plate_pdf_path)
+            if not pl_path.is_file():
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="FILE_NOT_FOUND",
+                    )
+                raise FileNotFoundError(f"Plate PDF file not found at '{plate_pdf_path}'")
+
+        if drawing_pdf_path is not None:
+            dr_path = Path(drawing_pdf_path)
+            if not dr_path.is_file():
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="ingest",
+                        error_code="FILE_NOT_FOUND",
+                    )
+                raise FileNotFoundError(f"Drawing PDF file not found at '{drawing_pdf_path}'")
 
         # 1. Initialize and Record AnalysisRun
         if self.review_repo is not None:
@@ -178,7 +270,7 @@ class ProofreadingOrchestrator:
         elif plate_pdf_path is not None:
             pl_path = Path(plate_pdf_path)
             plate_sha256 = self._compute_sha256(pl_path)
-            doc_v_id = plate_version_id or f"{project_id}_plate"
+            doc_v_id = plate_version_id or "plate_pdf"
             if plate_page_range:
                 plate_list = self.plate_parser.parse_page_range(
                     pl_path,
@@ -198,6 +290,7 @@ class ProofreadingOrchestrator:
             all_plates = list(active_plate_index.plates)
         else:
             active_plate_index = PlateIndex()
+
 
         if not plate_sha256:
             plate_sha256 = f"sha256_{plate_version_id or 'plate'}"

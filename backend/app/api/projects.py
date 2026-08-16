@@ -15,8 +15,18 @@ from app.api.schemas import (
     RetryAnalysisRunResponse,
     UploadResponse,
 )
-from app.domain.models import Document, DocumentVersion, Project, StoredFile
-from app.graph.project_repository import AnalysisRunNotFoundError, ProjectNotFoundError
+from app.domain.models import (
+    Document,
+    DocumentVersion,
+    Project,
+    StoredFile,
+    VersionInput,
+)
+from app.graph.project_repository import (
+    AnalysisRunNotFoundError,
+    DocumentVersionNotFoundError,
+    ProjectNotFoundError,
+)
 from app.services.file_store import FileStore
 
 
@@ -36,6 +46,16 @@ class ProjectRepositoryPort(Protocol):
     def get_project_documents(self, project_id: str) -> list[Document]: ...
 
     def get_document_versions(self, document_id: str) -> list[DocumentVersion]: ...
+
+    def get_document_version_by_id(self, version_id: str) -> DocumentVersion | None: ...
+
+    def resolve_version_input(
+        self,
+        project_id: str,
+        kind: str,
+        stage: str | None = None,
+        version_id: str | None = None,
+    ) -> VersionInput | None: ...
 
     def add_document_version(
         self,
@@ -58,6 +78,7 @@ class ProjectRepositoryPort(Protocol):
     def fail_ingest(self, analysis_run_id: str, code: str, retryable: bool) -> bool: ...
 
     def prepare_ingest_retry(self, project_id: str, analysis_run_id: str) -> str: ...
+
 
 
 def get_file_store(request: Request) -> FileStore:

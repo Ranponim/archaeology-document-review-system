@@ -16,9 +16,11 @@ from app.api.reviews import router as reviews_router
 from app.graph.client import create_driver
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
+    DocumentVersionNotFoundError,
     ProjectNotFoundError,
     ProjectRepository,
 )
+
 from app.graph.review_repository import ReviewRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
@@ -96,7 +98,14 @@ def create_app(
     async def missing_project(request: Request, _error: ProjectNotFoundError):
         return _error_response(request, 404)
 
+    @application.exception_handler(DocumentVersionNotFoundError)
+    async def missing_document_version(
+        request: Request, _error: DocumentVersionNotFoundError
+    ):
+        return _error_response(request, 404)
+
     @application.exception_handler(CandidateNotFoundError)
+
     async def missing_candidate(request: Request, _error: CandidateNotFoundError):
         return _error_response(request, 404)
 

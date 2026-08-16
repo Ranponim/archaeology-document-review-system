@@ -36,3 +36,16 @@ class DocumentVersion:
     mime_type: str
     original_name: str
     stage: str
+
+
+@dataclass(frozen=True, slots=True)
+class VersionInput:
+    version_id: str
+    document_id: str
+    project_id: str
+    kind: str
+    stage: str
+    uri: str
+    sha256: str
+    mime_type: str = "application/pdf"
+

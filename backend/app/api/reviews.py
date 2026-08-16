@@ -1,5 +1,6 @@
-import uuid
+from pathlib import Path
 from typing import Annotated, Any
+import uuid
 from fastapi import APIRouter, Depends, Request, status
 from starlette.concurrency import run_in_threadpool
 
@@ -19,6 +20,8 @@ from app.api.schemas import (
     RunTriggerResponse,
     TraceabilityResponse,
 )
+from app.config import DATA_ROOT
+from app.graph.project_repository import DocumentVersionNotFoundError
 from app.graph.review_repository import ReviewRepository
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
 
@@ -54,6 +57,8 @@ def get_orchestrator(request: Request) -> Any:
 # 1. POST /api/v1/projects/{project_id}/runs
 # =============================================================================
 
+
+
 @router.post(
     "/{project_id}/runs",
     response_model=RunTriggerResponse,
@@ -69,17 +74,68 @@ async def trigger_proofreading_run(
     # Ensure project exists
     await _run_repository(project_repository.get_project, project_id)
 
-    body_version_id = payload.body_version_id or f"ver_{project_id}_body"
+    # Authoritatively resolve body DocumentVersion input
+    body_version = await _run_repository(
+        project_repository.resolve_version_input,
+        project_id,
+        "report_body",
+        payload.version_stage,
+        payload.body_version_id,
+    )
+    if body_version is None:
+        if payload.body_version_id:
+            raise DocumentVersionNotFoundError(
+                f"DocumentVersion '{payload.body_version_id}' not found for project '{project_id}'"
+            )
+        raise DocumentVersionNotFoundError(
+            f"No 'report_body' DocumentVersion found for project '{project_id}'"
+        )
+
+    # Validate plate_version_id if specified
+    plate_version_id = payload.plate_version_id
+    if plate_version_id:
+        plate_version = await _run_repository(
+            project_repository.get_document_version_by_id,
+            plate_version_id,
+        )
+        if plate_version is None:
+            raise DocumentVersionNotFoundError(
+                f"DocumentVersion '{plate_version_id}' not found for project '{project_id}'"
+            )
+
+    # Validate drawing_version_id if specified
+    drawing_version_id = payload.drawing_version_id
+    if drawing_version_id:
+        drawing_version = await _run_repository(
+            project_repository.get_document_version_by_id,
+            drawing_version_id,
+        )
+        if drawing_version is None:
+            raise DocumentVersionNotFoundError(
+                f"DocumentVersion '{drawing_version_id}' not found for project '{project_id}'"
+            )
+
     orch = orchestrator
     if orch is None:
-        orch = ProofreadingOrchestrator(review_repo=review_repository)
+        orch = ProofreadingOrchestrator(
+            review_repo=review_repository,
+            project_repo=project_repository,
+        )
+
+    body_pdf_path = payload.body_pdf_path
+    if body_pdf_path is None and body_version.uri:
+        candidate_path = DATA_ROOT / body_version.uri
+        if candidate_path.is_file():
+            body_pdf_path = candidate_path
+        elif Path(body_version.uri).is_file():
+            body_pdf_path = Path(body_version.uri)
 
     res = await orch.run_proofreading(
         project_id=project_id,
-        body_version_id=body_version_id,
-        plate_version_id=payload.plate_version_id,
-        drawing_version_id=payload.drawing_version_id,
-        body_pdf_path=payload.body_pdf_path,
+        body_version_id=body_version.version_id,
+        plate_version_id=plate_version_id,
+        drawing_version_id=drawing_version_id,
+        body_pdf_path=body_pdf_path,
         plate_pdf_path=payload.plate_pdf_path,
         drawing_pdf_path=payload.drawing_pdf_path,
         enable_vlm=payload.enable_vlm,
@@ -98,6 +154,7 @@ async def trigger_proofreading_run(
         summary=res.summary,
         errors=res.errors,
     )
+
 
 
 # =============================================================================

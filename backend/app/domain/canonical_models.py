@@ -105,3 +105,6 @@ Drawing = DrawingData
 ArchaeologyObject = ArchaeologyObjectData
 ResolutionResult = ObjectResolutionResult
 
+from app.domain.models import VersionInput  # noqa: E402
+
+

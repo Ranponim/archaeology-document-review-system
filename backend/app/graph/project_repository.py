@@ -2,7 +2,13 @@ from uuid import uuid4
 
 from neo4j import Driver, ManagedTransaction
 
-from app.domain.models import Document, DocumentVersion, Project, StoredFile
+from app.domain.models import (
+    Document,
+    DocumentVersion,
+    Project,
+    StoredFile,
+    VersionInput,
+)
 
 
 class ProjectNotFoundError(LookupError):
@@ -11,6 +17,11 @@ class ProjectNotFoundError(LookupError):
 
 class AnalysisRunNotFoundError(LookupError):
     pass
+
+
+class DocumentVersionNotFoundError(LookupError):
+    pass
+
 
 
 class ProjectRepository:
@@ -165,6 +176,84 @@ class ProjectRepository:
             )
             for record in records
         ]
+
+    def get_document_version_by_id(self, version_id: str) -> DocumentVersion | None:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (version:DocumentVersion {id: $version_id})
+            OPTIONAL MATCH (document:Document)-[:HAS_VERSION]->(version)
+            OPTIONAL MATCH (run:AnalysisRun)-[:ANALYZES]->(version)
+            RETURN version.id AS id,
+                   coalesce(document.id, '') AS document_id,
+                   coalesce(run.id, '') AS analysis_run_id,
+                   version.uri AS uri,
+                   version.sha256 AS sha256,
+                   version.sizeBytes AS size_bytes,
+                   version.mimeType AS mime_type,
+                   version.originalName AS original_name,
+                   version.stage AS stage
+            """,
+            version_id=version_id,
+            **self._query_config,
+        )
+        if not records:
+            return None
+        record = records[0]
+        return DocumentVersion(
+            id=record["id"],
+            document_id=record["document_id"],
+            analysis_run_id=record["analysis_run_id"],
+            uri=record["uri"],
+            sha256=record["sha256"],
+            size_bytes=record["size_bytes"],
+            mime_type=record["mime_type"],
+            original_name=record["original_name"],
+            stage=record["stage"],
+        )
+
+    def resolve_version_input(
+        self,
+        project_id: str,
+        kind: str,
+        stage: str | None = None,
+        version_id: str | None = None,
+    ) -> VersionInput | None:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_DOCUMENT]->(document:Document)-[:HAS_VERSION]->(version:DocumentVersion)
+            WHERE coalesce(document.kind, 'report_body') = $kind
+              AND ($stage IS NULL OR version.stage = $stage)
+              AND ($version_id IS NULL OR version.id = $version_id)
+            RETURN version.id AS version_id,
+                   document.id AS document_id,
+                   project.id AS project_id,
+                   coalesce(document.kind, 'report_body') AS kind,
+                   version.stage AS stage,
+                   version.uri AS uri,
+                   version.sha256 AS sha256,
+                   coalesce(version.mimeType, 'application/pdf') AS mime_type
+            ORDER BY version.createdAt DESC, version.id DESC
+            LIMIT 1
+            """,
+            project_id=project_id,
+            kind=kind,
+            stage=stage,
+            version_id=version_id,
+            **self._query_config,
+        )
+        if not records:
+            return None
+        record = records[0]
+        return VersionInput(
+            version_id=record["version_id"],
+            document_id=record["document_id"],
+            project_id=record["project_id"],
+            kind=record["kind"],
+            stage=record["stage"],
+            uri=record["uri"],
+            sha256=record["sha256"],
+            mime_type=record["mime_type"],
+        )
 
     def get_project(self, project_id: str) -> dict:
         records, _, _ = self._driver.execute_query(

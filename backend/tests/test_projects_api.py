@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.models import Document, DocumentVersion, Project
+from app.domain.models import Document, DocumentVersion, Project, VersionInput
 from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
 from app.main import create_app
 from app.services.file_store import FileStore
@@ -69,7 +69,47 @@ class FakeProjectRepository:
                     results.append(v)
         return results
 
+    def get_document_version_by_id(self, version_id: str) -> DocumentVersion | None:
+        for v_list in self.versions.values():
+            for v in v_list:
+                if v.id == version_id:
+                    return v
+        return None
+
+    def resolve_version_input(
+        self,
+        project_id: str,
+        kind: str,
+        stage: str | None = None,
+        version_id: str | None = None,
+    ) -> VersionInput | None:
+        if project_id not in self.projects:
+            return None
+        v_list = self.versions.get(project_id, [])
+        doc_map = {d.id: d for d in self.documents.get(project_id, [])}
+        for v in v_list:
+            doc = doc_map.get(v.document_id)
+            doc_kind = doc.kind if doc else "report_body"
+            if doc_kind != kind:
+                continue
+            if stage is not None and v.stage != stage:
+                continue
+            if version_id is not None and v.id != version_id:
+                continue
+            return VersionInput(
+                version_id=v.id,
+                document_id=v.document_id,
+                project_id=project_id,
+                kind=doc_kind,
+                stage=v.stage,
+                uri=v.uri,
+                sha256=v.sha256,
+                mime_type=v.mime_type,
+            )
+        return None
+
     def add_document_version(
+
         self,
         project_id,
         stored,
