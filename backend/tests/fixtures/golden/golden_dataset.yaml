@@ -1,0 +1,332 @@
+# =============================================================================
+# Archaeological Document Review System - 10-Case Golden Benchmark
+# Locked Specification & Ground Truth Reference Dataset
+# Version: 1.0 (Locked for Task 17 Architectural Verification Gates)
+# =============================================================================
+
+version: "1.0-locked"
+description: "Expert-verified 10-case golden benchmark for canonical document-object-evidence graph"
+created_at: "2026-08-17"
+
+benchmark_cases:
+  # ---------------------------------------------------------------------------
+  # Case 1: Range Reference Parsing & Resolution (Plates 22~28)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_001"
+    name: "도판 22~28 (1지점 청동기시대 석관묘 1~7호 출토유물)"
+    category: "reference_range_resolution"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    body_text: "1지점 청동기시대 석관묘 1~7호 출토유물(도판 : 22~28)"
+    reference:
+      type: "plate"
+      raw_range: "22~28"
+      expected_numbers: ["22", "23", "24", "25", "26", "27", "28"]
+    archaeology_object:
+      site: "1지점"
+      period: "청동기시대"
+      type: "석관묘"
+      number: "1~7호"
+      canonical_name: "1지점 청동기시대 석관묘 1~7호"
+    expected_canonical_targets:
+      - number: "22"
+        raw_identifier: "【도판 22】"
+        title: "1지점 청동기시대 1호 석관묘 출토유물"
+      - number: "23"
+        raw_identifier: "【도판 23】"
+        title: "1지점 청동기시대 2호 석관묘 출토유물"
+      - number: "24"
+        raw_identifier: "【도판 24】"
+        title: "1지점 청동기시대 3호 석관묘 출토유물"
+      - number: "25"
+        raw_identifier: "【도판 25】"
+        title: "1지점 청동기시대 4호 석관묘 출토유물"
+      - number: "26"
+        raw_identifier: "【도판 26】"
+        title: "1지점 청동기시대 5호 석관묘 출토유물"
+      - number: "27"
+        raw_identifier: "【도판 27】"
+        title: "1지점 청동기시대 6호 석관묘 출토유물"
+      - number: "28"
+        raw_identifier: "【도판 28】"
+        title: "1지점 청동기시대 7호 석관묘 출토유물"
+    decoy_filenames:
+      - "22 (1).jpg"
+      - "22 (2).jpg"
+      - "photo_22.JPG"
+      - "28_photo.JPG"
+    invariant: "Range reference expands deterministically to 7 plates without binding to numeric filename coincidences"
+
+  # ---------------------------------------------------------------------------
+  # Case 2: Punctuation Multi-Reference Parsing & Resolution (Plates 81·82)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_002"
+    name: "도판 81·82 (2지점 조선시대 2호 토광묘 유구)"
+    category: "reference_multi_punctuation_resolution"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    body_text: "2지점 조선시대 2호 토광묘 ① 유구(도면 : 54, 도판 : 81·82)"
+    reference:
+      type: "plate"
+      raw_range: "81·82"
+      expected_numbers: ["81", "82"]
+    archaeology_object:
+      site: "2지점"
+      period: "조선시대"
+      type: "토광묘"
+      number: "2호"
+      canonical_name: "2지점 조선시대 2호 토광묘"
+    expected_canonical_targets:
+      - number: "81"
+        raw_identifier: "【도판 81】"
+        title: "2지점 조선시대 1호 토광묘"
+      - number: "82"
+        raw_identifier: "【도판 82】"
+        title: "2지점 조선시대 2호 토광묘"
+    decoy_filenames:
+      - "4. 조사 후_81.JPG"
+      - "2. 조사 중_82.JPG"
+    invariant: "Middle-dot punctuation expands into discrete plate references resolving to explicit publication plates"
+
+  # ---------------------------------------------------------------------------
+  # Case 3: Dot-Separated Multi-Reference Resolution (Plates 45·46)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_003"
+    name: "도판 45·46 (1지점 청동기시대 6호 석관묘)"
+    category: "reference_multi_dot_resolution"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    body_text: "1지점 청동기시대 6호 석관묘 ... ① 유구(도면 : 30, 도판 : 45ㆍ46)"
+    reference:
+      type: "plate"
+      raw_range: "45ㆍ46"
+      expected_numbers: ["45", "46"]
+    archaeology_object:
+      site: "1지점"
+      period: "청동기시대"
+      type: "석관묘"
+      number: "6호"
+      canonical_name: "1지점 청동기시대 6호 석관묘"
+    expected_canonical_targets:
+      - number: "45"
+        raw_identifier: "【도판 45】"
+        title: "1지점 청동기시대 6호 석관묘"
+      - number: "46"
+        raw_identifier: "【도판 46】"
+        title: "1지점 청동기시대 6호 석관묘 출토유물"
+    decoy_filenames:
+      - "4. 조사 후_45.JPG"
+      - "photo_46.JPG"
+    invariant: "Both Plate 45 and 46 resolve to their respective publication plates independently of disk links"
+
+  # ---------------------------------------------------------------------------
+  # Case 4: Drawing Range Reference Parsing & Resolution (Drawings 16~22)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_004"
+    name: "도면 16~22 (1지점 청동기시대 석관묘 평단면도)"
+    category: "drawing_range_resolution"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    body_text: "1지점 청동기시대 석관묘 1~7호 평단면도(도면 : 16~22)"
+    reference:
+      type: "drawing"
+      raw_range: "16~22"
+      expected_numbers: ["16", "17", "18", "19", "20", "21", "22"]
+    archaeology_object:
+      site: "1지점"
+      period: "청동기시대"
+      type: "석관묘"
+      number: "1~7호"
+      canonical_name: "1지점 청동기시대 석관묘 1~7호"
+    expected_canonical_targets:
+      - number: "16"
+        raw_identifier: "【도면 16】"
+        title: "1지점 청동기시대 1호 석관묘 평단면도"
+      - number: "17"
+        raw_identifier: "【도면 17】"
+        title: "1지점 청동기시대 2호 석관묘 평단면도"
+      - number: "18"
+        raw_identifier: "【도면 18】"
+        title: "1지점 청동기시대 3호 석관묘 평단면도"
+      - number: "19"
+        raw_identifier: "【도면 19】"
+        title: "1지점 청동기시대 4호 석관묘 평단면도"
+      - number: "20"
+        raw_identifier: "【도면 20】"
+        title: "1지점 청동기시대 5호 석관묘 평단면도"
+      - number: "21"
+        raw_identifier: "【도면 21】"
+        title: "1지점 청동기시대 6호 석관묘 평단면도"
+      - number: "22"
+        raw_identifier: "【도면 22】"
+        title: "1지점 청동기시대 7호 석관묘 평단면도"
+    decoy_filenames:
+      - "도면16.ai"
+      - "drawing_22.dwg"
+    invariant: "Drawing range resolves deterministically to canonical Drawing objects without filename matching"
+
+  # ---------------------------------------------------------------------------
+  # Case 5: Single Drawing Reference Resolution (Drawing 30)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_005"
+    name: "도면 30 (1지점 청동기시대 6호 석관묘 평단면도)"
+    category: "drawing_single_resolution"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    body_text: "1지점 청동기시대 6호 석관묘 평단면도(도면 : 30)"
+    reference:
+      type: "drawing"
+      number: "30"
+      expected_numbers: ["30"]
+    archaeology_object:
+      site: "1지점"
+      period: "청동기시대"
+      type: "석관묘"
+      number: "6호"
+      canonical_name: "1지점 청동기시대 6호 석관묘"
+    expected_canonical_targets:
+      - number: "30"
+        raw_identifier: "【도면 30】"
+        title: "1지점 청동기시대 6호 석관묘 평단면도"
+    decoy_filenames:
+      - "30.dwg"
+      - "도면_30_final.pdf"
+    invariant: "Single drawing reference binds strictly to canonical drawing index"
+
+  # ---------------------------------------------------------------------------
+  # Case 6: Case 6 Filename Trap Regression
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_006"
+    name: "Case 6 Regression: Inviolable Identity Separation (Plate 45 vs 4. 조사 후_45.JPG)"
+    category: "filename_trap_regression"
+    ground_truth_status: "INVALID_GROUND_TRUTH_MAPPING"
+    body_text: "1지점 청동기시대 6호 석관묘 ... ① 유구(도면 : 30, 도판 : 45ㆍ46)"
+    reference:
+      type: "plate"
+      number: "45"
+    plate_explicit_identifier: "【도판 45】"
+    plate_title: "1지점 청동기시대 6호 석관묘"
+    physical_page: 47
+    forbidden_link_filename: "4. 조사 후_45.JPG"
+    ambiguous_filenames:
+      - "photo_45.JPG"
+      - "조사후_45.JPG"
+      - "4. 조사 후_45.JPG"
+    missing_reference:
+      type: "plate"
+      number: "91"
+      decoy_filenames:
+        - "_91.JPG"
+        - "photo_91.JPG"
+        - "조사후_91.JPG"
+    invariant: "Reference(plate, 45) must resolve canonically to Plate 45 and NEVER pick forbidden filename '4. 조사 후_45.JPG'"
+
+  # ---------------------------------------------------------------------------
+  # Case 7: Unit Normalization Dimension Conflict (275cm vs 2.45m / 2.75m)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_007"
+    name: "Unit Normalization Dimension Conflict (275cm vs 2.45m conflict, 275cm vs 2.75m match)"
+    category: "numeric_unit_normalization"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    description: "Cross-draft dimension consistency validation with metric unit normalization"
+    dimension_pairs:
+      - id: "dim_pair_conflict"
+        value_a: "길이 275cm, 너비 120cm, 깊이 45cm"
+        value_b: "길이 2.45m, 너비 120cm, 깊이 45cm"
+        normalized_a_base_cm: 275.0
+        normalized_b_base_cm: 245.0
+        consistent: false
+        conflict_detected: true
+        expected_rule_category: "numeric_value"
+        expected_status: "pending_review"
+      - id: "dim_pair_match"
+        value_a: "길이 275cm, 너비 120cm, 깊이 45cm"
+        value_b: "길이 2.75m, 너비 120cm, 깊이 45cm"
+        normalized_a_base_cm: 275.0
+        normalized_b_base_cm: 275.0
+        consistent: true
+        conflict_detected: false
+        expected_rule_category: null
+        expected_status: null
+      - id: "weight_pair_match"
+        value_a: "무게 1.5kg"
+        value_b: "무게 1500g"
+        normalized_a_base_g: 1500.0
+        normalized_b_base_g: 1500.0
+        consistent: true
+        conflict_detected: false
+    invariant: "275cm vs 2.45m raises numeric conflict candidate in pending_review; 275cm vs 2.75m produces no conflict"
+
+  # ---------------------------------------------------------------------------
+  # Case 8: Period Synonym Normalization (청동기 == 청동기시대)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_008"
+    name: "Period Synonym Normalization (청동기 == 청동기시대)"
+    category: "period_synonym_normalization"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    description: "Archaeological era normalization mapping synonyms to canonical period definitions"
+    synonym_pairs:
+      - input_a: "1지점 청동기 6호 석관묘"
+        input_b: "1지점 청동기시대 6호 석관묘"
+        normalized_period: "청동기시대"
+        canonical_name: "1지점 청동기시대 6호 석관묘"
+        match: true
+      - input_a: "1지점 구석기 1호 유구"
+        input_b: "1지점 구석기시대 1호 유구"
+        normalized_period: "구석기시대"
+        canonical_name: "1지점 구석기시대 1호 유구"
+        match: true
+      - input_a: "1지점 신석기 2호 주거지"
+        input_b: "1지점 신석기시대 2호 주거지"
+        normalized_period: "신석기시대"
+        canonical_name: "1지점 신석기시대 2호 주거지"
+        match: true
+      - input_a: "2지점 조선 2호 토광묘"
+        input_b: "2지점 조선시대 2호 토광묘"
+        normalized_period: "조선시대"
+        canonical_name: "2지점 조선시대 2호 토광묘"
+        match: true
+    invariant: "Synonyms of eras normalize deterministically to the full era title and merge safely into the same canonical entity"
+
+  # ---------------------------------------------------------------------------
+  # Case 9: Ambiguous Entity Safety (2호 토광묘 isolated -> semantic_review)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_009"
+    name: "Ambiguous Entity Safety (2호 토광묘 isolated -> semantic_review, never auto-merged)"
+    category: "ambiguity_safety"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    description: "Conservative entity resolution prevents unsafe automatic merging of under-specified mentions"
+    multi_entity_context:
+      - block_id: "b_joseon_2"
+        text: "2지점 조선시대 2호 토광묘는 양호하게 잔존한다."
+        expected_status: "candidate"
+        confidence: 1.0
+        canonical_name: "2지점 조선시대 2호 토광묘"
+      - block_id: "b_unknown_2"
+        text: "2지점 시대미상 2호 토광묘 내부를 조사하였다."
+        expected_status: "candidate"
+        confidence: 1.0
+        canonical_name: "2지점 시대미상 2호 토광묘"
+      - block_id: "b_ambiguous_2"
+        text: "2호 토광묘의 바닥면에서 목탄 흔적이 확인된다."
+        expected_status: "semantic_review"
+        confidence_max: 0.7
+        canonical_name: "2호 토광묘"
+        auto_merged: false
+    invariant: "Isolated 2호 토광묘 mention must be classified as semantic_review and NEVER auto-merged into 조선시대 2호 or 시대미상 2호"
+
+  # ---------------------------------------------------------------------------
+  # Case 10: VLM Observation Negative Safety (2지점 2호 vs 2지점 25호 -> CONTRADICTED)
+  # ---------------------------------------------------------------------------
+  - case_id: "GT_CASE_010"
+    name: "VLM Observation Negative Safety (2지점 2호 vs 2지점 25호 -> CONTRADICTED)"
+    category: "multimodal_negative_safety"
+    ground_truth_status: "VALID_GROUND_TRUTH"
+    description: "VLM discrimination prevents false positive visual verification when site label matches but feature ID differs"
+    test_scenario:
+      expected_feature: "2호 토광묘"
+      expected_site: "2지점"
+      photo_observation:
+        site_label: "논산 산노리 2지점 25호 토광묘"
+        feature_number: "25"
+        object_type: "토광묘"
+        orientation: "N-10-W"
+      expected_verdicts: ["CONTRADICTED", "PARTIAL"]
+      forbidden_verdict: "SUPPORTED"
+      expected_is_match: false
+    invariant: "VLM observation must flag feature number mismatch as CONTRADICTED and NEVER declare SUPPORTED based on site name coincidence"
