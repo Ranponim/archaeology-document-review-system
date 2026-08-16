@@ -23,6 +23,7 @@ from app.services.ai_review_service import AIReviewService
 from app.services.drawing_parser import DrawingParser
 from app.services.object_resolver import ObjectResolver
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.jobs.worker import _run_analysis_worker
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateParser
 from app.services.proofreading_orchestrator import (
@@ -272,12 +273,49 @@ def test_persist_version_alignment_raises_when_stage_missing_from_version_ids():
 # ---------------------------------------------------------------------------
 
 
-def test_trigger_proofreading_run_passes_version_pages_and_ids(
+def _claim_then_empty_driver(claim: dict) -> FakeNeo4jDriver:
+    """Fake driver returning the claim record for the claim CAS and nothing
+    for every other query (mirrors a run that only the worker has touched)."""
+
+    class _ClaimThenEmpty(FakeNeo4jDriver):
+        def __init__(self):
+            super().__init__()
+            self.claim_returned = False
+
+        def execute_query(self, query: str, **kwargs):
+            self.queries.append({"query": query, "kwargs": kwargs})
+            if not self.claim_returned and "run.attemptCount" in query:
+                self.claim_returned = True
+                return [FakeNeo4jRecord(claim)], None, None
+            return [], None, None
+
+    return _ClaimThenEmpty()
+
+
+def _run_context(body_version_id: str, version_stage: str = "1차") -> dict:
+    return {
+        "projectId": "p1",
+        "run": {
+            "bodyVersionId": body_version_id,
+            "plateVersionId": None,
+            "drawingVersionId": None,
+            "bodyPdfPath": None,
+            "platePdfPath": None,
+            "drawingPdfPath": None,
+            "enableVlm": False,
+            "enableAiReview": False,
+            "versionStage": version_stage,
+        },
+    }
+
+
+@pytest.mark.anyio
+async def test_analysis_worker_executes_proof_and_persists_precedes_and_aligned(
     tmp_path: Path, asset_cache_dir
 ):
-    """Production POST /runs resolves body versions by stage, parses their
-    stored PDFs, and passes version_pages/version_ids so PRECEDES (1차→2차→3차)
-    and ALIGNED_TO persist on a real run."""
+    """The worker (not the HTTP request) executes the canonical proof: a
+    queued run is claimed, version inputs are resolved by stage with real
+    version ids, and PRECEDES (1차→2차→3차) + ALIGNED_TO persist."""
     text = "Nonsan Sannori site report page one"
     pdf1 = _make_text_pdf(tmp_path, "1.pdf", text)
     pdf2 = _make_text_pdf(tmp_path, "2.pdf", text)
@@ -289,29 +327,14 @@ def test_trigger_proofreading_run_passes_version_pages_and_ids(
             "3차": _body_version("ver_3cha", "3차", pdf3),
         }
     )
-    driver = FakeNeo4jDriver()
+    driver = _claim_then_empty_driver(_run_context("ver_1cha", "1차"))
     orch = _full_orchestrator(driver, proj_repo)
-    app = create_app(
-        project_repository=proj_repo,
-        review_repository=orch.review_repo,
-        orchestrator=orch,
-    )
-    client = TestClient(app)
 
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={
-            "bodyVersionId": "ver_1cha",
-            "versionStage": "1차",
-            "enableVlm": False,
-            "enableAiReview": False,
-        },
-    )
+    outcome = await _run_analysis_worker("run_async_1", orch)
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "completed"
-    assert data["warnings"] == []
+    assert outcome["status"] == "completed"
+    assert outcome["executed"] is True
+    assert outcome["analysis_run_id"] == "run_async_1"
 
     all_queries = "\n".join(q["query"] for q in driver.queries)
     assert "PRECEDES" in all_queries
@@ -332,17 +355,25 @@ def test_trigger_proofreading_run_passes_version_pages_and_ids(
         ("ver_1cha_p1", "ver_3cha_p1"),
         ("ver_2cha_p1", "ver_3cha_p1"),
     }
+    assert all("차" not in e["from_id"] and "차" not in e["to_id"] for e in edges)
+
+    assert any(
+        q["kwargs"].get("status") == "completed"
+        and q["kwargs"].get("step") == "proofreading"
+        for q in driver.queries
+    )
 
 
-def test_trigger_proofreading_run_missing_body_version_file_fails_closed(
+@pytest.mark.anyio
+async def test_analysis_worker_missing_body_version_file_fails_closed(
     tmp_path: Path, asset_cache_dir
 ):
-    """Gate G: a body version whose stored PDF is missing on disk fails closed
-    (404), never silently skipped."""
+    """Gate G: a body version whose stored PDF is missing fails the run closed
+    (input_error), never silently skipped."""
     text = "Nonsan Sannori site report page one"
     pdf1 = _make_text_pdf(tmp_path, "1.pdf", text)
     pdf3 = _make_text_pdf(tmp_path, "3.pdf", text)
-    missing_pdf = tmp_path / "missing-2.pdf"  # never created
+    missing_pdf = tmp_path / "missing-2.pdf"
     proj_repo = FakeProjectRepository(
         {
             "1차": _body_version("ver_1cha", "1차", pdf1),
@@ -350,29 +381,31 @@ def test_trigger_proofreading_run_missing_body_version_file_fails_closed(
             "3차": _body_version("ver_3cha", "3차", pdf3),
         }
     )
-    driver = FakeNeo4jDriver()
+    driver = _claim_then_empty_driver(_run_context("ver_1cha", "1차"))
     orch = _full_orchestrator(driver, proj_repo)
-    app = create_app(
-        project_repository=proj_repo,
-        review_repository=orch.review_repo,
-        orchestrator=orch,
+
+    outcome = await _run_analysis_worker("run_async_2", orch)
+
+    assert outcome["status"] == "failed"
+    assert outcome["executed"] is True
+    assert outcome["error_code"] == "input_error"
+    assert outcome["retryable"] is False
+
+    all_queries = "\n".join(q["query"] for q in driver.queries)
+    assert "PRECEDES" not in all_queries
+    failed_saves = [q["kwargs"] for q in driver.queries if q["kwargs"].get("status") == "failed"]
+    assert any(
+        f["error_code"] == "input_error" and f["run_id"] == "run_async_2"
+        for f in failed_saves
     )
-    client = TestClient(app)
-
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_1cha", "versionStage": "1차"},
-    )
-
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "input_error"
 
 
-def test_trigger_proofreading_run_non_contiguous_stages_fail_closed(
+@pytest.mark.anyio
+async def test_analysis_worker_non_contiguous_stages_fail_closed(
     tmp_path: Path, asset_cache_dir
 ):
-    """Never silently bridge 1차→3차: a project with only 1차 and 3차 body
-    versions fails closed (400) instead of writing a bogus PRECEDES edge."""
+    """Never silently bridge 1차→3차: the worker fails the run with no
+    PRECEDES/ALIGNED_TO write."""
     text = "Nonsan Sannori site report page one"
     pdf1 = _make_text_pdf(tmp_path, "1.pdf", text)
     pdf3 = _make_text_pdf(tmp_path, "3.pdf", text)
@@ -382,64 +415,29 @@ def test_trigger_proofreading_run_non_contiguous_stages_fail_closed(
             "3차": _body_version("ver_3cha", "3차", pdf3),
         }
     )
-    driver = FakeNeo4jDriver()
+    driver = _claim_then_empty_driver(_run_context("ver_1cha", "1차"))
     orch = _full_orchestrator(driver, proj_repo)
-    app = create_app(
-        project_repository=proj_repo,
-        review_repository=orch.review_repo,
-        orchestrator=orch,
-    )
-    client = TestClient(app)
 
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_1cha", "versionStage": "1차"},
-    )
+    outcome = await _run_analysis_worker("run_async_3", orch)
 
-    assert resp.status_code == 400
-    assert resp.json()["code"] == "input_error"
-    # No PRECEDES / ALIGNED_TO write happened
+    assert outcome["status"] == "failed"
+    assert outcome["executed"] is True
+    assert outcome["error_code"] == "input_error"
     all_queries = "\n".join(q["query"] for q in driver.queries)
     assert "PRECEDES" not in all_queries
     assert "ALIGNED_TO" not in all_queries
 
 
-# ---------------------------------------------------------------------------
-# 3. DEGRADED warnings surfaced on RunTriggerResponse (task-7-review §5.7)
-# ---------------------------------------------------------------------------
-
-
-def test_run_trigger_response_surfaces_orchestrator_warnings():
-    """DEGRADED orchestrator warnings are surfaced on RunTriggerResponse so a
-    degraded run is visible to API clients."""
-
-    class WarningOrchestrator:
-        async def run_proofreading(self, **kwargs) -> OrchestratorResult:
-            return OrchestratorResult(
-                project_id="p1",
-                analysis_run_id="run_warn",
-                status="completed",
-                pages_parsed=1,
-                objects_resolved=0,
-                references_resolved=0,
-                candidates=[],
-                evidences=[],
-                objects=[],
-                plates=[],
-                drawings=[],
-                warnings=[
-                    "graph evidence unavailable for object 'obj_1' — "
-                    "falling back to in-memory evidence (DEGRADED)"
-                ],
-            )
-
+def test_run_trigger_response_preserves_warnings_field_when_run_is_queued():
+    """The RunTriggerResponse still carries the warnings field; with the
+    async flow the run is queued and warnings surface in the worker outcome."""
     proj_repo = FakeProjectRepository(
         {"1차": _body_version("ver_1cha", "1차", Path("/nonexistent/1.pdf"))}
     )
     app = create_app(
         project_repository=proj_repo,
-        review_repository=None,
-        orchestrator=WarningOrchestrator(),
+        review_repository=ReviewRepository(driver=FakeNeo4jDriver(), database="test_db"),
+        run_enqueuer=lambda run_id: f"proofreading-{run_id}",
     )
     client = TestClient(app)
 
@@ -448,12 +446,10 @@ def test_run_trigger_response_surfaces_orchestrator_warnings():
         json={"bodyVersionId": "ver_1cha", "versionStage": "1차"},
     )
 
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     data = resp.json()
-    assert data["warnings"] == [
-        "graph evidence unavailable for object 'obj_1' — "
-        "falling back to in-memory evidence (DEGRADED)"
-    ]
+    assert data["status"] == "queued"
+    assert data["warnings"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -571,6 +567,105 @@ async def test_real_neo4j_production_shaped_run_persists_precedes_and_aligned(
             p1=p1, p3=p3,
         )
         assert recs4[0]["c"] == 1
+    finally:
+        driver.execute_query(
+            "MATCH (n) WHERE n.id STARTS WITH $scope DETACH DELETE n",
+            scope=scope,
+        )
+        driver.close()
+
+@pytest.mark.anyio
+async def test_real_neo4j_queued_run_worker_completes_and_persists_alignment(
+    tmp_path: Path,
+):
+    """Real Neo4j end-to-end (Task 12): AnalysisRun(status=queued) -> worker
+    (direct function call, no Redis) -> completed with PRECEDES/ALIGNED_TO
+    persisted. Concurrency-safe: a second worker attempt re-executes nothing.
+    Scoped rq_test_* ids with cleanup."""
+    driver = _real_driver()
+    if driver is None:
+        pytest.skip("Real Neo4j unavailable (set NEO4J_PASSWORD to enable)")
+
+    scope = f"rq_test_{uuid.uuid4().hex[:8]}"
+    project_id = f"{scope}_project"
+    doc_id = f"{scope}_doc"
+    v1, v2, v3 = f"{scope}_v1", f"{scope}_v2", f"{scope}_v3"
+    p1, p2, p3 = make_page_id(v1, 1), make_page_id(v2, 1), make_page_id(v3, 1)
+    run_id = f"{scope}_run"
+    text = "Nonsan Sannori site report page one"
+    pdf1 = _make_text_pdf(tmp_path, "1.pdf", text)
+    pdf2 = _make_text_pdf(tmp_path, "2.pdf", text)
+    pdf3 = _make_text_pdf(tmp_path, "3.pdf", text)
+    try:
+        driver.execute_query(
+            """
+            CREATE (p:Project {id: $project_id, name: $project_id})
+            CREATE (d:Document {id: $doc_id, projectId: $project_id, kind: 'report_body', title: $project_id})
+            CREATE (p)-[:HAS_DOCUMENT]->(d)
+            CREATE (v1:DocumentVersion {id: $v1, uri: $uri1, sha256: $sha1, sizeBytes: 1, mimeType: 'application/pdf', originalName: '1.pdf', stage: '1차', createdAt: datetime()})
+            CREATE (v2:DocumentVersion {id: $v2, uri: $uri2, sha256: $sha2, sizeBytes: 1, mimeType: 'application/pdf', originalName: '2.pdf', stage: '2차', createdAt: datetime()})
+            CREATE (v3:DocumentVersion {id: $v3, uri: $uri3, sha256: $sha3, sizeBytes: 1, mimeType: 'application/pdf', originalName: '3.pdf', stage: '3차', createdAt: datetime()})
+            CREATE (d)-[:HAS_VERSION]->(v1)
+            CREATE (d)-[:HAS_VERSION]->(v2)
+            CREATE (d)-[:HAS_VERSION]->(v3)
+            CREATE (p1:Page {id: $p1, physical_page: 1})
+            CREATE (p2:Page {id: $p2, physical_page: 1})
+            CREATE (p3:Page {id: $p3, physical_page: 1})
+            CREATE (v1)-[:HAS_PAGE]->(p1)
+            CREATE (v2)-[:HAS_PAGE]->(p2)
+            CREATE (v3)-[:HAS_PAGE]->(p3)
+            """,
+            project_id=project_id,
+            doc_id=doc_id,
+            v1=v1, v2=v2, v3=v3,
+            p1=p1, p2=p2, p3=p3,
+            uri1=str(pdf1), uri2=str(pdf2), uri3=str(pdf3),
+            sha1="a" * 64, sha2="b" * 64, sha3="c" * 64,
+        )
+
+        review_repo = ReviewRepository(driver=driver)
+        review_repo.create_analysis_run(
+            project_id=project_id,
+            run_id=run_id,
+            body_version_id=v1,
+            enable_vlm=False,
+            enable_ai_review=False,
+            version_stage="1차",
+        )
+
+        orch = build_proofreading_orchestrator(driver)
+        outcome = await _run_analysis_worker(run_id, orch)
+        assert outcome["status"] == "completed"
+        assert outcome["executed"] is True
+        assert outcome["analysis_run_id"] == run_id
+
+        recs, _, _ = driver.execute_query(
+            "MATCH (run:AnalysisRun {id: $run_id}) RETURN run.status AS status",
+            run_id=run_id,
+        )
+        assert recs[0]["status"] == "completed"
+
+        recs_p, _, _ = driver.execute_query(
+            "MATCH (a:DocumentVersion {id: $v1})-[:PRECEDES]->"
+            "(b:DocumentVersion {id: $v2}) RETURN count(*) AS c",
+            v1=v1, v2=v2,
+        )
+        assert recs_p[0]["c"] == 1
+        recs_a, _, _ = driver.execute_query(
+            "MATCH (a:Page {id: $p1})-[:ALIGNED_TO]->(b:Page {id: $p2}) "
+            "RETURN count(*) AS c",
+            p1=p1, p2=p2,
+        )
+        assert recs_a[0]["c"] == 1
+
+        again = await _run_analysis_worker(run_id, orch)
+        assert again["executed"] is False
+        assert again["status"] == "completed"
+        recs_cnt, _, _ = driver.execute_query(
+            "MATCH (run:AnalysisRun {id: $run_id}) RETURN run.attemptCount AS n",
+            run_id=run_id,
+        )
+        assert recs_cnt[0]["n"] == 1, "the second worker attempt must not execute"
     finally:
         driver.execute_query(
             "MATCH (n) WHERE n.id STARTS WITH $scope DETACH DELETE n",

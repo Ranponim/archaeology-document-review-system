@@ -728,6 +728,14 @@ class ProofreadingOrchestrator:
                             ]
                             if len(matching_objects) == 1:
                                 vc_obj_id = matching_objects[0]
+                            elif len(matching_objects) > 1:
+                                warnings.append(
+                                    f"VLM candidate '{vc.candidate_id}' for reference "
+                                    f"'{ref.raw_text}' arises from a block mentioning "
+                                    f"{len(matching_objects)} objects — not linked to a "
+                                    "single object; its observation remains traceable "
+                                    "through the candidate only"
+                                )
                         cand = CorrectionCandidateData(
                             candidate_id=vc.candidate_id,
                             rule_category=vc.rule_category,
@@ -780,6 +788,11 @@ class ProofreadingOrchestrator:
                         continue
                     if refreshed.has_graph_evidence():
                         graph_bundles[obj.object_id] = refreshed
+                    else:
+                        warnings.append(
+                            f"graph evidence refresh succeeded but returned an empty "
+                            f"bundle for object '{obj.object_id}' — keeping pre-VLM bundle"
+                        )
 
         # C. Contextual LLM Review via AIReviewService — graph-first (Task 10)
         if enable_ai_review and self.ai_review_service is not None:
@@ -922,7 +935,9 @@ class ProofreadingOrchestrator:
         ordered = _ordered_stage_versions(version_pages, version_ids)
         if len(ordered) >= 2:
             self.review_repo.save_version_precedes(project_id, ordered)
-        self.review_repo.save_aligned_pages(rows, version_pages, run_id)
+        self.review_repo.save_aligned_pages(
+            rows, version_pages, run_id, version_ids=version_ids
+        )
 
     def ensure_canonical_graph_ingested(
         self,

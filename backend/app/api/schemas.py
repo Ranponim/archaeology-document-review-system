@@ -83,17 +83,6 @@ class ErrorResponse(ApiModel):
     request_id: str
 
 
-class AIAnalyzeRequest(ApiModel):
-    version_id: str | None = Field(default=None, alias="versionId")
-    model: str = Field(default="openai/gpt-5.6-luna")
-
-
-class AIAnalyzeResponse(ApiModel):
-    analysis_run_id: str = Field(alias="analysisRunId")
-    status: str
-    model: str
-
-
 # =============================================================================
 # Review & Audit Schemas
 # =============================================================================

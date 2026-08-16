@@ -200,6 +200,7 @@ class ReviewRepository:
         rows: list[AlignedPageRow],
         pages_by_version: dict[str, list[ParsedPage]],
         run_id: str,
+        version_ids: dict[str, str],
     ) -> None:
         """MERGE (pageA)-[:ALIGNED_TO {score,status,method,run_id}]->(pageB) for
         each unordered version pair of a row with >=2 versions present and a
@@ -207,15 +208,24 @@ class ReviewRepository:
 
         Page nodes already exist (inserted by the Task 2 body graph) and are
         hard-MATCHed by id (page_id = make_page_id(version_id, physical_page)).
+        version_ids maps each stage to its real DocumentVersion id; a stage
+        without one fails closed (never fabricates a stage-derived page id).
         Unmatched rows and rows with fewer than two versions produce no edge.
         """
         if self._driver is None:
             return
 
+        missing = [st for st in pages_by_version if not version_ids.get(st)]
+        if missing:
+            raise ValueError(
+                "version_ids missing entries for stages: " + ", ".join(sorted(missing))
+            )
+
         page_ids: dict[str, dict[int, str]] = {}
         for stage, pages in pages_by_version.items():
+            version_id = version_ids[stage]
             page_ids[stage] = {
-                p.physical_page: (p.page_id or make_page_id(stage, p.physical_page))
+                p.physical_page: (p.page_id or make_page_id(version_id, p.physical_page))
                 for p in pages
             }
 
@@ -238,12 +248,12 @@ class ReviewRepository:
                     from_id = (
                         page_ids.get(st_a, {}).get(page_a.physical_page)
                         or page_a.page_id
-                        or make_page_id(st_a, page_a.physical_page)
+                        or make_page_id(version_ids[st_a], page_a.physical_page)
                     )
                     to_id = (
                         page_ids.get(st_b, {}).get(page_b.physical_page)
                         or page_b.page_id
-                        or make_page_id(st_b, page_b.physical_page)
+                        or make_page_id(version_ids[st_b], page_b.physical_page)
                     )
                     edges.append(
                         {
@@ -411,6 +421,117 @@ class ReviewRepository:
             **self._query_config(),
         )
 
+    def create_analysis_run(
+        self,
+        project_id: str,
+        run_id: str,
+        *,
+        body_version_id: str,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        body_pdf_path: str | None = None,
+        plate_pdf_path: str | None = None,
+        drawing_pdf_path: str | None = None,
+        enable_vlm: bool = True,
+        enable_ai_review: bool = True,
+        version_stage: str = "1차",
+    ) -> None:
+        """Create the AnalysisRun node in queued state with the resolved version
+        input properties, linked to the project (Task 12). The worker claims
+        and executes it asynchronously; heavy work never runs in the request."""
+        if self._driver is None:
+            return
+
+        cypher = """
+        MATCH (proj:Project {id: $project_id})
+        MERGE (run:AnalysisRun {id: $run_id})
+        SET run.status = 'queued',
+            run.step = 'queued',
+            run.bodyVersionId = $body_version_id,
+            run.plateVersionId = $plate_version_id,
+            run.drawingVersionId = $drawing_version_id,
+            run.bodyPdfPath = $body_pdf_path,
+            run.platePdfPath = $plate_pdf_path,
+            run.drawingPdfPath = $drawing_pdf_path,
+            run.enableVlm = $enable_vlm,
+            run.enableAiReview = $enable_ai_review,
+            run.versionStage = $version_stage
+        MERGE (proj)-[:HAS_RUN]->(run)
+        """
+        self._driver.execute_query(
+            cypher,
+            project_id=project_id,
+            run_id=run_id,
+            body_version_id=body_version_id,
+            plate_version_id=plate_version_id,
+            drawing_version_id=drawing_version_id,
+            body_pdf_path=body_pdf_path,
+            plate_pdf_path=plate_pdf_path,
+            drawing_pdf_path=drawing_pdf_path,
+            enable_vlm=enable_vlm,
+            enable_ai_review=enable_ai_review,
+            version_stage=version_stage,
+            **self._query_config(),
+        )
+
+    def claim_analysis(self, analysis_run_id: str) -> dict | None:
+        """Claim a queued proofreading run (status CAS: queued -> running).
+
+        Only one worker can win the claim; a failed+retryable run can be
+        reclaimed. Returns the claimed run context or None when another worker
+        already owns the run (callers must not re-execute then)."""
+        if self._driver is None:
+            return None
+
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (proj:Project)-[:HAS_RUN]->(run:AnalysisRun {id: $analysis_run_id})
+            WHERE run.status = 'queued'
+               OR (run.status = 'failed' AND run.retryable = true)
+            SET run.status = 'running',
+                run.step = 'analysis',
+                run.startedAt = datetime(),
+                run.completedAt = null,
+                run.attemptCount = coalesce(run.attemptCount, 0) + 1,
+                run.errorCode = null,
+                run.retryable = false
+            RETURN proj.id AS projectId, properties(run) AS run
+            """,
+            analysis_run_id=analysis_run_id,
+            **self._query_config(),
+        )
+        if not records:
+            return None
+        record = records[0]
+        props = dict(record.get("run") or {})
+        return {
+            "project_id": record.get("projectId"),
+            "body_version_id": props.get("bodyVersionId"),
+            "plate_version_id": props.get("plateVersionId"),
+            "drawing_version_id": props.get("drawingVersionId"),
+            "body_pdf_path": props.get("bodyPdfPath"),
+            "plate_pdf_path": props.get("platePdfPath"),
+            "drawing_pdf_path": props.get("drawingPdfPath"),
+            "enable_vlm": bool(props.get("enableVlm", True)),
+            "enable_ai_review": bool(props.get("enableAiReview", True)),
+            "version_stage": props.get("versionStage", "1차"),
+        }
+
+    def analysis_status(self, analysis_run_id: str) -> str:
+        if self._driver is None:
+            raise LookupError(analysis_run_id)
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            RETURN run.status AS status
+            """,
+            analysis_run_id=analysis_run_id,
+            **self._query_config(),
+        )
+        if not records:
+            raise LookupError(analysis_run_id)
+        return records[0]["status"]
+
     def save_analysis_run(
         self,
         project_id: str,
@@ -419,6 +540,7 @@ class ReviewRepository:
         model: str | None = None,
         step: str | None = None,
         error_code: str | None = None,
+        retryable: bool | None = None,
     ) -> None:
         if self._driver is None:
             return
@@ -432,6 +554,9 @@ class ReviewRepository:
         FOREACH (_ IN CASE WHEN $error_code IS NOT NULL THEN [1] ELSE [] END |
             SET run.errorCode = $error_code
         )
+        FOREACH (_ IN CASE WHEN $retryable IS NOT NULL THEN [1] ELSE [] END |
+            SET run.retryable = $retryable
+        )
         MERGE (proj)-[:HAS_RUN]->(run)
         """
         self._driver.execute_query(
@@ -442,6 +567,7 @@ class ReviewRepository:
             model=model,
             step=step,
             error_code=error_code,
+            retryable=retryable,
             **self._query_config(),
         )
 

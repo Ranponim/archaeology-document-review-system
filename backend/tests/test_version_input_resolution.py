@@ -47,6 +47,29 @@ class FakeReviewRepositoryForOrchestrator:
         self.saved_evidences: list[Any] = []
         self.saved_candidates: list[Any] = []
 
+    def create_analysis_run(
+        self,
+        project_id: str,
+        run_id: str,
+        *,
+        body_version_id: str,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        body_pdf_path: str | None = None,
+        plate_pdf_path: str | None = None,
+        drawing_pdf_path: str | None = None,
+        enable_vlm: bool = True,
+        enable_ai_review: bool = True,
+        version_stage: str = "1차",
+    ):
+        self.runs[run_id] = {
+            "project_id": project_id,
+            "run_id": run_id,
+            "status": "queued",
+            "step": "queued",
+            "body_version_id": body_version_id,
+        }
+
     def save_analysis_run(
         self,
         project_id: str,
@@ -391,12 +414,14 @@ def test_reviews_api_rejects_non_existent_plate_version_id():
     assert resp.json()["code"] == "input_error"
 
 
-def test_reviews_api_resolves_real_version_and_succeeds():
+def test_reviews_api_resolves_real_version_and_enqueues_async_run():
     proj_repo = MockProjectRepository()
+    rev_repo = FakeReviewRepositoryForOrchestrator()
+    orch_calls: list[str] = []
 
     class FakeOrch:
         async def run_proofreading(self, project_id: str, body_version_id: str, **kwargs):
-            assert body_version_id == "ver_body_real_001"
+            orch_calls.append(body_version_id)
             return OrchestratorResult(
                 project_id=project_id,
                 analysis_run_id="run_resolved_001",
@@ -411,21 +436,37 @@ def test_reviews_api_resolves_real_version_and_succeeds():
                 drawings=[],
             )
 
-    app = create_app(project_repository=proj_repo, orchestrator=FakeOrch())
+    enqueued: list[str] = []
+    app = create_app(
+        project_repository=proj_repo,
+        review_repository=rev_repo,
+        orchestrator=FakeOrch(),
+        run_enqueuer=lambda run_id: enqueued.append(run_id) or f"proofreading-{run_id}",
+    )
     client = TestClient(app)
 
-    # 1. Calling with explicit valid bodyVersionId
+    # 1. Calling with explicit valid bodyVersionId -> queued + enqueued
     resp1 = client.post(
         "/api/v1/projects/proj_1/runs",
         json={"bodyVersionId": "ver_body_real_001"},
     )
-    assert resp1.status_code == 200
-    assert resp1.json()["runId"] == "run_resolved_001"
+    assert resp1.status_code == 202
+    data1 = resp1.json()
+    assert data1["status"] == "queued"
+    assert data1["runId"].startswith("run_")
+    assert rev_repo.runs[data1["runId"]]["status"] == "queued"
+    assert rev_repo.runs[data1["runId"]]["body_version_id"] == "ver_body_real_001"
+    assert enqueued == [data1["runId"]]
 
     # 2. Calling without bodyVersionId -> auto-resolves report_body for "1차"
     resp2 = client.post(
         "/api/v1/projects/proj_1/runs",
         json={"versionStage": "1차"},
     )
-    assert resp2.status_code == 200
-    assert resp2.json()["runId"] == "run_resolved_001"
+    assert resp2.status_code == 202
+    data2 = resp2.json()
+    assert data2["status"] == "queued"
+    assert rev_repo.runs[data2["runId"]]["body_version_id"] == "ver_body_real_001"
+    assert enqueued[-1] == data2["runId"]
+
+    assert orch_calls == [], "proofreading must not run inside the request"

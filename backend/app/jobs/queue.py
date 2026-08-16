@@ -52,29 +52,25 @@ def enqueue_ingest(
     return job.id
 
 
-def enqueue_ai_analysis(
+def enqueue_proofreading(
     analysis_run_id: str,
-    project_id: str,
-    model: str,
     *,
     queue: QueuePort | None = None,
 ) -> str:
-    """Enqueue an AI analysis run once using a deterministic RQ job identifier."""
+    """Enqueue canonical proofreading once using a deterministic RQ job id."""
     if SAFE_ANALYSIS_RUN_ID.fullmatch(analysis_run_id) is None:
         raise ValueError("analysis_run_id contains unsupported characters")
 
     target_queue = queue if queue is not None else create_queue()
-    job_id = f"ai-analysis-{analysis_run_id}"
+    job_id = f"proofreading-{analysis_run_id}"
     existing = target_queue.fetch_job(job_id)
     if existing is not None:
         return existing.id
 
     try:
         job = target_queue.enqueue(
-            "app.jobs.worker.run_ai_analysis_job",
+            "app.jobs.worker.run_analysis_worker",
             analysis_run_id,
-            project_id,
-            model,
             job_id=job_id,
             unique=True,
             retry=Retry(max=3, interval=[10, 30, 60]),

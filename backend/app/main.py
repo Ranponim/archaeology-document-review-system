@@ -8,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.ai_analysis import router as ai_analysis_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
 from app.api.reviews import CandidateNotFoundError
@@ -23,7 +22,7 @@ from app.graph.project_repository import (
 
 from app.graph.review_repository import ReviewRepository
 from app.graph.schema import ensure_schema
-from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
+from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 
@@ -57,7 +56,7 @@ def create_app(
     review_repository=None,
     orchestrator=None,
     ingest_enqueuer=None,
-    ai_enqueuer=None,
+    run_enqueuer=None,
     static_dir: Path | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -86,7 +85,7 @@ def create_app(
     application.state.review_repository = review_repository
     application.state.orchestrator = orchestrator
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
-    application.state.ai_enqueuer = ai_enqueuer or enqueue_ai_analysis
+    application.state.run_enqueuer = run_enqueuer or enqueue_proofreading
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -135,7 +134,6 @@ def create_app(
         return {"status": "ok"}
 
     application.include_router(projects_router)
-    application.include_router(ai_analysis_router)
     application.include_router(reviews_router)
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"

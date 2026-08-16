@@ -755,3 +755,158 @@ def test_real_neo4j_bundle_refresh_includes_vlm_observation():
             scope=scope,
         )
         driver.close()
+
+# ---------------------------------------------------------------------------
+# task-10-review §6 nit fold-ins
+# ---------------------------------------------------------------------------
+
+
+def _ambiguous_body_page_with_reference() -> ParsedPage:
+    """One page whose reference block mentions TWO objects (ambiguous source
+    block): the VLM candidate must not be silently linked to either."""
+    return ParsedPage(
+        page_id="ver_g_p1",
+        physical_page=1,
+        printed_page=1,
+        header="",
+        raw_text=(
+            "본문 첫째 블록은 무관한 내용이다. "
+            "1지점 청동기시대 1호 주거지와 2호 주거지(도판 : 45) 조사를 진행하였다."
+        ),
+        normalized_text=(
+            "1지점 청동기시대 1호 주거지와 2호 주거지(도판 : 45) 조사를 진행하였다."
+        ),
+        text_blocks=[
+            TextBlockData(
+                block_id="p1_b1",
+                text="본문 첫째 블록은 무관한 내용이다.",
+                normalized_text="본문 첫째 블록은 무관한 내용이다.",
+                block_type="paragraph",
+                order=1,
+                source_sha256="sha256_g",
+            ),
+            TextBlockData(
+                block_id="p1_b2",
+                text="1지점 청동기시대 1호 주거지와 2호 주거지(도판 : 45) 조사를 진행하였다.",
+                normalized_text=(
+                    "1지점 청동기시대 1호 주거지와 2호 주거지(도판 : 45) 조사를 진행하였다."
+                ),
+                block_type="paragraph",
+                order=2,
+                source_sha256="sha256_g",
+                references=[
+                    ReferenceData(
+                        ref_type="plate",
+                        number="45",
+                        source_block_id="p1_b2",
+                        raw_text="도판 : 45",
+                        source_sha256="sha256_g",
+                        physical_page=1,
+                    )
+                ],
+            ),
+        ],
+        captions=[],
+        source_sha256="sha256_g",
+    )
+
+
+def _refresh_empty_driver() -> QueueFakeNeo4jDriver:
+    """Bundle driver whose SECOND pass (the post-VLM refresh) returns no
+    identity row: a successful-but-empty refresh."""
+    return (
+        QueueFakeNeo4jDriver()
+        .respond(
+            "RETURN properties(obj) AS obj",
+            [[{"obj": {"canonical_name": "1지점 청동기시대 1호 주거지"}}], []],
+        )
+        .respond("[:REFERENCES]->(ref:Reference)", [[]])
+        .respond("[:MENTIONS]->(obj:ArchaeologyObject", [[_text_claim_row()], []])
+        .respond("[:DEPICTS]->(obj:ArchaeologyObject", [[]])
+        .respond("[:SUPPORTED_BY]->(ev:Evidence)", [[], []])
+    )
+
+
+async def test_orchestrator_warns_when_bundle_refresh_succeeds_but_is_empty(tmp_path):
+    """task-10-review §6 nit: a successful-but-empty post-VLM refresh keeps
+    the pre-VLM bundle WITH an explicit warning — never silent."""
+    driver = _refresh_empty_driver()
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+
+    render_path = tmp_path / "render.png"
+    render_path.write_bytes(_png_bytes((200, 200), (180, 30, 30)))
+    vlm = CapturingVLMService()
+    pipeline = AssetReviewPipeline(
+        vlm_service=vlm,
+        cache=AssetHashCache(cache_dir=tmp_path / "cache"),
+    )
+    ai = CapturingAIService()
+
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+        asset_review_pipeline=pipeline,
+        ai_review_service=ai,
+    )
+    result = await orchestrator.run_proofreading(
+        project_id="proj_refresh_empty",
+        body_version_id="ver_g",
+        plate_version_id="ver_plate",
+        body_pages=[_body_page_with_reference()],
+        plates=_plate_with_panel(render_uri=str(render_path)),
+        enable_vlm=True,
+        enable_ai_review=True,
+    )
+
+    assert result.status == "completed"
+    warnings = "\n".join(result.warnings)
+    assert "refresh" in warnings and "empty bundle" in warnings, result.warnings
+    assert len(ai.bundle_calls) == 1, "the pre-VLM bundle is still used for the LLM"
+    assert ai.in_memory_calls == []
+    assert not any("DEGRADED" in w for w in result.warnings), result.warnings
+
+
+async def test_orchestrator_warns_when_vlm_reference_block_mentions_multiple_objects(
+    tmp_path,
+):
+    """task-10-review §6 nit: a VLM candidate from a block mentioning multiple
+    objects is never silently assigned; the warning is explicit."""
+    driver = EmptyFakeNeo4jDriver()
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+
+    render_path = tmp_path / "render.png"
+    render_path.write_bytes(_png_bytes((200, 200), (180, 30, 30)))
+    vlm = CapturingVLMService()
+    pipeline = AssetReviewPipeline(
+        vlm_service=vlm,
+        cache=AssetHashCache(cache_dir=tmp_path / "cache"),
+    )
+
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+        asset_review_pipeline=pipeline,
+    )
+    result = await orchestrator.run_proofreading(
+        project_id="proj_ambiguous_vlm",
+        body_version_id="ver_g",
+        plate_version_id="ver_plate",
+        body_pages=[_ambiguous_body_page_with_reference()],
+        plates=_plate_with_panel(render_uri=str(render_path)),
+        enable_vlm=True,
+        enable_ai_review=False,
+    )
+
+    assert result.status == "completed"
+    assert len(vlm.calls) == 1
+    warnings = "\n".join(result.warnings)
+    assert "not linked to a single object" in warnings, result.warnings
+    vlm_candidates = [
+        c
+        for c in result.candidates
+        if c.candidate_id.startswith("cand_vlm_")
+    ]
+    assert vlm_candidates
+    assert all(c.archaeology_object_id is None for c in vlm_candidates)

@@ -115,6 +115,55 @@ class FakeReviewRepository:
         self.decisions: list[dict[str, Any]] = []
         self.runs: dict[str, dict[str, Any]] = {}
 
+    def create_analysis_run(
+        self,
+        project_id: str,
+        run_id: str,
+        *,
+        body_version_id: str,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        body_pdf_path: str | None = None,
+        plate_pdf_path: str | None = None,
+        drawing_pdf_path: str | None = None,
+        enable_vlm: bool = True,
+        enable_ai_review: bool = True,
+        version_stage: str = "1차",
+    ) -> None:
+        self.runs[run_id] = {
+            "project_id": project_id,
+            "status": "queued",
+            "step": "queued",
+            "body_version_id": body_version_id,
+            "plate_version_id": plate_version_id,
+            "drawing_version_id": drawing_version_id,
+            "body_pdf_path": body_pdf_path,
+            "plate_pdf_path": plate_pdf_path,
+            "drawing_pdf_path": drawing_pdf_path,
+            "enable_vlm": enable_vlm,
+            "enable_ai_review": enable_ai_review,
+            "version_stage": version_stage,
+        }
+
+    def save_analysis_run(
+        self,
+        project_id: str,
+        run_id: str,
+        status: str = "pending",
+        model: str | None = None,
+        step: str | None = None,
+        error_code: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
+        run = self.runs.setdefault(run_id, {"project_id": project_id})
+        run["status"] = status
+        if step is not None:
+            run["step"] = step
+        if error_code is not None:
+            run["error_code"] = error_code
+        if retryable is not None:
+            run["retryable"] = retryable
+
     def seed_candidate(
         self,
         project_id: str,
@@ -331,8 +380,13 @@ def api_client():
     proj_repo = FakeProjectRepository()
     rev_repo = FakeReviewRepository()
     orch = FakeOrchestrator()
+    orch.calls = []
+    recorder = []
 
-    # Seed sample candidates
+    def recording_enqueuer(analysis_run_id: str) -> str:
+        recorder.append(analysis_run_id)
+        return f"proofreading-{analysis_run_id}"
+
     rev_repo.seed_candidate(
         project_id="p1",
         cand_id="cand_1",
@@ -386,7 +440,9 @@ def api_client():
         project_repository=proj_repo,
         review_repository=rev_repo,
         orchestrator=orch,
+        run_enqueuer=recording_enqueuer,
     )
+    app.state._enqueued = recorder
     return TestClient(app), rev_repo
 
 
@@ -394,8 +450,11 @@ def api_client():
 # 1. POST /api/v1/projects/{project_id}/runs
 # =============================================================================
 
-def test_trigger_proofreading_run_success(api_client):
-    client, _ = api_client
+def test_trigger_proofreading_run_creates_queued_run_and_enqueues_immediately(api_client):
+    """Task 12: POST /runs validates inputs, persists the AnalysisRun in
+    queued state with the resolved version ids, enqueues the RQ job with the
+    run id, and returns promptly — no proofreading in the request."""
+    client, rev_repo = api_client
     payload = {
         "bodyVersionId": "ver_body_01",
         "plateVersionId": "ver_plate_01",
@@ -404,15 +463,59 @@ def test_trigger_proofreading_run_success(api_client):
         "versionStage": "1차",
     }
     resp = client.post("/api/v1/projects/p1/runs", json=payload)
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     data = resp.json()
-    assert data["runId"] == "run_test_001"
     assert data["projectId"] == "p1"
-    assert data["status"] == "completed"
-    assert data["pagesParsed"] == 15
-    assert data["objectsResolved"] == 8
-    assert data["referencesResolved"] == 22
-    assert data["candidatesCount"] == 1
+    assert data["status"] == "queued"
+    assert data["warnings"] == []
+    run_id = data["runId"]
+    assert run_id.startswith("run_")
+
+    run = rev_repo.runs[run_id]
+    assert run["status"] == "queued"
+    assert run["step"] == "queued"
+    assert run["body_version_id"] == "ver_body_01"
+    assert run["plate_version_id"] == "ver_plate_01"
+
+    assert client.app.state._enqueued == [run_id]
+
+
+def test_trigger_proofreading_run_does_not_execute_proofreading_in_request(api_client):
+    """The probe orchestrator must never run synchronously in the request: no
+    PDF parsing, no VLM, no proofreading — only validation + enqueue."""
+    client, rev_repo = api_client
+    probe = client.app.state.orchestrator
+    assert probe.calls == []
+
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={"bodyVersionId": "ver_body_01", "versionStage": "1차"},
+    )
+
+    assert resp.status_code == 202
+    assert probe.calls == [], "run_proofreading must not be called in-request"
+    assert rev_repo.runs[resp.json()["runId"]]["status"] == "queued"
+
+
+def test_trigger_proofreading_run_records_stored_inputs_on_the_run(api_client):
+    """The worker needs the request-time inputs; the route persists them as
+    properties on the AnalysisRun node instead of in a vanished HTTP request."""
+    client, rev_repo = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={
+            "bodyVersionId": "ver_body_01",
+            "plateVersionId": "ver_plate_01",
+            "enableVlm": False,
+            "enableAiReview": False,
+            "versionStage": "1차",
+        },
+    )
+    assert resp.status_code == 202
+    run = rev_repo.runs[resp.json()["runId"]]
+    assert run["enable_vlm"] is False
+    assert run["enable_ai_review"] is False
+    assert run["version_stage"] == "1차"
 
 
 def test_trigger_proofreading_run_missing_project_returns_404(api_client):
@@ -420,6 +523,28 @@ def test_trigger_proofreading_run_missing_project_returns_404(api_client):
     resp = client.post("/api/v1/projects/nonexistent/runs", json={"bodyVersionId": "v1"})
     assert resp.status_code == 404
     assert resp.json()["code"] == "input_error"
+
+
+def test_trigger_proofreading_run_missing_body_version_returns_404(api_client):
+    client, _ = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={"bodyVersionId": "ver_nonexistent", "versionStage": "1차"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "input_error"
+    assert client.app.state._enqueued == []
+
+
+def test_trigger_proofreading_run_missing_plate_version_returns_404(api_client):
+    client, _ = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={"bodyVersionId": "ver_body_01", "plateVersionId": "ver_missing"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "input_error"
+    assert client.app.state._enqueued == []
 
 
 # =============================================================================

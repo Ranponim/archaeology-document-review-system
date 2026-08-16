@@ -133,7 +133,10 @@ def test_save_aligned_pages_merges_aligned_to_relationships():
         status=AlignmentStatus.EXACT,
     )
 
-    repo.save_aligned_pages([row], {"1차": [p1], "2차": [p2]}, "run_1")
+    repo.save_aligned_pages(
+        [row], {"1차": [p1], "2차": [p2]}, "run_1",
+        version_ids={"1차": "v1", "2차": "v2"},
+    )
 
     assert len(driver.queries) == 1
     q = driver.queries[0]
@@ -175,7 +178,10 @@ def test_save_aligned_pages_skips_unmatched_rows():
         status=AlignmentStatus.UNMATCHED,
     )
 
-    repo.save_aligned_pages([row], {"1차": [p1], "2차": [p2]}, "run_1")
+    repo.save_aligned_pages(
+        [row], {"1차": [p1], "2차": [p2]}, "run_1",
+        version_ids={"1차": "v1", "2차": "v2"},
+    )
 
     assert driver.queries == []
 
@@ -194,7 +200,10 @@ def test_save_aligned_pages_skips_rows_with_single_version():
         status=AlignmentStatus.EXACT,
     )
 
-    repo.save_aligned_pages([row], {"1차": [p1]}, "run_1")
+    repo.save_aligned_pages(
+        [row], {"1차": [p1]}, "run_1",
+        version_ids={"1차": "v1"},
+    )
 
     assert driver.queries == []
 
@@ -214,7 +223,10 @@ def test_save_aligned_pages_status_mapping():
         status=AlignmentStatus.PROBABLE,
     )
 
-    repo.save_aligned_pages([row], {"1차": [p1], "2차": [p2]}, "run_1")
+    repo.save_aligned_pages(
+        [row], {"1차": [p1], "2차": [p2]}, "run_1",
+        version_ids={"1차": "v1", "2차": "v2"},
+    )
 
     assert driver.queries[0]["kwargs"]["edges"][0]["status"] == "probable"
 
@@ -236,7 +248,10 @@ def test_save_aligned_pages_three_versions_emits_all_unordered_pairs():
     )
 
     repo.save_aligned_pages(
-        [row], {"1차": [p1], "2차": [p2], "3차": [p3]}, "run_1"
+        [row],
+        {"1차": [p1], "2차": [p2], "3차": [p3]},
+        "run_1",
+        version_ids={"1차": "v1", "2차": "v2", "3차": "v3"},
     )
 
     edges = driver.queries[0]["kwargs"]["edges"]
@@ -361,6 +376,7 @@ def test_real_neo4j_version_alignment_graph():
             [row],
             {"1차": [page1], "2차": [page2], "3차": [page3]},
             f"{scope}_run",
+            version_ids={"1차": v1, "2차": v2, "3차": v3},
         )
 
         # PRECEDES exists: 1차→2차 and 2차→3차
@@ -408,3 +424,82 @@ def test_real_neo4j_version_alignment_graph():
             scope=scope,
         )
         driver.close()
+
+# ---------------------------------------------------------------------------
+# task-11-review §6 nit: save_aligned_pages must use real version ids
+# ---------------------------------------------------------------------------
+
+
+def test_save_aligned_pages_uses_real_version_id_when_page_has_no_bound_id():
+    """A ParsedPage without a bound page_id must fall back to
+    make_page_id(real version_id, physical_page) — never the stage name."""
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="test_db")
+
+    p1 = ParsedPage(
+        page_id=None,
+        physical_page=1,
+        printed_page=1,
+        header="",
+        raw_text="text",
+        normalized_text="text",
+    )
+    p2 = ParsedPage(
+        page_id=None,
+        physical_page=1,
+        printed_page=1,
+        header="",
+        raw_text="text",
+        normalized_text="text",
+    )
+    row = AlignedPageRow(
+        row_id=1,
+        pages={"1차": p1, "2차": p2},
+        similarity_score=1.0,
+        sequence_matcher_ratio=1.0,
+        status=AlignmentStatus.EXACT,
+    )
+
+    repo.save_aligned_pages(
+        [row],
+        {"1차": [p1], "2차": [p2]},
+        "run_1",
+        version_ids={"1차": "v1", "2차": "v2"},
+    )
+
+    edge = driver.queries[0]["kwargs"]["edges"][0]
+    assert edge["from_id"] == "v1_p1" == make_page_id("v1", 1)
+    assert edge["to_id"] == "v2_p1" == make_page_id("v2", 1)
+    assert "1차" not in edge["from_id"]
+    assert "2차" not in edge["to_id"]
+
+
+def test_save_aligned_pages_fails_closed_when_version_id_missing():
+    """A stage lacking a real version id must fail closed — never fabricate a
+    stage-derived page id."""
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="test_db")
+
+    p1 = ParsedPage(
+        page_id=None,
+        physical_page=1,
+        printed_page=1,
+        header="",
+        raw_text="text",
+        normalized_text="text",
+    )
+    row = AlignedPageRow(
+        row_id=1,
+        pages={"1차": p1},
+        similarity_score=1.0,
+        sequence_matcher_ratio=1.0,
+        status=AlignmentStatus.EXACT,
+    )
+
+    with pytest.raises(ValueError, match="version_ids missing entries"):
+        repo.save_aligned_pages(
+            [row],
+            {"1차": [p1]},
+            "run_1",
+            version_ids={},
+        )
