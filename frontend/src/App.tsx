@@ -16,7 +16,7 @@ export function App() {
       </header>
 
       {project ? (
-        <ProjectDetailPage project={project} />
+        <ProjectDetailPage project={project} onBack={() => setProject(null)} />
       ) : (
         <ProjectsPage onCreated={setProject} />
       )}
