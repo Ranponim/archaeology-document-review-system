@@ -12,6 +12,11 @@ from app.domain.canonical_models import (
     ReferenceData,
 )
 from app.domain.document_structure import make_reference_id
+from app.domain.evidence_bundle import (
+    ObjectEvidenceBundle,
+    evidence_from_row_props,
+)
+from app.domain.review_models import EvidenceData
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +28,14 @@ class DepictsLink:
 
 def _normalize_identifier(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
+
+
+def _as_bbox(value: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        if value is None:
+            return None
+        return None
+    return (float(value[0]), float(value[1]), float(value[2]), float(value[3]))
 
 
 def _object_strong_identifiers(obj: ArchaeologyObjectData) -> list[str]:
@@ -548,3 +561,239 @@ class CanonicalRepository:
             "regions": regions,
             "objects": objects,
         }
+
+    def get_object_evidence_bundle(self, object_id: str) -> ObjectEvidenceBundle:
+        """Gather the evidence bundle for one ArchaeologyObject by graph traversal.
+
+        Consumes real relationships (plan §8 "Get evidence for one
+        ArchaeologyObject"): source-[:MENTIONS]->obj; page-[:HAS_BLOCK|
+        HAS_CAPTION]->source; version-[:HAS_PAGE]->page; source-[:REFERENCES]->
+        ref-[:RESOLVES_TO]->asset; asset-[:DEPICTS]->obj; cand-[:ABOUT]->obj;
+        cand-[:SUPPORTED_BY]->ev; ev-[:EXTRACTED_FROM]->page;
+        ev-[:FROM_VERSION]->version. The traversal is split into targeted
+        queries per evidence family to avoid Cartesian explosion. The bundle is
+        built from the returned DB rows only. EvidenceData provenance
+        invariants are enforced while reconstructing rows (raising when a
+        document-bound kind lacks its required source_sha256 /
+        document_version_id / page_id — provenance is never fabricated).
+        """
+        if self._driver is None:
+            return ObjectEvidenceBundle(object_id=object_id, canonical_name="")
+
+        identity_cypher = """
+        MATCH (obj:ArchaeologyObject {id: $object_id})
+        RETURN properties(obj) AS obj
+        """
+        records, _, _ = self._driver.execute_query(
+            identity_cypher,
+            object_id=object_id,
+            **self._query_config(),
+        )
+        if not records or not records[0].get("obj"):
+            return ObjectEvidenceBundle(object_id=object_id, canonical_name="")
+
+        obj_props = dict(records[0]["obj"])
+        canonical_name = str(obj_props.get("canonical_name") or "")
+
+        text_claims: list[EvidenceData] = self._query_text_claims(object_id)
+        references: list[EvidenceData] = self._query_reference_evidences(object_id)
+        plate_claims, drawing_claims = self._query_visual_claims(object_id)
+        visual_observations, version_claims = self._query_candidate_evidences(object_id)
+
+        return ObjectEvidenceBundle(
+            object_id=object_id,
+            canonical_name=canonical_name,
+            text_claims=text_claims,
+            references=references,
+            plate_claims=plate_claims,
+            drawing_claims=drawing_claims,
+            visual_observations=visual_observations,
+            version_claims=version_claims,
+        )
+
+    def _query_text_claims(self, object_id: str) -> list[EvidenceData]:
+        cypher = """
+        MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
+        OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
+        OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
+        RETURN properties(source) AS source,
+               properties(page) AS page,
+               properties(version) AS version
+        """
+        claims: list[EvidenceData] = []
+        records, _, _ = self._driver.execute_query(
+            cypher, object_id=object_id, **self._query_config()
+        )
+        for row in records:
+            source = dict(row["source"]) if row.get("source") else {}
+            if not source.get("id"):
+                continue
+            page = dict(row["page"]) if row.get("page") else {}
+            version = dict(row["version"]) if row.get("version") else {}
+            text = source.get("text") or source.get("raw_text") or ""
+            claims.append(
+                EvidenceData(
+                    id=f"ev_claim_{object_id}_{source['id']}",
+                    kind="text_claim",
+                    source_sha256=source.get("source_sha256") or version.get("sha256"),
+                    document_version_id=version.get("id"),
+                    page_id=page.get("id"),
+                    region_id=source["id"],
+                    bbox=_as_bbox(source.get("bbox")),
+                    method="graph_traversal",
+                    value=text,
+                    confidence=1.0,
+                    version_from=version.get("stage"),
+                    version_to=version.get("stage"),
+                    physical_page_from=page.get("physical_page"),
+                    physical_page_to=page.get("physical_page"),
+                    printed_page_from=page.get("printed_page"),
+                    printed_page_to=page.get("printed_page"),
+                    rule_name="mention_claim",
+                )
+            )
+        return claims
+
+    def _query_reference_evidences(self, object_id: str) -> list[EvidenceData]:
+        cypher = """
+        MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
+        OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
+        OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
+        MATCH (source)-[:REFERENCES]->(ref:Reference)
+        RETURN properties(source) AS source,
+               properties(ref) AS ref,
+               properties(page) AS page,
+               properties(version) AS version
+        """
+        evidences: list[EvidenceData] = []
+        records, _, _ = self._driver.execute_query(
+            cypher, object_id=object_id, **self._query_config()
+        )
+        for row in records:
+            ref = dict(row["ref"]) if row.get("ref") else {}
+            if not ref.get("id"):
+                continue
+            source = dict(row["source"]) if row.get("source") else {}
+            page = dict(row["page"]) if row.get("page") else {}
+            version = dict(row["version"]) if row.get("version") else {}
+            evidences.append(
+                EvidenceData(
+                    id=f"ev_ref_{object_id}_{ref.get('ref_type')}_{ref.get('number')}",
+                    kind="reference",
+                    source_sha256=ref.get("source_sha256") or version.get("sha256"),
+                    document_version_id=version.get("id"),
+                    page_id=page.get("id"),
+                    region_id=ref.get("source_block_id") or source.get("id"),
+                    bbox=_as_bbox(ref.get("bbox")),
+                    method="graph_traversal",
+                    value={
+                        "ref_type": ref.get("ref_type"),
+                        "number": ref.get("number"),
+                        "raw_text": ref.get("raw_text"),
+                    },
+                    confidence=1.0,
+                    version_from=version.get("stage"),
+                    version_to=version.get("stage"),
+                    physical_page_from=ref.get("physical_page"),
+                    physical_page_to=ref.get("physical_page"),
+                    rule_name="reference_evidence",
+                )
+            )
+        return evidences
+
+    def _query_visual_claims(
+        self, object_id: str
+    ) -> tuple[list[EvidenceData], list[EvidenceData]]:
+        cypher = """
+        MATCH (asset)-[:DEPICTS]->(obj:ArchaeologyObject {id: $object_id})
+        OPTIONAL MATCH (asset)<-[:RESOLVES_TO]-(ref:Reference)
+        OPTIONAL MATCH (ref)<-[:REFERENCES]-(source)
+        OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
+        OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
+        RETURN head(labels(asset)) AS asset_label,
+               properties(asset) AS asset,
+               properties(ref) AS ref,
+               properties(page) AS page,
+               properties(version) AS version
+        """
+        plate_claims: list[EvidenceData] = []
+        drawing_claims: list[EvidenceData] = []
+        records, _, _ = self._driver.execute_query(
+            cypher, object_id=object_id, **self._query_config()
+        )
+        for row in records:
+            asset = dict(row["asset"]) if row.get("asset") else {}
+            if not asset.get("id"):
+                continue
+            asset_label = row.get("asset_label") or ""
+            if asset_label in ("Plate", "PlatePanel"):
+                kind, prefix, is_plate = "plate_caption", "ev_plate", True
+            elif asset_label in ("Drawing", "DrawingRegion"):
+                kind, prefix, is_plate = "drawing_caption", "ev_drawing", False
+            else:
+                continue
+            version = dict(row["version"]) if row.get("version") else {}
+            document_version_id = asset.get("document_version_id") or version.get("id")
+            physical_page = asset.get("physical_page")
+            page_id = (
+                f"{document_version_id}_p{physical_page}"
+                if document_version_id and physical_page is not None
+                else None
+            )
+            number_key = "plate_number" if is_plate else "drawing_number"
+            ev = EvidenceData(
+                id=f"{prefix}_{object_id}_{asset['id']}",
+                kind=kind,
+                source_sha256=asset.get("source_sha256"),
+                document_version_id=document_version_id,
+                page_id=page_id,
+                region_id=asset["id"],
+                bbox=_as_bbox(asset.get("bbox")),
+                method="graph_traversal",
+                value={
+                    "label": asset_label,
+                    number_key: asset.get("number"),
+                    "title": asset.get("title"),
+                    "raw_identifier": asset.get("raw_identifier"),
+                },
+                confidence=1.0,
+                version_from=version.get("stage"),
+                version_to=version.get("stage"),
+                physical_page_from=physical_page,
+                physical_page_to=physical_page,
+                rule_name="plate_caption_evidence" if is_plate else "drawing_caption_evidence",
+            )
+            if is_plate:
+                plate_claims.append(ev)
+            else:
+                drawing_claims.append(ev)
+        return plate_claims, drawing_claims
+
+    def _query_candidate_evidences(
+        self, object_id: str
+    ) -> tuple[list[EvidenceData], list[EvidenceData]]:
+        cypher = """
+        MATCH (cand:CorrectionCandidate)-[:ABOUT]->(obj:ArchaeologyObject {id: $object_id})
+        OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
+        OPTIONAL MATCH (ev)-[:EXTRACTED_FROM]->(page:Page)
+        OPTIONAL MATCH (ev)-[:FROM_VERSION]->(version:DocumentVersion)
+        RETURN properties(cand) AS cand,
+               properties(ev) AS ev,
+               properties(page) AS page,
+               properties(version) AS version
+        """
+        visual_observations: list[EvidenceData] = []
+        version_claims: list[EvidenceData] = []
+        records, _, _ = self._driver.execute_query(
+            cypher, object_id=object_id, **self._query_config()
+        )
+        for row in records:
+            ev_props = row.get("ev")
+            if not ev_props:
+                continue
+            ev = evidence_from_row_props(dict(ev_props))
+            if ev.kind == "vlm_observation":
+                visual_observations.append(ev)
+            elif ev.kind == "version_change":
+                version_claims.append(ev)
+        return visual_observations, version_claims

@@ -21,6 +21,7 @@ from app.domain.document_structure import (
     TextBlockData,
     make_reference_id,
 )
+from app.domain.evidence_bundle import ObjectEvidenceBundle
 from app.domain.review_models import (
     CorrectionCandidateData,
     EvidenceData,
@@ -54,6 +55,7 @@ class OrchestratorResult:
     drawings: list[DrawingData]
     summary: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class ProofreadingOrchestrator:
@@ -126,6 +128,7 @@ class ProofreadingOrchestrator:
     ) -> OrchestratorResult:
         run_id = analysis_run_id or f"run_{uuid.uuid4().hex[:12]}"
         errors: list[str] = []
+        warnings: list[str] = []
         effective_project_repo = project_repo or self.project_repo
 
         # 0. Fail-closed validation for body_version_id
@@ -558,17 +561,70 @@ class ProofreadingOrchestrator:
         if self.review_repo is not None and all_evidences:
             self.review_repo.save_evidences(all_evidences)
 
+        # 7b. Graph evidence bundles (Task 7, Gate B). When the canonical
+        # repository is available, query the Neo4j graph for each object's
+        # evidence bundle and feed Rule/LLM with graph-derived evidence. The
+        # in-memory lists remain ONLY as an explicit degradation path with a
+        # recorded warning — never silently.
+        graph_bundles: dict[str, ObjectEvidenceBundle] = {}
+        if self.canonical_repo is not None:
+            for obj in all_objects:
+                try:
+                    bundle = self.canonical_repo.get_object_evidence_bundle(
+                        obj.object_id
+                    )
+                except Exception as exc:  # noqa: BLE001 - degrade explicitly
+                    warnings.append(
+                        f"graph evidence unavailable for object '{obj.object_id}': "
+                        f"{exc} — falling back to in-memory evidence (DEGRADED)"
+                    )
+                    continue
+                if bundle.has_graph_evidence():
+                    graph_bundles[obj.object_id] = bundle
+                else:
+                    warnings.append(
+                        f"graph evidence empty for object '{obj.object_id}' — "
+                        "falling back to in-memory evidence (DEGRADED)"
+                    )
+
         # 8. Run Consistency Rules & AI Review Pipelines
         all_candidates: list[CorrectionCandidateData] = []
 
-        # A. RuleEngine Consistency Checking
-        rule_candidates = self.rule_engine.check_objects_consistency(
-            objects_with_evidences=objects_with_evidences,
-            plate_index=active_plate_index,
-            drawing_index=active_drawing_index,
-            plates=all_plates,
-            drawings=all_drawings,
-        )
+        # A. RuleEngine Consistency Checking — graph-first
+        rule_candidates: list[CorrectionCandidateData] = []
+        if graph_bundles:
+            for obj, in_memory_evs in objects_with_evidences:
+                bundle = graph_bundles.get(obj.object_id)
+                if bundle is not None:
+                    rule_candidates.extend(
+                        self.rule_engine.check_object_bundle_consistency(
+                            bundle=bundle,
+                            plate_index=active_plate_index,
+                            drawing_index=active_drawing_index,
+                            plates=all_plates,
+                            drawings=all_drawings,
+                            archaeology_object=obj,
+                        )
+                    )
+                else:
+                    rule_candidates.extend(
+                        self.rule_engine.check_object_consistency(
+                            archaeology_object=obj,
+                            evidences=in_memory_evs,
+                            plate_index=active_plate_index,
+                            drawing_index=active_drawing_index,
+                            plates=all_plates,
+                            drawings=all_drawings,
+                        )
+                    )
+        else:
+            rule_candidates = self.rule_engine.check_objects_consistency(
+                objects_with_evidences=objects_with_evidences,
+                plate_index=active_plate_index,
+                drawing_index=active_drawing_index,
+                plates=all_plates,
+                drawings=all_drawings,
+            )
         for rc in rule_candidates:
             # Enforce auditability invariants
             cand = CorrectionCandidateData(
@@ -722,6 +778,7 @@ class ProofreadingOrchestrator:
             drawings=all_drawings,
             summary=summary,
             errors=errors,
+            warnings=warnings,
         )
 
     def ensure_canonical_graph_ingested(

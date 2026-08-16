@@ -12,6 +12,7 @@ from app.domain.canonical_models import (
     ReferenceData,
 )
 from app.domain.document_structure import ParsedPage
+from app.domain.evidence_bundle import ObjectEvidenceBundle
 from app.domain.review_models import (
     ChangeType,
     CorrectionCandidateData,
@@ -932,3 +933,34 @@ class RuleEngine:
             )
             all_candidates.extend(cands)
         return all_candidates
+
+    def check_object_bundle_consistency(
+        self,
+        bundle: ObjectEvidenceBundle,
+        plate_index: PlateIndex | None = None,
+        drawing_index: Any | None = None,
+        plates: list[PlateData] | None = None,
+        drawings: list[DrawingData] | None = None,
+        archaeology_object: ArchaeologyObjectData | None = None,
+    ) -> list[CorrectionCandidateData]:
+        """Run the consistency checks on evidence gathered by graph traversal.
+
+        The evidence list is extracted from the graph-derived bundle (plan §8);
+        candidates therefore reference bundle-sourced EvidenceData. Object
+        metadata (type/period/number) comes from the caller when available;
+        otherwise the bundle identity (object_id + canonical_name) is used.
+        """
+        evidence_list = list(bundle.evidences)
+        obj = archaeology_object or ArchaeologyObjectData(
+            object_id=bundle.object_id,
+            canonical_name=bundle.canonical_name,
+            site="",
+        )
+        return self.check_object_consistency(
+            archaeology_object=obj,
+            evidences=evidence_list,
+            plate_index=plate_index,
+            drawing_index=drawing_index,
+            plates=plates,
+            drawings=drawings,
+        )
