@@ -1,8 +1,8 @@
+import json
 from typing import Any
 from neo4j import Driver
 from app.domain.document_structure import ParsedPage
-from app.domain.review_models import CorrectionCandidateData
-from app.services.page_aligner import AlignedPageRow
+from app.domain.review_models import CorrectionCandidateData, EvidenceData
 
 
 class ReviewRepository:
@@ -43,9 +43,53 @@ class ReviewRepository:
             ],
         }
 
+    def _evidence_to_param(
+        self, ev: EvidenceData, fallback_id: str | None = None
+    ) -> dict[str, Any]:
+        ev_id = ev.id if ev.id else (fallback_id or f"ev_{id(ev)}")
+        val = ev.value
+        if val is not None and not isinstance(val, (str, int, float, bool)):
+            val = json.dumps(val, ensure_ascii=False)
+
+        return {
+            "id": ev_id,
+            "kind": ev.kind,
+            "source_sha256": ev.source_sha256,
+            "document_version_id": ev.document_version_id,
+            "page_id": ev.page_id,
+            "region_id": ev.region_id,
+            "bbox": list(ev.bbox) if ev.bbox is not None else None,
+            "method": ev.method,
+            "analysis_run_id": ev.analysis_run_id,
+            "value": val if val is not None else "",
+            "rationale": ev.rationale,
+            "confidence": ev.confidence,
+            "version_from": ev.version_from,
+            "version_to": ev.version_to,
+            "physical_page_from": ev.physical_page_from,
+            "physical_page_to": ev.physical_page_to,
+            "printed_page_from": ev.printed_page_from,
+            "printed_page_to": ev.printed_page_to,
+            "rule_name": ev.rule_name,
+        }
+
     def _candidate_to_param(self, cand: CorrectionCandidateData) -> dict[str, Any]:
-        ev = cand.evidence
-        evidence_id = f"ev_{cand.candidate_id}"
+        ev_params: list[dict[str, Any]] = []
+        if cand.evidence is not None:
+            ev_params.append(
+                self._evidence_to_param(
+                    cand.evidence, fallback_id=f"ev_{cand.candidate_id}"
+                )
+            )
+        for idx, ev in enumerate(cand.evidence_list):
+            ev_param = self._evidence_to_param(
+                ev, fallback_id=f"ev_{cand.candidate_id}_{idx+1}"
+            )
+            if not any(p["id"] == ev_param["id"] for p in ev_params):
+                ev_params.append(ev_param)
+
+        primary_evidence = ev_params[0] if ev_params else None
+
         return {
             "candidate_id": cand.candidate_id,
             "rule_category": cand.rule_category,
@@ -53,17 +97,11 @@ class ReviewRepository:
             "status": cand.status,
             "original_text": cand.original_text,
             "proposed_text": cand.proposed_text,
-            "evidence": {
-                "id": evidence_id,
-                "version_from": ev.version_from,
-                "version_to": ev.version_to,
-                "physical_page_from": ev.physical_page_from,
-                "physical_page_to": ev.physical_page_to,
-                "printed_page_from": ev.printed_page_from,
-                "printed_page_to": ev.printed_page_to,
-                "rule_name": ev.rule_name,
-                "rationale": ev.rationale,
-            },
+            "confidence": cand.confidence,
+            "archaeology_object_id": cand.archaeology_object_id,
+            "analysis_run_id": cand.analysis_run_id,
+            "evidence": primary_evidence,
+            "evidences": ev_params,
         }
 
     def save_pages_and_blocks(
@@ -104,7 +142,7 @@ class ReviewRepository:
         candidates: list[CorrectionCandidateData],
         analysis_run_id: str | None = None,
     ) -> None:
-        if self._driver is None:
+        if self._driver is None or not candidates:
             return
 
         cand_params = [self._candidate_to_param(c) for c in candidates]
@@ -116,19 +154,49 @@ class ReviewRepository:
             cand.change_type = c.change_type,
             cand.status = c.status,
             cand.original_text = c.original_text,
-            cand.proposed_text = c.proposed_text
+            cand.proposed_text = c.proposed_text,
+            cand.confidence = c.confidence
         MERGE (proj)-[:HAS_CANDIDATE]->(cand)
         WITH cand, c
-        MERGE (ev:Evidence {id: c.evidence.id})
-        SET ev.version_from = c.evidence.version_from,
-            ev.version_to = c.evidence.version_to,
-            ev.physical_page_from = c.evidence.physical_page_from,
-            ev.physical_page_to = c.evidence.physical_page_to,
-            ev.printed_page_from = c.evidence.printed_page_from,
-            ev.printed_page_to = c.evidence.printed_page_to,
-            ev.rule_name = c.evidence.rule_name,
-            ev.rationale = c.evidence.rationale
+        WHERE c.archaeology_object_id IS NOT NULL
+        OPTIONAL MATCH (obj:ArchaeologyObject {id: c.archaeology_object_id})
+        FOREACH (_ IN CASE WHEN obj IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (cand)-[:ABOUT]->(obj)
+        )
+        WITH cand, c
+        UNWIND c.evidences AS ev_param
+        MERGE (ev:Evidence {id: ev_param.id})
+        SET ev.kind = ev_param.kind,
+            ev.source_sha256 = ev_param.source_sha256,
+            ev.document_version_id = ev_param.document_version_id,
+            ev.page_id = ev_param.page_id,
+            ev.region_id = ev_param.region_id,
+            ev.bbox = ev_param.bbox,
+            ev.method = ev_param.method,
+            ev.analysis_run_id = ev_param.analysis_run_id,
+            ev.value = ev_param.value,
+            ev.rationale = ev_param.rationale,
+            ev.confidence = ev_param.confidence,
+            ev.version_from = ev_param.version_from,
+            ev.version_to = ev_param.version_to,
+            ev.physical_page_from = ev_param.physical_page_from,
+            ev.physical_page_to = ev_param.physical_page_to,
+            ev.printed_page_from = ev_param.printed_page_from,
+            ev.printed_page_to = ev_param.printed_page_to,
+            ev.rule_name = ev_param.rule_name
         MERGE (cand)-[:SUPPORTED_BY]->(ev)
+        WITH ev, ev_param
+        WHERE ev_param.page_id IS NOT NULL
+        OPTIONAL MATCH (p:Page {id: ev_param.page_id})
+        FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (ev)-[:EXTRACTED_FROM]->(p)
+        )
+        WITH ev, ev_param
+        WHERE ev_param.document_version_id IS NOT NULL
+        OPTIONAL MATCH (v:DocumentVersion {id: ev_param.document_version_id})
+        FOREACH (_ IN CASE WHEN v IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (ev)-[:FROM_VERSION]->(v)
+        )
         """
         self._driver.execute_query(
             cypher,
@@ -137,7 +205,14 @@ class ReviewRepository:
             **self._query_config(),
         )
 
-        if analysis_run_id:
+        run_id = analysis_run_id
+        if not run_id:
+            for c in candidates:
+                if c.analysis_run_id:
+                    run_id = c.analysis_run_id
+                    break
+
+        if run_id:
             link_run_cypher = """
             MATCH (run:AnalysisRun {id: $analysis_run_id})
             UNWIND $candidate_ids AS cid
@@ -146,10 +221,55 @@ class ReviewRepository:
             """
             self._driver.execute_query(
                 link_run_cypher,
-                analysis_run_id=analysis_run_id,
+                analysis_run_id=run_id,
                 candidate_ids=[c.candidate_id for c in candidates],
                 **self._query_config(),
             )
+
+    def save_evidences(self, evidences: list[EvidenceData]) -> None:
+        if self._driver is None or not evidences:
+            return
+
+        ev_params = [self._evidence_to_param(e) for e in evidences]
+        cypher = """
+        UNWIND $evidences AS e
+        MERGE (ev:Evidence {id: e.id})
+        SET ev.kind = e.kind,
+            ev.source_sha256 = e.source_sha256,
+            ev.document_version_id = e.document_version_id,
+            ev.page_id = e.page_id,
+            ev.region_id = e.region_id,
+            ev.bbox = e.bbox,
+            ev.method = e.method,
+            ev.analysis_run_id = e.analysis_run_id,
+            ev.value = e.value,
+            ev.rationale = e.rationale,
+            ev.confidence = e.confidence,
+            ev.version_from = e.version_from,
+            ev.version_to = e.version_to,
+            ev.physical_page_from = e.physical_page_from,
+            ev.physical_page_to = e.physical_page_to,
+            ev.printed_page_from = e.printed_page_from,
+            ev.printed_page_to = e.printed_page_to,
+            ev.rule_name = e.rule_name
+        WITH ev, e
+        WHERE e.page_id IS NOT NULL
+        OPTIONAL MATCH (p:Page {id: e.page_id})
+        FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (ev)-[:EXTRACTED_FROM]->(p)
+        )
+        WITH ev, e
+        WHERE e.document_version_id IS NOT NULL
+        OPTIONAL MATCH (v:DocumentVersion {id: e.document_version_id})
+        FOREACH (_ IN CASE WHEN v IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (ev)-[:FROM_VERSION]->(v)
+        )
+        """
+        self._driver.execute_query(
+            cypher,
+            evidences=ev_params,
+            **self._query_config(),
+        )
 
     def save_analysis_run(
         self,
@@ -217,6 +337,60 @@ class ReviewRepository:
             **self._query_config(),
         )
 
+    def get_candidate_traceability(self, candidate_id: str) -> dict[str, Any]:
+        if self._driver is None:
+            return {}
+
+        cypher = """
+        MATCH (cand:CorrectionCandidate {id: $candidate_id})
+        OPTIONAL MATCH (cand)-[:ABOUT]->(obj:ArchaeologyObject)
+        OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
+        OPTIONAL MATCH (ev)-[:EXTRACTED_FROM]->(page:Page)
+        OPTIONAL MATCH (ev)-[:FROM_VERSION]->(doc_ver:DocumentVersion)
+        OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
+        RETURN properties(cand) AS candidate_props,
+               properties(obj) AS object_props,
+               collect(DISTINCT {
+                   evidence: properties(ev),
+                   page: properties(page),
+                   document_version: properties(doc_ver)
+               }) AS evidence_chain,
+               collect(DISTINCT properties(dec)) AS decisions
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            candidate_id=candidate_id,
+            **self._query_config(),
+        )
+        if not records:
+            return {}
+
+        row = records[0]
+        cand_props = dict(row["candidate_props"]) if row.get("candidate_props") else None
+        if not cand_props:
+            return {}
+
+        obj_props = dict(row["object_props"]) if row.get("object_props") else None
+        decisions = [dict(d) for d in (row.get("decisions") or []) if d]
+
+        evidences = []
+        for item in (row.get("evidence_chain") or []):
+            if not item or not item.get("evidence"):
+                continue
+            ev_dict = dict(item["evidence"])
+            if item.get("page"):
+                ev_dict["page"] = dict(item["page"])
+            if item.get("document_version"):
+                ev_dict["document_version"] = dict(item["document_version"])
+            evidences.append(ev_dict)
+
+        return {
+            "candidate": cand_props,
+            "archaeology_object": obj_props,
+            "evidence": evidences,
+            "decisions": decisions,
+        }
+
     def get_candidates(self, project_id: str) -> list[dict[str, Any]]:
         if self._driver is None:
             return []
@@ -226,6 +400,7 @@ class ReviewRepository:
         OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
         OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
         RETURN properties(cand) AS candidate,
+               collect(DISTINCT properties(ev)) AS evidences,
                properties(ev) AS evidence,
                collect(DISTINCT properties(dec)) AS decisions
         """
@@ -237,7 +412,11 @@ class ReviewRepository:
         results = []
         for row in records:
             cand_dict = dict(row["candidate"]) if row.get("candidate") else {}
-            cand_dict["evidence"] = dict(row["evidence"]) if row.get("evidence") else None
-            cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or [])]
+            ev_list = [dict(e) for e in (row.get("evidences") or []) if e]
+            cand_dict["evidence"] = (
+                dict(row["evidence"]) if row.get("evidence") else (ev_list[0] if ev_list else None)
+            )
+            cand_dict["evidences"] = ev_list
+            cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
             results.append(cand_dict)
         return results
