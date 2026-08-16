@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 import pytest
 from neo4j import GraphDatabase
 
-from app.domain.models import StoredFile
+from app.domain.models import Document, DocumentVersion, StoredFile
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
     ProjectNotFoundError,
@@ -451,3 +451,106 @@ def test_prepare_retry_is_project_scoped_and_idempotently_queues_the_same_run(
         "retryable": False,
         "completedAt": None,
     }
+
+
+def test_multiple_version_uploads_belong_to_same_parent_document_with_precedes_chain(
+    neo4j_driver, neo4j_database
+):
+    repo = ProjectRepository(neo4j_driver, database=neo4j_database)
+    project = repo.create_project("산노리", "NONSAN-001")
+
+    f1 = StoredFile("incoming/p/h1/1.pdf", "1" * 64, 100, "application/pdf", "1차.pdf")
+    f2 = StoredFile("incoming/p/h2/2.pdf", "2" * 64, 200, "application/pdf", "2차.pdf")
+    f3 = StoredFile("incoming/p/h3/3.pdf", "3" * 64, 300, "application/pdf", "3차.pdf")
+    f4 = StoredFile("incoming/p/h4/4.pdf", "4" * 64, 400, "application/pdf", "final.pdf")
+
+    v1 = repo.add_document_version(project.id, f1, stage="1차", kind="report_body", title="본문")
+    v2 = repo.add_document_version(project.id, f2, stage="2차", kind="report_body", title="본문")
+    v3 = repo.add_document_version(project.id, f3, stage="3차", kind="report_body", title="본문")
+    v4 = repo.add_document_version(project.id, f4, stage="final", kind="report_body", title="본문")
+
+    # All 4 versions share the same parent Document node
+    assert v1.document_id == v2.document_id == v3.document_id == v4.document_id
+
+    # Verify get_project_documents
+    documents = repo.get_project_documents(project.id)
+    assert len(documents) == 1
+    assert documents[0].id == v1.document_id
+    assert documents[0].kind == "report_body"
+    assert documents[0].title == "본문"
+
+    # Verify get_document_versions returns all 4 versions in order
+    versions = repo.get_document_versions(documents[0].id)
+    assert len(versions) == 4
+    assert [v.stage for v in versions] == ["1차", "2차", "3차", "final"]
+    assert [v.id for v in versions] == [v1.id, v2.id, v3.id, v4.id]
+
+    # Verify sequential PRECEDES chain in Neo4j graph
+    records, _, _ = neo4j_driver.execute_query(
+        """
+        MATCH (v1:DocumentVersion {id: $v1_id})-[:PRECEDES]->
+              (v2:DocumentVersion {id: $v2_id})-[:PRECEDES]->
+              (v3:DocumentVersion {id: $v3_id})-[:PRECEDES]->
+              (v4:DocumentVersion {id: $v4_id})
+        RETURN count(*) AS chain_count
+        """,
+        v1_id=v1.id,
+        v2_id=v2.id,
+        v3_id=v3.id,
+        v4_id=v4.id,
+        database_=neo4j_database,
+    )
+    assert records[0]["chain_count"] == 1
+
+
+def test_different_document_kinds_create_separate_document_nodes_under_same_project(
+    neo4j_driver, neo4j_database
+):
+    repo = ProjectRepository(neo4j_driver, database=neo4j_database)
+    project = repo.create_project("산노리", "NONSAN-001")
+
+    f_body = StoredFile("incoming/p/hb/b.pdf", "b" * 64, 100, "application/pdf", "본문.pdf")
+    f_plate = StoredFile("incoming/p/hp/p.pdf", "p" * 64, 200, "application/pdf", "도판.pdf")
+    f_draw = StoredFile("incoming/p/hd/d.pdf", "d" * 64, 300, "application/pdf", "도면.pdf")
+    f_plate_2 = StoredFile("incoming/p/hp2/p2.pdf", "e" * 64, 250, "application/pdf", "도판2.pdf")
+
+    v_body = repo.add_document_version(project.id, f_body, stage="1차", kind="report_body")
+    v_plate1 = repo.add_document_version(project.id, f_plate, stage="1차", kind="plate_book")
+    v_draw = repo.add_document_version(project.id, f_draw, stage="1차", kind="drawing_book")
+
+    assert len({v_body.document_id, v_plate1.document_id, v_draw.document_id}) == 3
+
+    docs = repo.get_project_documents(project.id)
+    assert len(docs) == 3
+    doc_kinds = {d.kind for d in docs}
+    assert doc_kinds == {"report_body", "plate_book", "drawing_book"}
+
+    v_plate2 = repo.add_document_version(project.id, f_plate_2, stage="2차", kind="plate_book")
+    assert v_plate2.document_id == v_plate1.document_id
+
+    plate_versions = repo.get_document_versions(v_plate1.document_id)
+    assert len(plate_versions) == 2
+    assert [v.stage for v in plate_versions] == ["1차", "2차"]
+
+
+def test_create_document_with_version_returns_document_and_version(
+    neo4j_driver, neo4j_database, stored_pdf
+):
+    repo = ProjectRepository(neo4j_driver, database=neo4j_database)
+    project = repo.create_project("산노리", None)
+
+    doc, ver = repo.create_document_with_version(
+        project.id,
+        stored_pdf,
+        stage="1차",
+        kind="report_body",
+        title="보고서 본문",
+    )
+    assert isinstance(doc, Document)
+    assert isinstance(ver, DocumentVersion)
+    assert doc.id == ver.document_id
+    assert doc.project_id == project.id
+    assert doc.kind == "report_body"
+    assert doc.title == "보고서 본문"
+    assert ver.stage == "1차"
+

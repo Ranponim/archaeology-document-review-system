@@ -18,6 +18,14 @@ class Project:
 
 
 @dataclass(frozen=True, slots=True)
+class Document:
+    id: str
+    project_id: str
+    kind: str = "report_body"
+    title: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentVersion:
     id: str
     document_id: str

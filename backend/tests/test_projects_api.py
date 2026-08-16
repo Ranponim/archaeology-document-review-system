@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.models import DocumentVersion, Project
+from app.domain.models import Document, DocumentVersion, Project
 from app.graph.project_repository import ProjectNotFoundError, ProjectRepository
 from app.main import create_app
 from app.services.file_store import FileStore
@@ -13,6 +13,7 @@ from app.services.file_store import FileStore
 class FakeProjectRepository:
     def __init__(self) -> None:
         self.projects: dict[str, Project] = {}
+        self.documents: dict[str, list[Document]] = {}
         self.versions: dict[str, list[DocumentVersion]] = {}
         self.fail_document_write = False
         self.failed_runs: dict[str, tuple[str, bool]] = {}
@@ -20,6 +21,7 @@ class FakeProjectRepository:
     def create_project(self, name: str, internal_code: str | None) -> Project:
         project = Project(id=str(uuid4()), name=name, internal_code=internal_code)
         self.projects[project.id] = project
+        self.documents[project.id] = []
         self.versions[project.id] = []
         return project
 
@@ -28,8 +30,10 @@ class FakeProjectRepository:
         if project is None:
             raise ProjectNotFoundError(project_id)
         versions = self.versions[project_id]
+        documents = self.documents[project_id]
         return {
             "project": project,
+            "documents": documents,
             "document_versions": versions,
             "analysis_runs": [
                 {
@@ -52,14 +56,46 @@ class FakeProjectRepository:
             ],
         }
 
-    def add_document_version(self, project_id, stored, stage):
+    def get_project_documents(self, project_id: str) -> list[Document]:
+        if project_id not in self.projects:
+            raise ProjectNotFoundError(project_id)
+        return self.documents[project_id]
+
+    def get_document_versions(self, document_id: str) -> list[DocumentVersion]:
+        results = []
+        for v_list in self.versions.values():
+            for v in v_list:
+                if v.document_id == document_id:
+                    results.append(v)
+        return results
+
+    def add_document_version(
+        self,
+        project_id,
+        stored,
+        stage="source",
+        kind="report_body",
+        title=None,
+    ):
         if project_id not in self.projects:
             raise ProjectNotFoundError(project_id)
         if self.fail_document_write:
             raise RuntimeError("graph failed for " + stored.uri + " " + stored.sha256)
+        existing_doc = next(
+            (d for d in self.documents[project_id] if d.kind == kind),
+            None,
+        )
+        if existing_doc is None:
+            existing_doc = Document(
+                id=str(uuid4()),
+                project_id=project_id,
+                kind=kind,
+                title=title if title is not None else stored.original_name,
+            )
+            self.documents[project_id].append(existing_doc)
         version = DocumentVersion(
             id=str(uuid4()),
-            document_id=str(uuid4()),
+            document_id=existing_doc.id,
             analysis_run_id=str(uuid4()),
             uri=stored.uri,
             sha256=stored.sha256,
@@ -486,3 +522,26 @@ def test_project_repository_reads_project_versions_and_queued_runs():
             "retryable": False,
         }
     ]
+
+
+def test_upload_accepts_stages_1cha_2cha_3cha_final_and_shares_document_id(
+    client, repository
+):
+    project = client.post("/api/projects", json={"name": "산노리"}).json()
+    stages = ["1차", "2차", "3차", "final"]
+    version_ids = []
+
+    for stage in stages:
+        res = client.post(
+            f"/api/projects/{project['id']}/documents?stage={stage}&kind=report_body",
+            files={"file": (f"{stage}.pdf", b"%PDF", "application/pdf")},
+        )
+        assert res.status_code == 202
+        version_ids.append(res.json()["documentVersionId"])
+
+    detail = client.get(f"/api/projects/{project['id']}").json()
+    assert len(detail["documentVersions"]) == 4
+    doc_ids = {v["documentId"] for v in detail["documentVersions"]}
+    assert len(doc_ids) == 1
+    assert [v["stage"] for v in detail["documentVersions"]] == stages
+

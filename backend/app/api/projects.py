@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.schemas import (
     AnalysisRunResponse,
+    DocumentResponse,
     DocumentVersionResponse,
     ProjectCreateRequest,
     ProjectDetailResponse,
@@ -14,7 +15,7 @@ from app.api.schemas import (
     RetryAnalysisRunResponse,
     UploadResponse,
 )
-from app.domain.models import DocumentVersion, Project, StoredFile
+from app.domain.models import Document, DocumentVersion, Project, StoredFile
 from app.graph.project_repository import AnalysisRunNotFoundError, ProjectNotFoundError
 from app.services.file_store import FileStore
 
@@ -32,9 +33,27 @@ class ProjectRepositoryPort(Protocol):
 
     def get_project(self, project_id: str) -> dict: ...
 
+    def get_project_documents(self, project_id: str) -> list[Document]: ...
+
+    def get_document_versions(self, document_id: str) -> list[DocumentVersion]: ...
+
     def add_document_version(
-        self, project_id: str, stored: StoredFile, stage: str
+        self,
+        project_id: str,
+        stored: StoredFile,
+        stage: str = "source",
+        kind: str = "report_body",
+        title: str | None = None,
     ) -> DocumentVersion: ...
+
+    def create_document_with_version(
+        self,
+        project_id: str,
+        stored: StoredFile,
+        stage: str = "source",
+        kind: str = "report_body",
+        title: str | None = None,
+    ) -> tuple[Document, DocumentVersion]: ...
 
     def fail_ingest(self, analysis_run_id: str, code: str, retryable: bool) -> bool: ...
 
@@ -95,7 +114,8 @@ async def upload_document(
     repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
     file_store: Annotated[FileStore, Depends(get_file_store)],
     ingest_enqueuer: Annotated[Callable[[str], str], Depends(get_ingest_enqueuer)],
-    stage: Annotated[Literal["source"], Query()] = "source",
+    stage: Annotated[str, Query(pattern=r"^(source|final|[1-9][0-9]*차)$")] = "source",
+    kind: Annotated[str, Query()] = "report_body",
 ) -> UploadResponse:
     normalized_project_id = str(project_id)
     # Validate project existence before accepting original bytes. The write
@@ -112,6 +132,7 @@ async def upload_document(
         normalized_project_id,
         stored,
         stage,
+        kind,
     )
     try:
         await run_in_threadpool(ingest_enqueuer, version.analysis_run_id)
@@ -180,12 +201,22 @@ async def get_project(
 ) -> ProjectDetailResponse:
     snapshot = await _run_repository(repository.get_project, str(project_id))
     project = snapshot["project"]
+    documents = snapshot.get("documents", [])
     versions = snapshot["document_versions"]
     runs = snapshot["analysis_runs"]
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
         internal_code=project.internal_code,
+        documents=[
+            DocumentResponse(
+                id=doc.id,
+                project_id=doc.project_id,
+                kind=doc.kind,
+                title=doc.title,
+            )
+            for doc in documents
+        ],
         document_versions=[
             DocumentVersionResponse(
                 id=version.id,

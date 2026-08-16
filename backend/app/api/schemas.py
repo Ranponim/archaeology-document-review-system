@@ -47,13 +47,20 @@ class RetryAnalysisRunResponse(ApiModel):
     status: Literal["queued", "running"]
 
 
+class DocumentResponse(ApiModel):
+    id: str
+    project_id: str = Field(alias="projectId")
+    kind: str = "report_body"
+    title: str = ""
+
+
 class DocumentVersionResponse(ApiModel):
     id: str
     document_id: str = Field(alias="documentId")
     original_name: str = Field(alias="originalName")
     mime_type: str = Field(alias="mimeType")
     size_bytes: int = Field(alias="sizeBytes")
-    stage: Literal["source"]
+    stage: str
 
 
 class AnalysisRunResponse(ApiModel):
@@ -66,6 +73,7 @@ class AnalysisRunResponse(ApiModel):
 
 
 class ProjectDetailResponse(ProjectResponse):
+    documents: list[DocumentResponse] = Field(default_factory=list, alias="documents")
     document_versions: list[DocumentVersionResponse] = Field(alias="documentVersions")
     analysis_runs: list[AnalysisRunResponse] = Field(alias="analysisRuns")
 

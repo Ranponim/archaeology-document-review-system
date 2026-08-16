@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from neo4j import Driver, ManagedTransaction
 
-from app.domain.models import DocumentVersion, Project, StoredFile
+from app.domain.models import Document, DocumentVersion, Project, StoredFile
 
 
 class ProjectNotFoundError(LookupError):
@@ -46,40 +46,140 @@ class ProjectRepository:
         return project
 
     def add_document_version(
-        self, project_id: str, stored: StoredFile, stage: str
+        self,
+        project_id: str,
+        stored: StoredFile,
+        stage: str = "source",
+        kind: str = "report_body",
+        title: str | None = None,
     ) -> DocumentVersion:
-        version = DocumentVersion(
-            id=str(uuid4()),
-            document_id=str(uuid4()),
-            analysis_run_id=str(uuid4()),
-            uri=stored.uri,
-            sha256=stored.sha256,
-            size_bytes=stored.size_bytes,
-            mime_type=stored.mime_type,
-            original_name=stored.original_name,
+        _doc, version = self.create_document_with_version(
+            project_id=project_id,
+            stored=stored,
             stage=stage,
+            kind=kind,
+            title=title,
         )
+        return version
+
+    def create_document_with_version(
+        self,
+        project_id: str,
+        stored: StoredFile,
+        stage: str = "source",
+        kind: str = "report_body",
+        title: str | None = None,
+    ) -> tuple[Document, DocumentVersion]:
+        doc_id = str(uuid4())
+        ver_id = str(uuid4())
+        analysis_run_id = str(uuid4())
+        doc_title = title if title is not None else stored.original_name
+
         session_config = (
             {"database": self._database} if self._database is not None else {}
         )
         with self._driver.session(**session_config) as session:
             created = session.execute_write(
-                self._create_document_version,
+                self._create_document_and_version,
                 project_id,
-                version,
+                doc_id,
+                ver_id,
+                analysis_run_id,
+                stored,
+                stage,
+                kind,
+                doc_title,
             )
         if not created:
             raise ProjectNotFoundError(project_id)
-        return version
+        if isinstance(created, dict):
+            return created["document"], created["version"]
+        return (
+            Document(id=doc_id, project_id=project_id, kind=kind, title=doc_title),
+            DocumentVersion(
+                id=ver_id,
+                document_id=doc_id,
+                analysis_run_id=analysis_run_id,
+                uri=stored.uri,
+                sha256=stored.sha256,
+                size_bytes=stored.size_bytes,
+                mime_type=stored.mime_type,
+                original_name=stored.original_name,
+                stage=stage,
+            ),
+        )
+
+    def get_project_documents(self, project_id: str) -> list[Document]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_DOCUMENT]->(document:Document)
+            RETURN document.id AS id,
+                   project.id AS project_id,
+                   coalesce(document.kind, 'report_body') AS kind,
+                   coalesce(document.title, document.name, '') AS title
+            ORDER BY document.createdAt ASC, document.id ASC
+            """,
+            project_id=project_id,
+            **self._query_config,
+        )
+        return [
+            Document(
+                id=record["id"],
+                project_id=record["project_id"],
+                kind=record["kind"],
+                title=record["title"],
+            )
+            for record in records
+        ]
+
+    def get_document_versions(self, document_id: str) -> list[DocumentVersion]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (document:Document {id: $document_id})-[:HAS_VERSION]->(version:DocumentVersion)
+            OPTIONAL MATCH (run:AnalysisRun)-[:ANALYZES]->(version)
+            RETURN version.id AS id,
+                   document.id AS document_id,
+                   coalesce(run.id, '') AS analysis_run_id,
+                   version.uri AS uri,
+                   version.sha256 AS sha256,
+                   version.sizeBytes AS size_bytes,
+                   version.mimeType AS mime_type,
+                   version.originalName AS original_name,
+                   version.stage AS stage
+            ORDER BY version.createdAt ASC, version.id ASC
+            """,
+            document_id=document_id,
+            **self._query_config,
+        )
+        return [
+            DocumentVersion(
+                id=record["id"],
+                document_id=record["document_id"],
+                analysis_run_id=record["analysis_run_id"],
+                uri=record["uri"],
+                sha256=record["sha256"],
+                size_bytes=record["size_bytes"],
+                mime_type=record["mime_type"],
+                original_name=record["original_name"],
+                stage=record["stage"],
+            )
+            for record in records
+        ]
 
     def get_project(self, project_id: str) -> dict:
         records, _, _ = self._driver.execute_query(
             """
             MATCH (project:Project {id: $project_id})
             OPTIONAL MATCH (project)-[:HAS_DOCUMENT]->(document:Document)
-                           -[:HAS_VERSION]->(version:DocumentVersion)
+            OPTIONAL MATCH (document)-[:HAS_VERSION]->(version:DocumentVersion)
             OPTIONAL MATCH (run:AnalysisRun)-[:ANALYZES]->(version)
             RETURN project,
+                   collect(DISTINCT {
+                       id: document.id,
+                       projectId: project.id,
+                       kind: coalesce(document.kind, 'report_body'),
+                       title: coalesce(document.title, document.name, '')
+                   }) AS documents,
                    collect(DISTINCT {
                        id: version.id,
                        documentId: document.id,
@@ -89,7 +189,8 @@ class ProjectRepository:
                        sizeBytes: version.sizeBytes,
                        mimeType: version.mimeType,
                        originalName: version.originalName,
-                       stage: version.stage
+                       stage: version.stage,
+                       createdAt: version.createdAt
                    }) AS documentVersions,
                    collect(DISTINCT {
                        id: run.id,
@@ -113,6 +214,16 @@ class ProjectRepository:
             name=project_node["name"],
             internal_code=project_node.get("internalCode"),
         )
+        documents = [
+            Document(
+                id=value["id"],
+                project_id=value["projectId"],
+                kind=value["kind"],
+                title=value["title"],
+            )
+            for value in record.get("documents", [])
+            if value.get("id") is not None
+        ]
         versions = [
             DocumentVersion(
                 id=value["id"],
@@ -125,8 +236,10 @@ class ProjectRepository:
                 original_name=value["originalName"],
                 stage=value["stage"],
             )
-            for value in record["documentVersions"]
-            if value["id"] is not None
+            for value in sorted(
+                (v for v in record["documentVersions"] if v["id"] is not None),
+                key=lambda x: str(x.get("createdAt") or x["id"]),
+            )
         ]
         runs = [
             {
@@ -142,54 +255,99 @@ class ProjectRepository:
         ]
         return {
             "project": project,
+            "documents": documents,
             "document_versions": versions,
             "analysis_runs": runs,
         }
 
     @staticmethod
-    def _create_document_version(
+    def _create_document_and_version(
         transaction: ManagedTransaction,
         project_id: str,
-        version: DocumentVersion,
-    ) -> bool:
+        doc_id: str,
+        ver_id: str,
+        analysis_run_id: str,
+        stored: StoredFile,
+        stage: str,
+        kind: str,
+        title: str,
+    ) -> dict | None:
         result = transaction.run(
             """
             MATCH (project:Project {id: $project_id})
-            CREATE (document:Document {
-                id: $document_id,
-                name: $original_name
-            })
+            MERGE (document:Document {projectId: $project_id, kind: $kind})
+            ON CREATE SET document.id = $doc_id,
+                          document.title = $title,
+                          document.name = $title,
+                          document.createdAt = datetime()
+            MERGE (project)-[:HAS_DOCUMENT]->(document)
+            WITH project, document
+            OPTIONAL MATCH (document)-[:HAS_VERSION]->(prev:DocumentVersion)
+            WHERE NOT (prev)-[:PRECEDES]->(:DocumentVersion)
+            WITH project, document, prev
+            ORDER BY prev.createdAt DESC
+            LIMIT 1
             CREATE (document_version:DocumentVersion {
-                id: $version_id,
+                id: $ver_id,
                 uri: $uri,
                 sha256: $sha256,
                 sizeBytes: $size_bytes,
                 mimeType: $mime_type,
                 originalName: $original_name,
-                stage: $stage
+                stage: $stage,
+                createdAt: datetime()
             })
             CREATE (run:AnalysisRun {
                 id: $analysis_run_id,
                 status: 'queued',
-                step: 'ingest'
+                step: 'ingest',
+                createdAt: datetime()
             })
-            CREATE (project)-[:HAS_DOCUMENT]->(document)
             CREATE (document)-[:HAS_VERSION]->(document_version)
             CREATE (run)-[:ANALYZES]->(document_version)
-            RETURN document_version.id AS id
+            FOREACH (_ IN CASE WHEN prev IS NOT NULL AND prev <> document_version THEN [1] ELSE [] END |
+                CREATE (prev)-[:PRECEDES]->(document_version)
+            )
+            RETURN document.id AS document_id,
+                   document.kind AS kind,
+                   coalesce(document.title, document.name, '') AS title,
+                   document_version.id AS version_id
             """,
             project_id=project_id,
-            document_id=version.document_id,
-            version_id=version.id,
-            analysis_run_id=version.analysis_run_id,
-            uri=version.uri,
-            sha256=version.sha256,
-            size_bytes=version.size_bytes,
-            mime_type=version.mime_type,
-            original_name=version.original_name,
-            stage=version.stage,
+            doc_id=doc_id,
+            ver_id=ver_id,
+            analysis_run_id=analysis_run_id,
+            uri=stored.uri,
+            sha256=stored.sha256,
+            size_bytes=stored.size_bytes,
+            mime_type=stored.mime_type,
+            original_name=stored.original_name,
+            stage=stage,
+            kind=kind,
+            title=title,
         )
-        return result.single() is not None
+        record = result.single()
+        if record is None:
+            return None
+        return {
+            "document": Document(
+                id=record["document_id"],
+                project_id=project_id,
+                kind=record["kind"],
+                title=record["title"],
+            ),
+            "version": DocumentVersion(
+                id=record["version_id"],
+                document_id=record["document_id"],
+                analysis_run_id=analysis_run_id,
+                uri=stored.uri,
+                sha256=stored.sha256,
+                size_bytes=stored.size_bytes,
+                mime_type=stored.mime_type,
+                original_name=stored.original_name,
+                stage=stage,
+            ),
+        }
 
     def graph_shape(self, document_version_id: str) -> dict[str, int]:
         records, _, _ = self._driver.execute_query(
