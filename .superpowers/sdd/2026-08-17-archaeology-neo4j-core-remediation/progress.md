@@ -1,0 +1,49 @@
+# SDD Progress Ledger: Archaeology Document Review System — Neo4j-Centric Remediation
+
+**Plan:** `docs/superpowers/plans/2026-08-17-archaeology-neo4j-core-remediation.md`
+**Status:** In Progress
+**Started:** 2026-08-17
+
+## Preflight Interface Scan
+- Scanned all 15 tasks for cross-task contracts and interfaces.
+- Key invariants:
+  1. Neo4j is operationally required for the real proofreading path (Graph-First).
+  2. Single unified ID derivation across parser, graph, and API.
+  3. `ObjectEvidenceBundle` is queried from Neo4j before running consistency and AI checks.
+  4. Real Neo4j integration tests verify actual node and edge counts.
+  5. Case 6 regression gate ($E_{false\_canonical} = 0$, trap filename strictly excluded).
+
+## Task Progress Ledger
+
+| Task | Description | Status | Commit / Notes |
+| :--- | :--- | :---: | :--- |
+| Task 1 | Unify canonical IDs | Complete | `6e51621` review clean |
+| Task 2 | Persist complete body graph & fix MENTIONS direction | Complete | `4552f4a` review clean |
+| Task 3 | Resolve real DocumentVersion inputs | Complete | `1e7f5ac` review clean |
+| Task 4 | Canonical graph construction as ingest prerequisite | Complete | `182b7aa` review clean |
+| Task 5 | Enforce canonical Plate/Drawing identity & DrawingParser | Complete | `a68da14` + fixes commit (see below) |
+| Task 6 | Persist DEPICTS & ArchaeologyObject semantic join key | Complete | `bbc281f` |
+| Task 7 | Graph evidence bundle queries (ObjectEvidenceBundle) | Complete | `fec0b7a` review pending |
+| Task 8 | Integrate PageAligner into the graph (PRECEDES + ALIGNED_TO, DTW tie-break fix) | Complete | `2ac8833` — see task-8-report.md. **M1 production wiring CLOSED by Task 11 (`bf3bc30`):** production `POST /runs` now passes real `version_pages`/`version_ids`, so PRECEDES + ALIGNED_TO persist on real runs; L1 stage-rank ordering + L2 non-contiguous fail-closed landed with it. |
+| Task 9 | PlatePanel actual visual data flow (high-res render → panel segmentation → real bbox/render_uri → crop → VLM) | Complete | `1cddac1` + `35704cc` — see task-9-report.md (also lands Task-7-review fold-ins §5.1 analysis_run_id + §5.2 confidence 0.0) |
+| Task 10 | Graph-grounded VLM and Contextual LLM execution | Complete | `ef11f7c` — see task-10-report.md (VLM canonical-render-only + no identity writes; post-VLM bundle refresh; LLM from bundle fields only; closes anti-pattern #9 / task-7-review §7.3) |
+| T1–T5 fixes | Review fixes: version-scoped drawing IDs, ingest kind/project propagation, legacy ReviewPipeline removed from worker, Gate G zero-page guards | Complete | `fix(canonical): scope drawing ids, propagate ingest kind, remove legacy write path` — see `task-1-5-fixes-report.md` |
+
+Task 1: complete (commits a25f0ab..6e51621, review clean)
+Task 2: complete (commits 6e51621..4552f4a, review clean)
+Task 3: complete (commits 4552f4a..1e7f5ac, review clean)
+Task 4: complete (commits 1e7f5ac..182b7aa, review clean)
+Task 6: complete (commit bbc281f, review clean)
+Task 7: complete (commit fec0b7a, graph-first RuleEngine input — see task-7-report.md)
+Task 8: complete (commit 2ac8833, PRECEDES + ALIGNED_TO persistence + DTW tie-break fix — see task-8-report.md)
+Task 9: complete (commits 1cddac1 + 35704cc, real panel regions + render-crop VLM flow — see task-9-report.md)
+Task 10: complete (commit ef11f7c, VLM canonical-render-only + post-VLM bundle refresh + LLM from bundle fields only — see task-10-report.md; closes anti-pattern #9 / task-7-review §7.3)
+Task 11: complete (commit bf3bc30, full production orchestrator assembly + OPENROUTER_API_KEY env unification + Task 8 M1 fold-in — see task-11-report.md; closes anti-pattern #14, task-8-review M1/L1/L2, task-7-review §5.7)
+Task 12: complete (commit 9964963, async run creation + RQ worker executes canonical proof + legacy /analyze removal — see task-12-report.md; closes task-10-review §6 nits and task-11-review id-fallback/report-wording nits)
+| Task 11 | Production app full orchestrator construction & env keys | Complete | `bf3bc30` — see task-11-report.md (full 10-collaborator assembly via `build_proofreading_orchestrator`; `OPENROUTER_API_KEY` unified env; Task 8 M1 fold-in: POST /runs passes version_pages/version_ids so PRECEDES + ALIGNED_TO persist on real runs; DEGRADED warnings surfaced on RunTriggerResponse) |
+| Task 12 | Move canonical analysis to RQ worker | Complete | `9964963` — see task-12-report.md (POST /runs = validate → queued AnalysisRun → enqueue → 202; worker claims + runs graph-first proofreading with Task 11 version resolution; legacy /analyze + run_ai_analysis_job + enqueue_ai_analysis removed; one authoritative pipeline) |
+| Task 13 | Frontend upload UX and real DocumentVersion selection | Complete | `f0c8bd7` — see task-13-report.md (upload form with kind 본문/도판/도면 + stage 1차/2차/3차/최종; run form selects real uploaded DocumentVersions by kind, no path input; async queued→poll→completed/failed feedback + warnings; version list shows kind·stage labels; vitest component tests added) |
+| Task 14 | True expert decision semantics & audit tracking | Complete | `acd57de` — see task-14-report.md (Gate F: candidate.status generation-only `pending_review`; append-only ReviewDecision with exactly accepted/rejected/modified/deferred; candidate never mutated by decisions; latest_decision derived + metrics from latest; layout_noise rule-classification-only; API 4-value enforcement; frontend sends decision records only) |
+| Task 15 | Traceability UI rendering real graph paths | Pending | |
+| Verification | Real Neo4j Integration Tests & 7 Gates (A-G) | Pending | |
+
