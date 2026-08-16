@@ -88,9 +88,20 @@ class ArchaeologyObjectData:
     source_sha256: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ObjectResolutionResult:
+    object_data: ArchaeologyObjectData
+    confidence: float
+    status: str = "candidate"
+    source_block_ids: list[str] = field(default_factory=list)
+    method: str = "deterministic_rule"
+
+
 Reference = ReferenceData
 PlatePanel = PlatePanelData
 Plate = PlateData
 DrawingRegion = DrawingRegionData
 Drawing = DrawingData
 ArchaeologyObject = ArchaeologyObjectData
+ResolutionResult = ObjectResolutionResult
+
