@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -7,15 +8,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.ai_analysis import router as ai_analysis_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
-from app.api.ai_analysis import router as ai_analysis_router
+from app.api.reviews import CandidateNotFoundError
+from app.api.reviews import router as reviews_router
 from app.graph.client import create_driver
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
     ProjectNotFoundError,
     ProjectRepository,
 )
+from app.graph.review_repository import ReviewRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ai_analysis, enqueue_ingest
 from app.services.file_store import FileStore
@@ -47,6 +51,8 @@ def create_app(
     *,
     file_store: FileStore | None = None,
     project_repository=None,
+    review_repository=None,
+    orchestrator=None,
     ingest_enqueuer=None,
     ai_enqueuer=None,
     static_dir: Path | None = None,
@@ -58,6 +64,10 @@ def create_app(
             app.state.neo4j_driver = driver
             app.state.project_repository = ProjectRepository(driver)
             ensure_schema(driver)
+        if getattr(app.state, "review_repository", None) is None:
+            driver = getattr(app.state, "neo4j_driver", None)
+            if driver is not None:
+                app.state.review_repository = ReviewRepository(driver)
         yield
         driver = getattr(app.state, "neo4j_driver", None)
         if driver is not None:
@@ -66,6 +76,8 @@ def create_app(
     application = FastAPI(lifespan=lifespan)
     application.state.file_store = file_store if file_store is not None else FileStore()
     application.state.project_repository = project_repository
+    application.state.review_repository = review_repository
+    application.state.orchestrator = orchestrator
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
     application.state.ai_enqueuer = ai_enqueuer or enqueue_ai_analysis
 
@@ -82,6 +94,10 @@ def create_app(
 
     @application.exception_handler(ProjectNotFoundError)
     async def missing_project(request: Request, _error: ProjectNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(CandidateNotFoundError)
+    async def missing_candidate(request: Request, _error: CandidateNotFoundError):
         return _error_response(request, 404)
 
     @application.exception_handler(AnalysisRunNotFoundError)
@@ -106,6 +122,7 @@ def create_app(
 
     application.include_router(projects_router)
     application.include_router(ai_analysis_router)
+    application.include_router(reviews_router)
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
     if frontend_dir.is_dir():

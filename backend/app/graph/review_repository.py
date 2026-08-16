@@ -303,20 +303,36 @@ class ReviewRepository:
         note: str = "",
         reviewer: str = "",
         previous_decision_id: str | None = None,
+        modified_text: str | None = None,
     ) -> None:
         if self._driver is None:
             return
 
+        cand_status = "confirmed"
+        if decision_status in ("reject", "rejected", "layout_noise"):
+            cand_status = "layout_noise"
+        elif decision_status in ("accept", "accepted", "confirmed"):
+            cand_status = "confirmed"
+        elif decision_status in ("modify", "modified"):
+            cand_status = "confirmed"
+
         cypher = """
         MATCH (cand:CorrectionCandidate {id: $candidate_id})
+        OPTIONAL MATCH (cand)-[:HAS_DECISION]->(prev:ReviewDecision)
+        WHERE ($previous_decision_id IS NOT NULL AND prev.id = $previous_decision_id)
+           OR ($previous_decision_id IS NULL AND NOT (() -[:SUPERSEDES]-> (prev)) AND prev.id <> $decision_id)
+        WITH cand, prev ORDER BY prev.created_at DESC LIMIT 1
         MERGE (dec:ReviewDecision {id: $decision_id})
         SET dec.decision_status = $decision_status,
             dec.note = $note,
-            dec.reviewer = $reviewer
+            dec.reviewer = $reviewer,
+            dec.modified_text = $modified_text,
+            dec.created_at = toString(datetime())
         MERGE (cand)-[:HAS_DECISION]->(dec)
-        WITH dec
-        WHERE $previous_decision_id IS NOT NULL
-        OPTIONAL MATCH (prev:ReviewDecision {id: $previous_decision_id})
+        SET cand.status = $candidate_status
+        FOREACH (_ IN CASE WHEN $modified_text IS NOT NULL THEN [1] ELSE [] END |
+            SET cand.proposed_text = $modified_text
+        )
         FOREACH (_ IN CASE WHEN prev IS NOT NULL THEN [1] ELSE [] END |
             MERGE (dec)-[:SUPERSEDES]->(prev)
         )
@@ -329,8 +345,43 @@ class ReviewRepository:
             note=note,
             reviewer=reviewer,
             previous_decision_id=previous_decision_id,
+            modified_text=modified_text,
+            candidate_status=cand_status,
             **self._query_config(),
         )
+
+    def get_candidate(self, candidate_id: str) -> dict[str, Any] | None:
+        if self._driver is None:
+            return None
+
+        cypher = """
+        MATCH (cand:CorrectionCandidate {id: $candidate_id})
+        OPTIONAL MATCH (cand)-[:ABOUT]->(obj:ArchaeologyObject)
+        OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
+        OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
+        RETURN properties(cand) AS candidate,
+               obj.id AS obj_id,
+               collect(DISTINCT properties(ev)) AS evidences,
+               collect(DISTINCT properties(dec)) AS decisions
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            candidate_id=candidate_id,
+            **self._query_config(),
+        )
+        if not records:
+            return None
+        row = records[0]
+        cand_dict = dict(row["candidate"]) if row.get("candidate") else None
+        if not cand_dict:
+            return None
+        ev_list = [dict(e) for e in (row.get("evidences") or []) if e]
+        cand_dict["evidence"] = ev_list[0] if ev_list else None
+        cand_dict["evidences"] = ev_list
+        cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
+        if row.get("obj_id"):
+            cand_dict["archaeology_object_id"] = row["obj_id"]
+        return cand_dict
 
     def get_candidate_traceability(self, candidate_id: str) -> dict[str, Any]:
         if self._driver is None:
@@ -386,21 +437,36 @@ class ReviewRepository:
             "decisions": decisions,
         }
 
-    def get_candidates(self, project_id: str) -> list[dict[str, Any]]:
+    def get_candidates(
+        self,
+        project_id: str,
+        status: str | None = None,
+        rule_category: str | None = None,
+        archaeology_object_id: str | None = None,
+        severity: str | None = None,
+    ) -> list[dict[str, Any]]:
         if self._driver is None:
             return []
 
         cypher = """
         MATCH (proj:Project {id: $project_id})-[:HAS_CANDIDATE]->(cand:CorrectionCandidate)
+        WHERE ($status IS NULL OR cand.status = $status)
+          AND ($rule_category IS NULL OR cand.rule_category = $rule_category)
+          AND ($archaeology_object_id IS NULL OR cand.archaeology_object_id = $archaeology_object_id OR (cand)-[:ABOUT]->(:ArchaeologyObject {id: $archaeology_object_id}))
+        OPTIONAL MATCH (cand)-[:ABOUT]->(obj:ArchaeologyObject)
         OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
         OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
         RETURN properties(cand) AS candidate,
+               obj.id AS obj_id,
                collect(DISTINCT properties(ev)) AS evidences,
                collect(DISTINCT properties(dec)) AS decisions
         """
         records, _, _ = self._driver.execute_query(
             cypher,
             project_id=project_id,
+            status=status,
+            rule_category=rule_category,
+            archaeology_object_id=archaeology_object_id,
             **self._query_config(),
         )
         results = []
@@ -410,5 +476,63 @@ class ReviewRepository:
             cand_dict["evidence"] = ev_list[0] if ev_list else None
             cand_dict["evidences"] = ev_list
             cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
+            if row.get("obj_id"):
+                cand_dict["archaeology_object_id"] = row["obj_id"]
             results.append(cand_dict)
         return results
+
+    def get_metrics(self, project_id: str) -> dict[str, Any]:
+        if self._driver is None:
+            return {
+                "project_id": project_id,
+                "total_candidates": 0,
+                "pending_candidates": 0,
+                "accepted_candidates": 0,
+                "rejected_candidates": 0,
+                "modified_candidates": 0,
+                "by_category": {},
+                "by_status": {},
+                "by_severity": {},
+                "completion_rate": 0.0,
+                "accuracy_rate": 0.0,
+            }
+
+        candidates = self.get_candidates(project_id)
+        total = len(candidates)
+        pending = sum(1 for c in candidates if c.get("status") in ("pending_review", "unresolved"))
+        accepted = sum(1 for c in candidates if c.get("status") in ("confirmed", "accepted"))
+        rejected = sum(1 for c in candidates if c.get("status") in ("layout_noise", "rejected"))
+        modified = sum(
+            1
+            for c in candidates
+            if any(
+                d.get("decision_status") in ("modify", "modified")
+                for d in c.get("decisions", [])
+            )
+        )
+
+        by_cat: dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        for c in candidates:
+            cat = c.get("rule_category") or c.get("category") or "unknown"
+            by_cat[cat] = by_cat.get(cat, 0) + 1
+            st = c.get("status") or "unknown"
+            by_status[st] = by_status.get(st, 0) + 1
+
+        resolved = accepted + rejected + modified
+        completion = (total - pending) / total if total > 0 else 0.0
+        accuracy = accepted / resolved if resolved > 0 else 0.0
+
+        return {
+            "project_id": project_id,
+            "total_candidates": total,
+            "pending_candidates": pending,
+            "accepted_candidates": accepted,
+            "rejected_candidates": rejected,
+            "modified_candidates": modified,
+            "by_category": by_cat,
+            "by_status": by_status,
+            "by_severity": {"high": 0, "medium": total, "low": 0},
+            "completion_rate": completion,
+            "accuracy_rate": accuracy,
+        }
