@@ -266,6 +266,10 @@ class ProofreadingOrchestrator:
                     )
                     all_references.append(ref_with_meta)
 
+        # Persist all Reference nodes first so they exist before linking targets
+        if self.canonical_repo is not None and all_references:
+            self.canonical_repo.save_references(all_references)
+
         # Canonically resolve references against PlateIndex and DrawingIndex
         resolved_refs_count = 0
         resolved_resolutions: list[tuple[ReferenceData, ResolutionResult]] = []
@@ -290,9 +294,6 @@ class ProofreadingOrchestrator:
                             target_label=target_label,
                             target_id=target_id,
                         )
-
-        if self.canonical_repo is not None and all_references:
-            self.canonical_repo.save_references(all_references)
 
         # 7. Grounded Evidence Graph Construction for Archaeological Objects
         all_evidences: list[EvidenceData] = []

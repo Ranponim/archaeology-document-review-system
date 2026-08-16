@@ -320,10 +320,10 @@ class CanonicalRepository:
         OPTIONAL MATCH (b:TextBlock {id: block_id})
         OPTIONAL MATCH (c:Caption {id: block_id})
         FOREACH (_ IN CASE WHEN b IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (obj)-[:MENTIONS]->(b)
+            MERGE (b)-[:MENTIONS]->(obj)
         )
         FOREACH (_ IN CASE WHEN c IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (obj)-[:MENTIONS]->(c)
+            MERGE (c)-[:MENTIONS]->(obj)
         )
         """
         self._driver.execute_query(
@@ -343,7 +343,8 @@ class CanonicalRepository:
         OPTIONAL MATCH (ref)-[:RESOLVES_TO]->(target)
         OPTIONAL MATCH (target)-[:HAS_PANEL]->(panel:PlatePanel)
         OPTIONAL MATCH (target)-[:HAS_REGION]->(region:DrawingRegion)
-        OPTIONAL MATCH (target)-[:DEPICTS|ABOUT]-(obj:ArchaeologyObject)
+        OPTIONAL MATCH (target)-[:DEPICTS|ABOUT]-(target_obj:ArchaeologyObject)
+        OPTIONAL MATCH (source)-[:MENTIONS]->(source_obj:ArchaeologyObject)
         RETURN properties(ref) AS ref_props,
                head(labels(target)) AS target_label,
                properties(target) AS target_props,
@@ -351,7 +352,7 @@ class CanonicalRepository:
                properties(page) AS page_props,
                [p IN collect(DISTINCT panel) WHERE p IS NOT NULL | properties(p)] AS panels,
                [r IN collect(DISTINCT region) WHERE r IS NOT NULL | properties(r)] AS regions,
-               [o IN collect(DISTINCT obj) WHERE o IS NOT NULL | properties(o)] AS objects
+               [o IN (collect(DISTINCT target_obj) + collect(DISTINCT source_obj)) WHERE o IS NOT NULL | properties(o)] AS objects
         """
         records, _, _ = self._driver.execute_query(
             cypher,

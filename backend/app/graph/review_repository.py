@@ -117,14 +117,16 @@ class ReviewRepository:
 
         page_params = [self._page_to_param(version_id, p) for p in pages]
         cypher = """
-        MATCH (v:DocumentVersion {id: $version_id})
+        OPTIONAL MATCH (v:DocumentVersion {id: $version_id})
         UNWIND $pages AS p
         MERGE (page:Page {id: p.id})
         SET page.physical_page = p.physical_page,
             page.printed_page = p.printed_page,
             page.header = p.header,
             page.normalized_text = p.normalized_text
-        MERGE (v)-[:HAS_PAGE]->(page)
+        FOREACH (_ IN CASE WHEN v IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (v)-[:HAS_PAGE]->(page)
+        )
         WITH page, p
         FOREACH (b IN p.blocks |
             MERGE (block:TextBlock {id: b.id})
