@@ -2,6 +2,8 @@ import io
 
 
 class ImageProcessor:
+    PREPROCESSOR_VERSION: str = "v1"
+
     @staticmethod
     def prepare_for_vlm(
         image_bytes: bytes, max_dimension: int = 768, quality: int = 75

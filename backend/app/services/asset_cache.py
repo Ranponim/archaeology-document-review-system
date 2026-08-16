@@ -32,14 +32,46 @@ class AssetHashCache:
                 h.update(chunk)
         return h.hexdigest()
 
-    def _cache_key(self, image_hash: str, prompt: str) -> str:
-        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
-        return f"{image_hash}_{prompt_hash}.json"
+    @staticmethod
+    def compute_prompt_hash(prompt: str) -> str:
+        return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def compute_composite_key(
+        image_hash: str,
+        model: str,
+        prompt_hash: str,
+        preprocessor_version: str,
+    ) -> str:
+        payload = f"{image_hash}:{model}:{prompt_hash}:{preprocessor_version}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _cache_key(
+        self,
+        image_hash: str,
+        prompt: str,
+        model: str = "",
+        preprocessor_version: str = "",
+    ) -> str:
+        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if model or preprocessor_version:
+            composite_key = self.compute_composite_key(
+                image_hash=image_hash,
+                model=model,
+                prompt_hash=prompt_hash,
+                preprocessor_version=preprocessor_version,
+            )
+            return f"{composite_key}.json"
+        return f"{image_hash}_{prompt_hash[:16]}.json"
 
     def get_cached_result(
-        self, image_hash: str, prompt: str
+        self,
+        image_hash: str,
+        prompt: str,
+        model: str = "",
+        preprocessor_version: str = "",
     ) -> dict[str, Any] | None:
-        key = self._cache_key(image_hash, prompt)
+        key = self._cache_key(image_hash, prompt, model, preprocessor_version)
         cache_file = self._cache_dir / key
         if cache_file.is_file():
             try:
@@ -49,9 +81,14 @@ class AssetHashCache:
         return None
 
     def store_result(
-        self, image_hash: str, prompt: str, result: dict[str, Any]
+        self,
+        image_hash: str,
+        prompt: str,
+        result: dict[str, Any],
+        model: str = "",
+        preprocessor_version: str = "",
     ) -> None:
-        key = self._cache_key(image_hash, prompt)
+        key = self._cache_key(image_hash, prompt, model, preprocessor_version)
         cache_file = self._cache_dir / key
         payload = json.dumps(result, ensure_ascii=False, indent=2)
         temp_path: Path | None = None

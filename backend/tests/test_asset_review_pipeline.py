@@ -29,16 +29,32 @@ class MockOpenRouterMultimodalClient:
     def __init__(self, mock_response: dict | None = None):
         self.call_count = 0
         self.calls: list[dict] = []
-        self.mock_response = mock_response or {
+        self.mock_response = mock_response
+
+    async def analyze_multimodal(self, prompt: str, image_bytes: bytes, mime_type: str) -> dict:
+        self.call_count += 1
+        self.calls.append({"prompt": prompt, "image_bytes": image_bytes, "mime_type": mime_type})
+        if self.mock_response is not None:
+            return self.mock_response
+        import re
+        match = re.search(r"유구 번호\(예:\s*'([^']*)'\)", prompt)
+        feature = match.group(1) if match else "2호 토광묘"
+        feat_num_match = re.search(r"(\d+)", feature)
+        feat_num = feat_num_match.group(1) if feat_num_match else "2"
+        return {
             "choices": [
                 {
                     "message": {
                         "content": json.dumps({
-                            "label_detected": "논산 산노리 2지점 2호 토광묘",
-                            "feature_number": "2",
-                            "site_point": "2지점",
-                            "compass_north": "N-74-E",
-                            "match_confidence": 0.98,
+                            "status": "SUPPORTED",
+                            "observations": {
+                                "site_label": f"논산 산노리 2지점 {feature}",
+                                "feature_number": feat_num,
+                                "site_point": "2지점",
+                                "orientation": "N-74-E",
+                            },
+                            "supported_claims": [f"{feature} 일치"],
+                            "confidence": 0.98,
                             "rationale": "VLM OCR verified matching site and feature",
                         })
                     }
@@ -49,11 +65,6 @@ class MockOpenRouterMultimodalClient:
                 "completion_tokens": 80,
             },
         }
-
-    async def analyze_multimodal(self, prompt: str, image_bytes: bytes, mime_type: str) -> dict:
-        self.call_count += 1
-        self.calls.append({"prompt": prompt, "image_bytes": image_bytes, "mime_type": mime_type})
-        return self.mock_response
 
 
 class SequenceMockOpenRouterClient:
