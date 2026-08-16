@@ -134,17 +134,17 @@ def test_pdf_parser_extract_captions_list():
     ]
     captions = parser._extract_captions(lines, physical_page=105)
     assert len(captions) == 3
-    assert captions[0].caption_id == "p105_c1"
+    assert captions[0].caption_id == "doc_ver_p105_c1"
     assert captions[0].drawing_number == "57"
     assert captions[0].plate_number is None
     assert captions[0].is_blank_reference is False
 
-    assert captions[1].caption_id == "p105_c2"
+    assert captions[1].caption_id == "doc_ver_p105_c2"
     assert captions[1].drawing_number is None
     assert captions[1].plate_number is None
     assert captions[1].is_blank_reference is True
 
-    assert captions[2].caption_id == "p105_c3"
+    assert captions[2].caption_id == "doc_ver_p105_c3"
     assert captions[2].drawing_number == "57"
     assert captions[2].plate_number == "85"
     assert captions[2].is_blank_reference is False

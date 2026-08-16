@@ -15,7 +15,15 @@ except ImportError:
 import pypdf
 
 from app.domain.canonical_models import ReferenceData
-from app.domain.document_structure import CaptionData, ParsedPage, TextBlockData
+from app.domain.document_structure import (
+    CaptionData,
+    ParsedPage,
+    TextBlockData,
+    make_block_id,
+    make_caption_id,
+    make_page_id,
+    make_reference_id,
+)
 
 
 class PDFParser:
@@ -204,10 +212,11 @@ class PDFParser:
         lines: list[str],
         physical_page: int,
         source_sha256: str | None = None,
+        version_id: str = "doc_ver",
     ) -> list[CaptionData]:
         captions: list[CaptionData] = []
         for line in lines:
-            caption_id = f"p{physical_page}_c{len(captions) + 1}"
+            caption_id = make_caption_id(version_id, physical_page, len(captions) + 1)
             caption = self._extract_caption(
                 line,
                 caption_id,
@@ -222,13 +231,14 @@ class PDFParser:
         self,
         file_path: Path,
         mode: str = "report_body",
+        version_id: str = "doc_ver",
     ) -> list[ParsedPage]:
         if HAS_PYMUPDF:
             try:
-                return self._parse_with_pymupdf(file_path, mode=mode)
+                return self._parse_with_pymupdf(file_path, mode=mode, version_id=version_id)
             except Exception:
                 pass
-        return self._parse_with_pypdf(file_path, mode=mode)
+        return self._parse_with_pypdf(file_path, mode=mode, version_id=version_id)
 
     def parse_page_range(
         self,
@@ -236,17 +246,26 @@ class PDFParser:
         start_page: int,
         end_page: int,
         mode: str = "report_body",
+        version_id: str = "doc_ver",
     ) -> list[ParsedPage]:
         """start_page and end_page are 1-indexed physical page numbers."""
         if HAS_PYMUPDF:
             try:
                 return self._parse_with_pymupdf(
-                    file_path, start_page=start_page, end_page=end_page, mode=mode
+                    file_path,
+                    start_page=start_page,
+                    end_page=end_page,
+                    mode=mode,
+                    version_id=version_id,
                 )
             except Exception:
                 pass
         return self._parse_with_pypdf(
-            file_path, start_page=start_page, end_page=end_page, mode=mode
+            file_path,
+            start_page=start_page,
+            end_page=end_page,
+            mode=mode,
+            version_id=version_id,
         )
 
     def _parse_with_pymupdf(
@@ -255,6 +274,7 @@ class PDFParser:
         start_page: int | None = None,
         end_page: int | None = None,
         mode: str = "report_body",
+        version_id: str = "doc_ver",
     ) -> list[ParsedPage]:
         source_sha256 = self.compute_sha256(file_path) if file_path.is_file() else None
         doc = pymupdf.open(str(file_path))
@@ -266,7 +286,10 @@ class PDFParser:
         for p in range(s_page, e_page + 1):
             page_obj = doc[p - 1]
             parsed_page = self._parse_single_pymupdf_page(
-                page_obj, physical_page=p, source_sha256=source_sha256
+                page_obj,
+                physical_page=p,
+                source_sha256=source_sha256,
+                version_id=version_id,
             )
             pages.append(parsed_page)
         return pages
@@ -276,6 +299,7 @@ class PDFParser:
         page: "pymupdf.Page",
         physical_page: int,
         source_sha256: str | None = None,
+        version_id: str = "doc_ver",
     ) -> ParsedPage:
         raw_text = page.get_text() or ""
         raw_blocks = page.get_text("blocks") or []
@@ -305,10 +329,10 @@ class PDFParser:
             b_text = b[4].strip()
             bbox = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
             order = idx + 1
-            block_id = f"p{physical_page}_b{order}"
+            block_id = make_block_id(version_id, physical_page, order)
             norm_line = self.normalize_text(b_text)
 
-            caption_id = f"p{physical_page}_c{len(captions) + 1}"
+            caption_id = make_caption_id(version_id, physical_page, len(captions) + 1)
             caption = self._extract_caption(
                 b_text,
                 caption_id=caption_id,
@@ -364,6 +388,7 @@ class PDFParser:
             text_blocks=text_blocks,
             captions=captions,
             source_sha256=source_sha256,
+            page_id=make_page_id(version_id, physical_page),
         )
 
     def _parse_with_pypdf(
@@ -372,6 +397,7 @@ class PDFParser:
         start_page: int | None = None,
         end_page: int | None = None,
         mode: str = "report_body",
+        version_id: str = "doc_ver",
     ) -> list[ParsedPage]:
         source_sha256 = self.compute_sha256(file_path) if file_path.is_file() else None
         reader = pypdf.PdfReader(str(file_path))
@@ -383,7 +409,10 @@ class PDFParser:
         for p in range(s_page, e_page + 1):
             page_obj = reader.pages[p - 1]
             parsed_page = self._parse_single_pypdf_page(
-                page_obj, physical_page=p, source_sha256=source_sha256
+                page_obj,
+                physical_page=p,
+                source_sha256=source_sha256,
+                version_id=version_id,
             )
             pages.append(parsed_page)
         return pages
@@ -393,6 +422,7 @@ class PDFParser:
         page: pypdf.PageObject,
         physical_page: int,
         source_sha256: str | None = None,
+        version_id: str = "doc_ver",
     ) -> ParsedPage:
         raw_text = page.extract_text() or ""
         raw_lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
@@ -422,7 +452,9 @@ class PDFParser:
 
         for idx, line in enumerate(content_lines):
             norm_line = self.normalize_text(line)
-            caption_id = f"p{physical_page}_c{len(captions) + 1}"
+            order = idx + 1
+            block_id = make_block_id(version_id, physical_page, order)
+            caption_id = make_caption_id(version_id, physical_page, len(captions) + 1)
             caption = self._extract_caption(
                 line,
                 caption_id=caption_id,
@@ -434,10 +466,10 @@ class PDFParser:
                 captions.append(caption)
                 text_blocks.append(
                     TextBlockData(
-                        block_id=f"p{physical_page}_b{idx+1}",
+                        block_id=block_id,
                         text=line,
                         normalized_text=norm_line,
-                        order=idx + 1,
+                        order=order,
                         block_type="caption",
                         bbox=None,
                         source_sha256=source_sha256,
@@ -447,17 +479,17 @@ class PDFParser:
             else:
                 refs = self._extract_references(
                     line,
-                    source_block_id=f"p{physical_page}_b{idx+1}",
+                    source_block_id=block_id,
                     bbox=None,
                     source_sha256=source_sha256,
                     physical_page=physical_page,
                 )
                 text_blocks.append(
                     TextBlockData(
-                        block_id=f"p{physical_page}_b{idx+1}",
+                        block_id=block_id,
                         text=line,
                         normalized_text=norm_line,
-                        order=idx + 1,
+                        order=order,
                         block_type="paragraph",
                         bbox=None,
                         source_sha256=source_sha256,
@@ -477,4 +509,6 @@ class PDFParser:
             text_blocks=text_blocks,
             captions=captions,
             source_sha256=source_sha256,
+            page_id=make_page_id(version_id, physical_page),
         )
+

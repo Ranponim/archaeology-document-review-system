@@ -38,8 +38,27 @@ class ParsedPage:
     text_blocks: list[TextBlockData] = field(default_factory=list)
     captions: list[CaptionData] = field(default_factory=list)
     source_sha256: str | None = None
+    page_id: str | None = None
 
 
 TextBlock = TextBlockData
 Caption = CaptionData
+
+
+def make_page_id(version_id: str, physical_page: int) -> str:
+    return f"{version_id}_p{physical_page}"
+
+
+def make_block_id(version_id: str, physical_page: int, order: int) -> str:
+    return f"{version_id}_p{physical_page}_b{order}"
+
+
+def make_caption_id(version_id: str, physical_page: int, order: int) -> str:
+    return f"{version_id}_p{physical_page}_c{order}"
+
+
+def make_reference_id(source_node_id: str, ref_type: str, number: str) -> str:
+    clean_num = number.strip().replace(" ", "_").replace("·", "_").replace("ㆍ", "_").replace("~", "_")
+    return f"ref_{source_node_id}_{ref_type}_{clean_num}"
+
 

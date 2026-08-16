@@ -9,6 +9,7 @@ from app.domain.canonical_models import (
     PlatePanelData,
     ReferenceData,
 )
+from app.domain.document_structure import make_reference_id
 
 
 class CanonicalRepository:
@@ -32,8 +33,15 @@ class CanonicalRepository:
         if hasattr(ref, "id") and getattr(ref, "id", None):
             return getattr(ref, "id")
         if ref.source_block_id:
-            return f"ref_{ref.source_block_id}_{ref.ref_type}_{ref.number}"
-        return f"ref_{ref.ref_type}_{ref.number}"
+            return make_reference_id(ref.source_block_id, str(ref.ref_type), ref.number)
+        clean_num = (
+            ref.number.strip()
+            .replace(" ", "_")
+            .replace("·", "_")
+            .replace("ㆍ", "_")
+            .replace("~", "_")
+        )
+        return f"ref_{ref.ref_type}_{clean_num}"
 
     def _reference_to_param(self, ref: ReferenceData) -> dict[str, Any]:
         return {

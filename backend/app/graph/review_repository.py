@@ -1,7 +1,12 @@
 import json
 from typing import Any
 from neo4j import Driver
-from app.domain.document_structure import ParsedPage
+from app.domain.document_structure import (
+    ParsedPage,
+    make_block_id,
+    make_caption_id,
+    make_page_id,
+)
 from app.domain.review_models import CorrectionCandidateData, EvidenceData
 
 
@@ -14,7 +19,7 @@ class ReviewRepository:
         return {"database_": self._database} if self._database is not None else {}
 
     def _page_to_param(self, version_id: str, page: ParsedPage) -> dict[str, Any]:
-        page_id = f"{version_id}_p{page.physical_page}"
+        page_id = page.page_id or make_page_id(version_id, page.physical_page)
         return {
             "id": page_id,
             "physical_page": page.physical_page,
@@ -23,7 +28,7 @@ class ReviewRepository:
             "normalized_text": page.normalized_text,
             "blocks": [
                 {
-                    "id": f"{page_id}_b{b.order}",
+                    "id": b.block_id or make_block_id(version_id, page.physical_page, b.order),
                     "text": b.text,
                     "normalized_text": b.normalized_text,
                     "order": b.order,
@@ -33,13 +38,13 @@ class ReviewRepository:
             ],
             "captions": [
                 {
-                    "id": f"{page_id}_{c.caption_id}",
+                    "id": c.caption_id or make_caption_id(version_id, page.physical_page, idx + 1),
                     "raw_text": c.raw_text,
                     "drawing_number": c.drawing_number,
                     "plate_number": c.plate_number,
                     "is_blank_reference": c.is_blank_reference,
                 }
-                for c in page.captions
+                for idx, c in enumerate(page.captions)
             ],
         }
 
@@ -121,13 +126,22 @@ class ReviewRepository:
             page.normalized_text = p.normalized_text
         MERGE (v)-[:HAS_PAGE]->(page)
         WITH page, p
-        UNWIND p.blocks AS b
-        MERGE (block:TextBlock {id: b.id})
-        SET block.text = b.text,
-            block.normalized_text = b.normalized_text,
-            block.order = b.order,
-            block.block_type = b.block_type
-        MERGE (page)-[:HAS_BLOCK]->(block)
+        FOREACH (b IN p.blocks |
+            MERGE (block:TextBlock {id: b.id})
+            SET block.text = b.text,
+                block.normalized_text = b.normalized_text,
+                block.order = b.order,
+                block.block_type = b.block_type
+            MERGE (page)-[:HAS_BLOCK]->(block)
+        )
+        FOREACH (c IN p.captions |
+            MERGE (cap:Caption {id: c.id})
+            SET cap.raw_text = c.raw_text,
+                cap.drawing_number = c.drawing_number,
+                cap.plate_number = c.plate_number,
+                cap.is_blank_reference = c.is_blank_reference
+            MERGE (page)-[:HAS_CAPTION]->(cap)
+        )
         """
         self._driver.execute_query(
             cypher,

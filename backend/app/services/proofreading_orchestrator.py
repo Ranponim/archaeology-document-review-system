@@ -15,7 +15,12 @@ from app.domain.canonical_models import (
     ReferenceData,
     ResolutionStatus,
 )
-from app.domain.document_structure import CaptionData, ParsedPage, TextBlockData
+from app.domain.document_structure import (
+    CaptionData,
+    ParsedPage,
+    TextBlockData,
+    make_reference_id,
+)
 from app.domain.review_models import (
     CorrectionCandidateData,
     EvidenceData,
@@ -139,9 +144,13 @@ class ProofreadingOrchestrator:
                     p_path,
                     start_page=body_page_range[0],
                     end_page=body_page_range[1],
+                    version_id=body_version_id,
                 )
             else:
-                parsed_body_pages = self.pdf_parser.parse_pdf(p_path)
+                parsed_body_pages = self.pdf_parser.parse_pdf(
+                    p_path,
+                    version_id=body_version_id,
+                )
 
         if not body_sha256:
             body_sha256 = f"sha256_{body_version_id}"
@@ -274,7 +283,7 @@ class ProofreadingOrchestrator:
                 if self.canonical_repo is not None:
                     target_label = "Plate" if isinstance(resolution.target, PlateData) else "Drawing"
                     target_id = getattr(resolution.target, "plate_id", None) or getattr(resolution.target, "drawing_id", None)
-                    ref_id = f"ref_{ref.source_block_id}_{ref.ref_type}_{ref.number}" if ref.source_block_id else f"ref_{ref.ref_type}_{ref.number}"
+                    ref_id = self.canonical_repo._reference_id(ref)
                     if target_id:
                         self.canonical_repo.link_reference_to_target(
                             reference_id=ref_id,
