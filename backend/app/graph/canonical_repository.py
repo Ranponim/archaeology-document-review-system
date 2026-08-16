@@ -564,7 +564,9 @@ class CanonicalRepository:
             "objects": objects,
         }
 
-    def get_object_evidence_bundle(self, object_id: str) -> ObjectEvidenceBundle:
+    def get_object_evidence_bundle(
+        self, object_id: str, analysis_run_id: str | None = None
+    ) -> ObjectEvidenceBundle:
         """Gather the evidence bundle for one ArchaeologyObject by graph traversal.
 
         Consumes real relationships (plan §8 "Get evidence for one
@@ -578,6 +580,9 @@ class CanonicalRepository:
         invariants are enforced while reconstructing rows (raising when a
         document-bound kind lacks its required source_sha256 /
         document_version_id / page_id — provenance is never fabricated).
+
+        analysis_run_id is threaded into the reconstructed claim evidences so
+        candidate persistence cannot clobber the run provenance.
         """
         if self._driver is None:
             return ObjectEvidenceBundle(object_id=object_id, canonical_name="")
@@ -597,9 +602,15 @@ class CanonicalRepository:
         obj_props = dict(records[0]["obj"])
         canonical_name = str(obj_props.get("canonical_name") or "")
 
-        text_claims: list[EvidenceData] = self._query_text_claims(object_id)
-        references: list[EvidenceData] = self._query_reference_evidences(object_id)
-        plate_claims, drawing_claims = self._query_visual_claims(object_id)
+        text_claims: list[EvidenceData] = self._query_text_claims(
+            object_id, analysis_run_id=analysis_run_id
+        )
+        references: list[EvidenceData] = self._query_reference_evidences(
+            object_id, analysis_run_id=analysis_run_id
+        )
+        plate_claims, drawing_claims = self._query_visual_claims(
+            object_id, analysis_run_id=analysis_run_id
+        )
         visual_observations, version_claims = self._query_candidate_evidences(object_id)
 
         return ObjectEvidenceBundle(
@@ -613,7 +624,9 @@ class CanonicalRepository:
             version_claims=version_claims,
         )
 
-    def _query_text_claims(self, object_id: str) -> list[EvidenceData]:
+    def _query_text_claims(
+        self, object_id: str, analysis_run_id: str | None = None
+    ) -> list[EvidenceData]:
         cypher = """
         MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
         OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
@@ -643,6 +656,7 @@ class CanonicalRepository:
                     region_id=source["id"],
                     bbox=_as_bbox(source.get("bbox")),
                     method="graph_traversal",
+                    analysis_run_id=analysis_run_id,
                     value=text,
                     confidence=1.0,
                     version_from=version.get("stage"),
@@ -656,7 +670,9 @@ class CanonicalRepository:
             )
         return claims
 
-    def _query_reference_evidences(self, object_id: str) -> list[EvidenceData]:
+    def _query_reference_evidences(
+        self, object_id: str, analysis_run_id: str | None = None
+    ) -> list[EvidenceData]:
         cypher = """
         MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
         OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
@@ -688,6 +704,7 @@ class CanonicalRepository:
                     region_id=ref.get("source_block_id") or source.get("id"),
                     bbox=_as_bbox(ref.get("bbox")),
                     method="graph_traversal",
+                    analysis_run_id=analysis_run_id,
                     value={
                         "ref_type": ref.get("ref_type"),
                         "number": ref.get("number"),
@@ -704,7 +721,7 @@ class CanonicalRepository:
         return evidences
 
     def _query_visual_claims(
-        self, object_id: str
+        self, object_id: str, analysis_run_id: str | None = None
     ) -> tuple[list[EvidenceData], list[EvidenceData]]:
         cypher = """
         MATCH (asset)-[:DEPICTS]->(obj:ArchaeologyObject {id: $object_id})
@@ -752,6 +769,7 @@ class CanonicalRepository:
                 region_id=asset["id"],
                 bbox=_as_bbox(asset.get("bbox")),
                 method="graph_traversal",
+                analysis_run_id=analysis_run_id,
                 value={
                     "label": asset_label,
                     number_key: asset.get("number"),

@@ -161,3 +161,31 @@ def test_evidence_from_row_props_raises_when_document_bound_provenance_missing()
     }
     with pytest.raises(ValueError, match="page_id is required"):
         evidence_from_row_props(row2)
+
+def test_evidence_from_row_props_preserves_zero_confidence():
+    """Review §5.2 fold-in: stored confidence 0.0 must round-trip as 0.0
+    (the old `props.get("confidence") or 1.0` mapped it to 1.0)."""
+    row = {
+        "id": "ev_zero_conf",
+        "kind": "text_claim",
+        "source_sha256": "sha256_body_1",
+        "document_version_id": "ver_1",
+        "page_id": "ver_1_p1",
+        "value": "길이 275cm",
+        "confidence": 0.0,
+    }
+    ev = evidence_from_row_props(row)
+    assert ev.confidence == 0.0
+
+
+def test_evidence_from_row_props_missing_confidence_defaults_to_one():
+    row = {
+        "id": "ev_no_conf",
+        "kind": "text_claim",
+        "source_sha256": "sha256_body_1",
+        "document_version_id": "ver_1",
+        "page_id": "ver_1_p1",
+        "value": "길이 275cm",
+    }
+    ev = evidence_from_row_props(row)
+    assert ev.confidence == 1.0

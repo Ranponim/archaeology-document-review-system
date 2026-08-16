@@ -584,7 +584,7 @@ class ProofreadingOrchestrator:
             for obj in all_objects:
                 try:
                     bundle = self.canonical_repo.get_object_evidence_bundle(
-                        obj.object_id
+                        obj.object_id, analysis_run_id=run_id
                     )
                 except Exception as exc:  # noqa: BLE001 - degrade explicitly
                     warnings.append(

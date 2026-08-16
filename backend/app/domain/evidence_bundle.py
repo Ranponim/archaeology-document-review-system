@@ -77,7 +77,7 @@ def evidence_from_row_props(props: dict[str, Any] | None) -> EvidenceData:
         analysis_run_id=props.get("analysis_run_id"),
         value=value if value is not None else "",
         rationale=props.get("rationale"),
-        confidence=float(props.get("confidence") or 1.0),
+        confidence=float(props.get("confidence")) if props.get("confidence") is not None else 1.0,
         version_from=props.get("version_from"),
         version_to=props.get("version_to"),
         physical_page_from=props.get("physical_page_from"),

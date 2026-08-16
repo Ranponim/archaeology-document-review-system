@@ -647,3 +647,144 @@ def test_real_neo4j_object_evidence_bundle_traversal():
 
 def _text(value: Any) -> str:
     return str(value)
+
+def test_get_object_evidence_bundle_threads_analysis_run_id_into_reconstructed_claims():
+    """Review 5.1 fold-in: graph-traversal claims carry the analysis run id so
+    save_candidates cannot clobber it to None on persistence. Candidate-backed
+    evidence (stored rows) keeps its ORIGINAL producing run id instead."""
+    vlm_row = {
+        "cand": {"id": "cand_x", "rule_category": "figure_plate_table_photo_ref"},
+        "ev": {
+            "id": "ev_vlm_obj_t",
+            "kind": "vlm_observation",
+            "source_sha256": "sha256_plate",
+            "document_version_id": "ver_v",
+            "page_id": "ver_v_p47",
+            "value": '{"observation": "석관묘 확인"}',
+            "confidence": 0.8,
+            "analysis_run_id": "run_old",
+        },
+        "page": {"id": "ver_v_p47"},
+        "version": {"id": "ver_v", "sha256": "sha256_v"},
+    }
+    driver = (
+        ScriptedFakeNeo4jDriver()
+        .respond("RETURN properties(obj) AS obj", [{"obj": {"canonical_name": "O"}}])
+        .respond(
+            "[:REFERENCES]->(ref:Reference)",
+            [
+                {
+                    "source": {"id": "g_b1"},
+                    "ref": {
+                        "id": "ref_g_b1_plate_45",
+                        "ref_type": "plate",
+                        "number": "45",
+                        "source_block_id": "g_b1",
+                    },
+                    "page": {"id": "ver_g_p1"},
+                    "version": {"id": "ver_g", "sha256": "sha256_g"},
+                }
+            ],
+        )
+        .respond("[:SUPPORTED_BY]->(ev:Evidence)", [vlm_row])
+        .respond(
+            "[:DEPICTS]->(obj:ArchaeologyObject",
+            [
+                {
+                    "asset_label": "Plate",
+                    "asset": {
+                        "id": "plate_45",
+                        "number": "45",
+                        "title": "1지점 청동기시대 1호 주거지",
+                        "source_sha256": "sha256_plate",
+                        "document_version_id": "ver_plate",
+                        "physical_page": 47,
+                    },
+                    "ref": None,
+                    "page": None,
+                    "version": None,
+                }
+            ],
+        )
+        .respond(
+            "[:MENTIONS]->(obj:ArchaeologyObject",
+            [
+                {
+                    "source": {"id": "g_b1", "text": "규모는 길이 275cm이다"},
+                    "page": {"id": "ver_g_p1", "physical_page": 1},
+                    "version": {"id": "ver_g", "stage": "1차", "sha256": "sha256_g"},
+                }
+            ],
+        )
+    )
+    repo = CanonicalRepository(driver=driver, database="test_db")
+
+    bundle = repo.get_object_evidence_bundle("obj_t", analysis_run_id="run_9")
+
+    assert bundle.text_claims[0].analysis_run_id == "run_9"
+    assert bundle.references[0].analysis_run_id == "run_9"
+    assert bundle.plate_claims[0].analysis_run_id == "run_9"
+    assert bundle.visual_observations[0].analysis_run_id == "run_old", (
+        "stored candidate-backed evidence keeps its original producing run"
+    )
+
+
+@pytest.mark.anyio
+async def test_orchestrator_persists_analysis_run_id_on_graph_sourced_evidence_with_matching_block_ids():
+    """Review 5.1 fold-in: when graph block ids equal the in-memory block ids
+    (the production collision), save_candidates must NOT clobber the evidence
+    analysis_run_id to None."""
+    driver = (
+        ScriptedFakeNeo4jDriver()
+        .respond(
+            "RETURN properties(obj) AS obj",
+            [{"obj": {"canonical_name": "1지점 청동기시대 1호 주거지"}}],
+        )
+        .respond(
+            "[:MENTIONS]->(obj:ArchaeologyObject",
+            [
+                {
+                    "source": {"id": "p1_b1", "text": "규모는 길이 275cm이다"},
+                    "page": {"id": "ver_g_p1", "physical_page": 1},
+                    "version": {"id": "ver_g", "stage": "1차", "sha256": "sha256_g"},
+                },
+                {
+                    "source": {"id": "p1_b2", "text": "평면조사에서는 길이 2.45m로 기록되었다"},
+                    "page": {"id": "ver_g_p1", "physical_page": 1},
+                    "version": {"id": "ver_g", "stage": "1차", "sha256": "sha256_g"},
+                },
+            ],
+        )
+    )
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+    )
+    result = await orchestrator.run_proofreading(
+        project_id="proj_run_id",
+        body_version_id="ver_g",
+        body_pages=[_gate_d_page()],
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+
+    assert result.status == "completed"
+    numeric = [c for c in result.candidates if c.rule_category == "numeric_value"]
+    assert numeric
+    assert not any("DEGRADED" in w for w in result.warnings)
+
+    save_candidates_queries = [
+        q for q in driver.queries if "MERGE (cand:CorrectionCandidate" in q["query"]
+    ]
+    assert save_candidates_queries, "save_candidates must run"
+    for q in save_candidates_queries:
+        for cand in q["kwargs"]["candidates"]:
+            assert cand["analysis_run_id"] == result.analysis_run_id
+            ev_params = cand["evidences"]
+            assert ev_params
+            for ev_p in ev_params:
+                assert ev_p["analysis_run_id"] == result.analysis_run_id, ev_p["id"]
+                assert ev_p["id"].endswith("_p1_b1") or ev_p["id"].endswith("_p1_b2")
