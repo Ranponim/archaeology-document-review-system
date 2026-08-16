@@ -34,12 +34,25 @@ class DrawingIndex:
     def get_drawing(self, number: str) -> DrawingData | None:
         return self.drawings_by_number.get(str(number).strip())
 
-    def get_region(self, drawing_number: str, region_number: str) -> DrawingRegionData | None:
+    def get(self, number: str, default: DrawingData | None = None) -> DrawingData | None:
+        """Dict-like get with optional default."""
+        result = self.drawings_by_number.get(str(number).strip())
+        if result is None:
+            return default
+        return result
+
+    def get_region(self, drawing_number: str, region_number: str | int) -> DrawingRegionData | None:
         drawing = self.get_drawing(drawing_number)
         if not drawing:
             return None
+        # Normalise region_number to a string digit
+        rn = str(region_number).strip()
+        if rn in CIRCLED_MAP:
+            rn = str(CIRCLED_MAP[rn])
+        elif isinstance(region_number, int):
+            rn = str(region_number)
         for r in drawing.regions:
-            if r.number == str(region_number).strip():
+            if r.number == rn:
                 return r
         return None
 

@@ -1,17 +1,59 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
+import warnings
 from typing import Any, Literal
 
 from app.domain.canonical_models import (
     DrawingData,
+    DrawingRegionData,
     PlateData,
+    PlatePanelData,
     ReferenceData,
     ResolutionStatus,
 )
 from app.services.plate_parser import PlateIndex
 
 AssetMatchStatus = Literal["exact", "multiple", "missing", "semantic_review"]
+
+# Circled / parenthesised numeral mapping (①→1, ⑴→1, etc.)
+CIRCLED_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_CIRCLED_MAP: dict[str, int] = {c: i + 1 for i, c in enumerate(CIRCLED_CHARS)}
+PAREN_CHARS = "⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽⑾⑿⒀⒁⒂⒃⒄⒅⒆⒇"
+for _i, _c in enumerate(PAREN_CHARS):
+    _CIRCLED_MAP[_c] = _i + 1
+
+
+def _parse_compound_number(raw: str) -> tuple[str, int | None]:
+    """Parse a potentially compound reference number into (base_number, sub_index | None).
+
+    Supports:
+      '30-1'     -> ('30', 1)
+      '30-①'    -> ('30', 1)
+      '30 (2)'   -> ('30', 2)
+      '85-②'    -> ('85', 2)
+      '30'       -> ('30', None)
+    """
+    raw = raw.strip()
+
+    # 1. Pattern: base-circled (e.g. 30-①)
+    for ch, val in _CIRCLED_MAP.items():
+        if ch in raw:
+            base = raw.split(ch)[0].rstrip("-").rstrip().rstrip("-").strip()
+            if base:
+                return base, val
+
+    # 2. Pattern: base (N) or base(N) (e.g. 30 (2), 30(2))
+    m_paren = re.match(r"^(\d+)\s*\((\d+)\)$", raw)
+    if m_paren:
+        return m_paren.group(1), int(m_paren.group(2))
+
+    # 3. Pattern: base-N (e.g. 30-1, 85-1)
+    m_hyphen = re.match(r"^(\d+)\s*[-–—]\s*(\d+)$", raw)
+    if m_hyphen:
+        return m_hyphen.group(1), int(m_hyphen.group(2))
+
+    return raw, None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +69,7 @@ class MatchedAssetResult:
 @dataclass(frozen=True, slots=True)
 class ResolutionResult:
     status: ResolutionStatus
-    target: PlateData | DrawingData | None = None
+    target: PlateData | PlatePanelData | DrawingData | DrawingRegionData | None = None
     identity_source: str = ""
     identity_evidence: list[str] = field(default_factory=list)
     rationale: str = ""
@@ -68,11 +110,41 @@ def resolve_reference(
                 rationale=f"No canonical PlateIndex provided to resolve plate '{ref_num}'",
             )
 
-        plate = plate_index.get_plate(ref_num)
+        # Parse compound number (e.g. 85-1, 85-②)
+        base_num, sub_idx = _parse_compound_number(ref_num)
+
+        plate = plate_index.get_plate(base_num)
         if plate is None and hasattr(plate_index, "get"):
-            plate = plate_index.get(ref_num)
+            plate = plate_index.get(base_num)
 
         if plate is not None:
+            # If sub_idx specified, try to resolve to panel
+            if sub_idx is not None and plate.panels:
+                panel = None
+                if hasattr(plate_index, "get_panel"):
+                    panel = plate_index.get_panel(base_num, sub_idx)
+                if panel is None:
+                    for p in plate.panels:
+                        if p.panel_index == sub_idx:
+                            panel = p
+                            break
+                if panel is not None:
+                    evidence: list[str] = []
+                    if getattr(panel, "caption", None):
+                        evidence.append(panel.caption)
+                    if getattr(plate, "title", None):
+                        evidence.append(plate.title)
+                    if not evidence:
+                        evidence.append(f"도판 {plate.number}-{sub_idx}")
+                    return ResolutionResult(
+                        status=ResolutionStatus.RESOLVED,
+                        target=panel,
+                        identity_source="plate_pdf",
+                        identity_evidence=evidence,
+                        rationale=f"Canonical resolution from plate {plate.number} panel {sub_idx}",
+                    )
+                # Panel not found - fall through to resolve to plate itself
+
             evidence: list[str] = []
             if getattr(plate, "raw_identifier", None):
                 evidence.append(plate.raw_identifier)
@@ -107,15 +179,60 @@ def resolve_reference(
                 rationale=f"No canonical DrawingIndex provided to resolve drawing '{ref_num}'",
             )
 
+        # Parse compound number (e.g. 30-1, 30-①, 30 (2))
+        base_num, sub_idx = _parse_compound_number(ref_num)
+
         drawing = None
         if hasattr(drawing_index, "get_drawing"):
-            drawing = drawing_index.get_drawing(ref_num)
+            drawing = drawing_index.get_drawing(base_num)
         elif hasattr(drawing_index, "get"):
-            drawing = drawing_index.get(ref_num)
+            drawing = drawing_index.get(base_num)
         elif hasattr(drawing_index, "drawings_by_number"):
-            drawing = drawing_index.drawings_by_number.get(ref_num)
+            drawing = drawing_index.drawings_by_number.get(base_num)
 
         if drawing is not None:
+            # If sub_idx specified, try to resolve to region
+            if sub_idx is not None and drawing.regions:
+                region = None
+                sub_str = str(sub_idx)
+                if hasattr(drawing_index, "get_region"):
+                    region = drawing_index.get_region(base_num, sub_str)
+                if region is None:
+                    for r in drawing.regions:
+                        if r.number == sub_str:
+                            region = r
+                            break
+                if region is not None:
+                    evidence: list[str] = []
+                    if getattr(region, "title", None):
+                        evidence.append(region.title)
+                    if getattr(drawing, "title", None):
+                        evidence.append(drawing.title)
+                    if not evidence:
+                        evidence.append(f"도면 {drawing.number}-{sub_idx}")
+                    return ResolutionResult(
+                        status=ResolutionStatus.RESOLVED,
+                        target=region,
+                        identity_source="drawing_pdf",
+                        identity_evidence=evidence,
+                        rationale=f"Canonical resolution from drawing {drawing.number} region {sub_idx}",
+                    )
+                # Region not found - fall back to base drawing
+                evidence: list[str] = []
+                if getattr(drawing, "raw_identifier", None):
+                    evidence.append(drawing.raw_identifier)
+                if getattr(drawing, "title", None):
+                    evidence.append(drawing.title)
+                if not evidence:
+                    evidence.append(f"도면 {drawing.number}")
+                return ResolutionResult(
+                    status=ResolutionStatus.RESOLVED,
+                    target=drawing,
+                    identity_source="drawing_pdf",
+                    identity_evidence=evidence,
+                    rationale=f"Canonical resolution from drawing {drawing.number} (region {sub_idx} not indexed, fallback to base drawing)",
+                )
+
             evidence: list[str] = []
             if getattr(drawing, "raw_identifier", None):
                 evidence.append(drawing.raw_identifier)
@@ -372,6 +489,12 @@ class AssetMatcher:
         number: str,
         context: dict[str, Any] | None = None,
     ) -> MatchedAssetResult:
+        """Legacy filename-based matching. DEPRECATED: use resolve_reference() instead."""
+        warnings.warn(
+            "match_reference is deprecated and quarantined; use resolve_reference() for canonical identity resolution",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         ctx = context or {}
         num_str = str(number).strip() if number is not None else ""
 
