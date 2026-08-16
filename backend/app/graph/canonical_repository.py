@@ -172,6 +172,7 @@ class CanonicalRepository:
             "panel_index": panel.panel_index,
             "caption": panel.caption,
             "bbox": list(panel.bbox) if panel.bbox is not None else None,
+            "bbox_status": panel.bbox_status,
             "physical_page": panel.physical_page,
             "render_uri": panel.render_uri,
             "source_sha256": panel.source_sha256,
@@ -311,6 +312,7 @@ class CanonicalRepository:
                 panel.panel_index = pan.panel_index,
                 panel.caption = pan.caption,
                 panel.bbox = pan.bbox,
+                panel.bbox_status = pan.bbox_status,
                 panel.physical_page = pan.physical_page,
                 panel.render_uri = pan.render_uri,
                 panel.source_sha256 = pan.source_sha256

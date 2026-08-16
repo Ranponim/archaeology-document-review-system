@@ -76,7 +76,11 @@ class ImageProcessor:
         """Crop region from image bytes based on bbox and prepare for VLM.
 
         Rejects empty or corrupt image bytes gracefully by returning b"".
-        Handles both absolute coordinates (x0, y0, x1, y1) and normalized (0..1) coordinates.
+        bbox convention: (x0, y0, x1, y1) with the PDF top-left origin. When
+        every value lies in (0..1] the box is NORMALIZED relative to the image
+        dimensions (this is the PlatePanelData.bbox convention — panel photo
+        regions on a page render); otherwise it is treated as absolute pixel
+        coordinates.
         """
         if not image_bytes:
             return b""

@@ -30,6 +30,13 @@ class PlatePanelData:
     panel_index: int
     caption: str = ""
     bbox: tuple[float, float, float, float] | None = None
+    """Photo/panel region in normalized page coordinates (0..1, PDF top-left
+    origin), derived from panel segmentation of the full page — never the bbox
+    of a circled label. None when the region could not be safely isolated."""
+    bbox_status: str | None = None
+    """'segmented' when bbox is the segmented photo region; 'insufficient' when
+    the region could not be safely isolated (bbox None, no render_uri); None
+    when no segmentation was attempted."""
     physical_page: int | None = None
     render_uri: str | None = None
     source_sha256: str | None = None

@@ -153,12 +153,21 @@ class AssetReviewPipeline:
             if raw_bytes is None:
                 raw_bytes = b""
 
-            # 5. Crop if bbox is provided
+            # 5. Crop the actual panel photo region from the high-resolution
+            # page render (panel bbox in normalized page coordinates) or
+            # prepare the whole photo bytes for a region-less target. A panel
+            # whose region could not be safely isolated (bbox_status
+            # "insufficient") never sends the page render: that would be
+            # unrelated content, not panel evidence.
             item_bbox = getattr(item, "bbox", None)
+            bbox_status = getattr(item, "bbox_status", None)
             if item_bbox is not None and raw_bytes:
                 processed_bytes = ImageProcessor.crop_region(raw_bytes, item_bbox)
             elif raw_bytes:
-                processed_bytes = ImageProcessor.prepare_for_vlm(raw_bytes)
+                if bbox_status == "insufficient":
+                    processed_bytes = b""
+                else:
+                    processed_bytes = ImageProcessor.prepare_for_vlm(raw_bytes)
             else:
                 processed_bytes = b""
 

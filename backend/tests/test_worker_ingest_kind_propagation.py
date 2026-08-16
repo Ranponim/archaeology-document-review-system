@@ -130,6 +130,8 @@ def test_extractor_passes_kind_and_project_id_into_kind_ingest_job(
             "canonical_repo": None,
             "review_repo": None,
             "analysis_run_id": "run-test",
+            # Task 9: plate books render pages into the derived dir.
+            "render_dir": tmp_path / "derived" / "plate_renders" / "version-test",
         }
     ]
 

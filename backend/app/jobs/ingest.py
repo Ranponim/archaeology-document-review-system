@@ -146,6 +146,7 @@ def run_ingest_job(
     object_resolver: Any | None = None,
     analysis_run_id: str | None = None,
     page_range: tuple[int, int] | None = None,
+    render_dir: str | Path | None = None,
 ) -> IngestResult:
     """Kind-aware canonical graph construction during document ingestion.
 
@@ -250,13 +251,18 @@ def run_ingest_job(
                     start_page=page_range[0],
                     end_page=page_range[1],
                     document_version_id=version_id,
+                    render_dir=render_dir,
                 )
                 pl_index = PlateIndex(
                     plates_by_number={p.number: p for p in plates_list},
                     plates=plates_list,
                 )
             else:
-                pl_index = parser.parse(path, document_version_id=version_id)
+                pl_index = parser.parse(
+                    path,
+                    document_version_id=version_id,
+                    render_dir=render_dir,
+                )
 
             all_plates: list[PlateData] = list(pl_index.plates)
             if canonical_repo is not None and all_plates:

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
 import re
-from typing import Iterator, Sequence
+from typing import Any, Iterator, Sequence
 
 try:
     import pymupdf  # type: ignore
@@ -25,6 +25,10 @@ CIRCLED_MAP: dict[str, int] = {c: i + 1 for i, c in enumerate(CIRCLED_CHARS)}
 PAREN_CHARS = "⑴⑵⑶⑷⑸⑹⑺⑻⑼⑽⑾⑿⒀⒁⒂⒃⒄⒅⒆⒇"
 for i, c in enumerate(PAREN_CHARS):
     CIRCLED_MAP[c] = i + 1
+
+PAGE_RENDER_ZOOM = 2.0
+PAGE_RENDER_MIN_WIDTH = 1191.0
+LABEL_ASSOCIATION_MARGIN = 8.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +163,76 @@ class PlateParser:
         return []
 
     @classmethod
+    def _render_page_png(cls, page: Any, zoom: float | None = None) -> bytes:
+        """Render one plate page at high resolution (>=2x, ~1191px wide)."""
+        if zoom is None:
+            zoom = max(PAGE_RENDER_ZOOM, PAGE_RENDER_MIN_WIDTH / page.rect.width)
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+        return pix.tobytes("png")
+
+    @classmethod
+    def render_page(
+        cls, pdf_path: str | Path, physical_page: int, zoom: float | None = None
+    ) -> bytes:
+        """Render one physical page of a plate PDF at high resolution."""
+        doc = pymupdf.open(str(pdf_path))
+        try:
+            page = doc[physical_page - 1]
+            return cls._render_page_png(page, zoom=zoom)
+        finally:
+            doc.close()
+
+    @classmethod
+    def segment_page_panels(
+        cls,
+        page: Any,
+        label_bboxes: dict[int, tuple[float, float, float, float]],
+    ) -> dict[int, tuple[float, float, float, float]]:
+        """Map panel labels to embedded photo rects on a plate page.
+
+        Every embedded image rectangle of the page is a candidate photo region.
+        A label is associated with the photo that contains its center (within
+        LABEL_ASSOCIATION_MARGIN); exactly one candidate is required — otherwise
+        the panel region cannot be safely isolated and is omitted from the
+        result. Returns {panel_index: bbox} with bboxes in normalized page
+        coordinates (0..1, top-left origin).
+        """
+        image_rects: list[Any] = []
+        seen: set[tuple[float, float, float, float]] = set()
+        for img in page.get_images(full=True):
+            for r in page.get_image_rects(img[0]):
+                key = (round(r.x0, 2), round(r.y0, 2), round(r.x1, 2), round(r.y1, 2))
+                if key in seen or r.width < 2.0 or r.height < 2.0:
+                    continue
+                seen.add(key)
+                image_rects.append(r)
+
+        page_width = page.rect.width
+        page_height = page.rect.height
+        result: dict[int, tuple[float, float, float, float]] = {}
+        for p_idx, label_bb in label_bboxes.items():
+            if not label_bb:
+                continue
+            lx = (label_bb[0] + label_bb[2]) / 2.0
+            ly = (label_bb[1] + label_bb[3]) / 2.0
+            margin = LABEL_ASSOCIATION_MARGIN
+            candidates = [
+                r
+                for r in image_rects
+                if r.x0 - margin <= lx <= r.x1 + margin
+                and r.y0 - margin <= ly <= r.y1 + margin
+            ]
+            if len(candidates) == 1:
+                r = candidates[0]
+                result[p_idx] = (
+                    r.x0 / page_width,
+                    r.y0 / page_height,
+                    r.x1 / page_width,
+                    r.y1 / page_height,
+                )
+        return result
+
+    @classmethod
     def parse_text_header(cls, text: str) -> tuple[str, str, str, str] | None:
         """Parse plate header line into (raw_identifier, number, title, panel_text)."""
         m = cls.IDENTIFIER_PATTERN.search(text)
@@ -213,9 +287,14 @@ class PlateParser:
         self,
         pdf_path: str | Path,
         document_version_id: str | None = None,
+        render_dir: str | Path | None = None,
     ) -> PlateIndex:
         """Parse an entire PDF plate book into a PlateIndex."""
-        plates = self.parse_plates(pdf_path, document_version_id=document_version_id)
+        plates = self.parse_plates(
+            pdf_path,
+            document_version_id=document_version_id,
+            render_dir=render_dir,
+        )
         plates_by_number = {p.number: p for p in plates}
         return PlateIndex(plates_by_number=plates_by_number, plates=plates)
 
@@ -223,6 +302,7 @@ class PlateParser:
         self,
         pdf_path: str | Path,
         document_version_id: str | None = None,
+        render_dir: str | Path | None = None,
     ) -> list[PlateData]:
         """Parse all plates from a PDF file."""
         path = Path(pdf_path)
@@ -230,10 +310,16 @@ class PlateParser:
 
         if HAS_PYMUPDF:
             return self._parse_with_pymupdf(
-                path, sha256=sha256, document_version_id=document_version_id
+                path,
+                sha256=sha256,
+                document_version_id=document_version_id,
+                render_dir=render_dir,
             )
         return self._parse_with_pypdf(
-            path, sha256=sha256, document_version_id=document_version_id
+            path,
+            sha256=sha256,
+            document_version_id=document_version_id,
+            render_dir=render_dir,
         )
 
     def parse_page_range(
@@ -242,6 +328,7 @@ class PlateParser:
         start_page: int,
         end_page: int,
         document_version_id: str | None = None,
+        render_dir: str | Path | None = None,
     ) -> list[PlateData]:
         """Parse a specific 1-indexed range of physical pages from a PDF."""
         path = Path(pdf_path)
@@ -254,6 +341,7 @@ class PlateParser:
                 end_page=end_page,
                 sha256=sha256,
                 document_version_id=document_version_id,
+                render_dir=render_dir,
             )
         return self._parse_with_pypdf(
             path,
@@ -261,6 +349,7 @@ class PlateParser:
             end_page=end_page,
             sha256=sha256,
             document_version_id=document_version_id,
+            render_dir=render_dir,
         )
 
     def _parse_with_pymupdf(
@@ -270,11 +359,13 @@ class PlateParser:
         end_page: int | None = None,
         sha256: str | None = None,
         document_version_id: str | None = None,
+        render_dir: str | Path | None = None,
     ) -> list[PlateData]:
         doc = pymupdf.open(str(pdf_path))
         total_pages = len(doc)
         s_page = 1 if start_page is None else max(1, start_page)
         e_page = total_pages if end_page is None else min(total_pages, end_page)
+        render_root = Path(render_dir) if render_dir is not None else None
 
         plates: list[PlateData] = []
 
@@ -284,14 +375,56 @@ class PlateParser:
             blocks = page.get_text("blocks")
             words = page.get_text("words")
 
-            # Look for blocks containing a plate identifier
+            header_blocks: list[tuple[Any, tuple[str, str, str, str]]] = []
             for b in blocks:
-                text = b[4]
-                header_info = self.parse_text_header(text)
-                if not header_info:
-                    continue
+                header_info = self.parse_text_header(b[4])
+                if header_info:
+                    header_blocks.append((b, header_info))
+            if not header_blocks:
+                continue
 
-                raw_identifier, plate_number, title, panel_text = header_info
+            # Collect panel badge words outside every header block on the page.
+            header_bboxes = [
+                (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                for b, _ in header_blocks
+            ]
+            expected_indices_all = set()
+            for _, info in header_blocks:
+                expected_indices_all.update(
+                    self.extract_panels_from_caption(info[3]).keys()
+                )
+            label_bboxes: dict[int, tuple[float, float, float, float]] = {}
+            for w in words:
+                w_text = w[4].strip()
+                w_bbox = (float(w[0]), float(w[1]), float(w[2]), float(w[3]))
+                if any(
+                    w_bbox[0] >= hb[0] - 2
+                    and w_bbox[2] <= hb[2] + 2
+                    and w_bbox[1] >= hb[1] - 2
+                    and w_bbox[3] <= hb[3] + 2
+                    for hb in header_bboxes
+                ):
+                    continue
+                for p_idx in self.is_panel_badge_word(
+                    w_text, expected_indices=expected_indices_all
+                ):
+                    if p_idx not in label_bboxes:
+                        label_bboxes[p_idx] = w_bbox
+
+            # Panel segmentation: real photo/panel regions from embedded images.
+            segment_bboxes = self.segment_page_panels(page, label_bboxes)
+
+            # High-resolution page render, shared by every panel of the page.
+            page_render_uri: str | None = None
+            if render_root is not None:
+                page_render_uri = self._persist_page_render(
+                    render_root,
+                    document_version_id=document_version_id,
+                    physical_page=physical_page,
+                    page=page,
+                )
+
+            for b, (raw_identifier, plate_number, title, panel_text) in header_blocks:
                 plate_bbox = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
                 plate_id = (
                     f"plate_{plate_number}"
@@ -299,49 +432,32 @@ class PlateParser:
                     else f"{document_version_id}_plate_{plate_number}"
                 )
 
-                # Extract panel captions from header
                 header_panels = self.extract_panels_from_caption(panel_text)
-                expected_indices = set(header_panels.keys())
-
-                # Extract panel bboxes from words on page outside the header block
-                body_panel_bboxes: dict[int, tuple[float, float, float, float]] = {}
-                for w in words:
-                    w_text = w[4].strip()
-                    w_bbox = (float(w[0]), float(w[1]), float(w[2]), float(w[3]))
-
-                    # Skip words that fall inside the plate header block bbox
-                    if (
-                        w_bbox[0] >= plate_bbox[0] - 2
-                        and w_bbox[2] <= plate_bbox[2] + 2
-                        and w_bbox[1] >= plate_bbox[1] - 2
-                        and w_bbox[3] <= plate_bbox[3] + 2
-                    ):
-                        continue
-
-                    # Check if word is a panel badge
-                    panel_indices = self.is_panel_badge_word(
-                        w_text, expected_indices=expected_indices
-                    )
-                    for p_idx in panel_indices:
-                        if p_idx not in body_panel_bboxes:
-                            body_panel_bboxes[p_idx] = w_bbox
-
-                # Combine all panel indices
                 all_panel_indices = sorted(
-                    set(header_panels.keys()).union(body_panel_bboxes.keys())
+                    set(header_panels.keys()).union(label_bboxes.keys())
                 )
                 panels: list[PlatePanelData] = []
                 for p_idx in all_panel_indices:
                     panel_id = f"{plate_id}_panel_{p_idx}"
                     caption = header_panels.get(p_idx, "")
-                    bbox = body_panel_bboxes.get(p_idx, None)
+                    seg = segment_bboxes.get(p_idx)
+                    if seg is not None:
+                        panel_bbox: tuple | None = seg
+                        bbox_status = "segmented"
+                        render_uri: str | None = page_render_uri
+                    else:
+                        panel_bbox = None
+                        bbox_status = "insufficient"
+                        render_uri = None
                     panels.append(
                         PlatePanelData(
                             panel_id=panel_id,
                             plate_id=plate_id,
                             panel_index=p_idx,
                             caption=caption,
-                            bbox=bbox,
+                            bbox=panel_bbox,
+                            bbox_status=bbox_status,
+                            render_uri=render_uri,
                             physical_page=physical_page,
                             source_sha256=sha256,
                         )
@@ -364,6 +480,23 @@ class PlateParser:
         doc.close()
         return plates
 
+    @classmethod
+    def _persist_page_render(
+        cls,
+        render_root: Path,
+        document_version_id: str | None,
+        physical_page: int,
+        page: Any,
+    ) -> str:
+        """Write the high-resolution page render under the derived dir."""
+        file_name = (
+            f"{document_version_id or 'plate'}_p{physical_page:03d}.png"
+        )
+        render_path = render_root / file_name
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(cls._render_page_png(page))
+        return str(render_path)
+
     def _parse_with_pypdf(
         self,
         pdf_path: Path,
@@ -371,6 +504,7 @@ class PlateParser:
         end_page: int | None = None,
         sha256: str | None = None,
         document_version_id: str | None = None,
+        render_dir: str | Path | None = None,
     ) -> list[PlateData]:
         reader = pypdf.PdfReader(str(pdf_path))
         total_pages = len(reader.pages)

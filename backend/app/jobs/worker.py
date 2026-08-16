@@ -63,6 +63,14 @@ class LocalMetadataExtractor:
         try:
             kind = getattr(context, "kind", "report_body") or "report_body"
             proj_id = getattr(context, "project_id", None) or context.document_version_id
+            render_dir = None
+            if "plate" in kind:
+                render_dir = (
+                    self._data_root
+                    / "derived"
+                    / "plate_renders"
+                    / context.document_version_id
+                )
             run_kind_ingest_job(
                 project_id=proj_id,
                 version_id=context.document_version_id,
@@ -71,6 +79,7 @@ class LocalMetadataExtractor:
                 canonical_repo=self._canonical_repo,
                 review_repo=self._review_repo,
                 analysis_run_id=context.analysis_run_id,
+                render_dir=render_dir,
             )
         except Exception as error:
             logger.warning(
