@@ -3,6 +3,14 @@ from pathlib import Path
 import re
 from typing import Any, Literal
 
+from app.domain.canonical_models import (
+    DrawingData,
+    PlateData,
+    ReferenceData,
+    ResolutionStatus,
+)
+from app.services.plate_parser import PlateIndex
+
 AssetMatchStatus = Literal["exact", "multiple", "missing", "semantic_review"]
 
 
@@ -16,6 +24,131 @@ class MatchedAssetResult:
     rationale: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class ResolutionResult:
+    status: ResolutionStatus
+    target: PlateData | DrawingData | None = None
+    identity_source: str = ""
+    identity_evidence: list[str] = field(default_factory=list)
+    rationale: str = ""
+
+
+def resolve_reference(
+    reference: ReferenceData,
+    plate_index: PlateIndex | None = None,
+    drawing_index: Any | None = None,
+) -> ResolutionResult:
+    """Resolve a publication reference canonically without numeric filename fallback.
+
+    Invariants:
+    1. Plate references are resolved solely against canonical explicit publication identifiers (PlateIndex).
+    2. Drawing references are resolved solely against canonical drawing index.
+    3. Filenames on disk (e.g. '4. 조사 후_45.JPG' or '_91.JPG') are NEVER used to infer canonical identity.
+    4. Missing or unindexed references return ResolutionStatus.MISSING or UNRESOLVED with target=None.
+    """
+    ref_type = str(reference.ref_type).strip().lower()
+    ref_num = str(reference.number).strip()
+
+    if not ref_num:
+        return ResolutionResult(
+            status=ResolutionStatus.UNRESOLVED,
+            target=None,
+            identity_source="unresolved",
+            identity_evidence=[],
+            rationale="Reference has empty number",
+        )
+
+    if ref_type in ("plate", "도판"):
+        if plate_index is None:
+            return ResolutionResult(
+                status=ResolutionStatus.UNRESOLVED,
+                target=None,
+                identity_source="unresolved",
+                identity_evidence=[],
+                rationale=f"No canonical PlateIndex provided to resolve plate '{ref_num}'",
+            )
+
+        plate = plate_index.get_plate(ref_num)
+        if plate is None and hasattr(plate_index, "get"):
+            plate = plate_index.get(ref_num)
+
+        if plate is not None:
+            evidence: list[str] = []
+            if getattr(plate, "raw_identifier", None):
+                evidence.append(plate.raw_identifier)
+            if getattr(plate, "title", None):
+                evidence.append(plate.title)
+            if not evidence:
+                evidence.append(f"도판 {plate.number}")
+
+            return ResolutionResult(
+                status=ResolutionStatus.RESOLVED,
+                target=plate,
+                identity_source="plate_pdf",
+                identity_evidence=evidence,
+                rationale=f"Canonical resolution from explicit publication identifier {plate.raw_identifier or plate.number}",
+            )
+        else:
+            return ResolutionResult(
+                status=ResolutionStatus.MISSING,
+                target=None,
+                identity_source="plate_pdf",
+                identity_evidence=[],
+                rationale=f"Plate '{ref_num}' not found in canonical plate index",
+            )
+
+    elif ref_type in ("drawing", "도면"):
+        if drawing_index is None:
+            return ResolutionResult(
+                status=ResolutionStatus.UNRESOLVED,
+                target=None,
+                identity_source="unresolved",
+                identity_evidence=[],
+                rationale=f"No canonical DrawingIndex provided to resolve drawing '{ref_num}'",
+            )
+
+        drawing = None
+        if hasattr(drawing_index, "get_drawing"):
+            drawing = drawing_index.get_drawing(ref_num)
+        elif hasattr(drawing_index, "get"):
+            drawing = drawing_index.get(ref_num)
+        elif hasattr(drawing_index, "drawings_by_number"):
+            drawing = drawing_index.drawings_by_number.get(ref_num)
+
+        if drawing is not None:
+            evidence: list[str] = []
+            if getattr(drawing, "raw_identifier", None):
+                evidence.append(drawing.raw_identifier)
+            if getattr(drawing, "title", None):
+                evidence.append(drawing.title)
+            if not evidence:
+                evidence.append(f"도면 {drawing.number}")
+
+            return ResolutionResult(
+                status=ResolutionStatus.RESOLVED,
+                target=drawing,
+                identity_source="drawing_pdf",
+                identity_evidence=evidence,
+                rationale=f"Canonical resolution from explicit drawing index {drawing.raw_identifier or drawing.number}",
+            )
+        else:
+            return ResolutionResult(
+                status=ResolutionStatus.MISSING,
+                target=None,
+                identity_source="drawing_pdf",
+                identity_evidence=[],
+                rationale=f"Drawing '{ref_num}' not found in canonical drawing index",
+            )
+
+    return ResolutionResult(
+        status=ResolutionStatus.UNRESOLVED,
+        target=None,
+        identity_source="unresolved",
+        identity_evidence=[],
+        rationale=f"Unknown or unsupported reference type: '{reference.ref_type}'",
+    )
+
+
 class AssetMatcher:
     DRAWING_EXTENSIONS: tuple[str, ...] = (
         "*.ai", "*.AI", "*.eps", "*.EPS", "*.pdf", "*.PDF", "*.dwg", "*.DWG", "*.dxf", "*.DXF"
@@ -26,17 +159,31 @@ class AssetMatcher:
 
     def __init__(
         self,
-        drawings_dir: Path,
-        plates_dir: Path,
-        env_dir: Path | None = None,
+        drawings_dir: Path | str | None = None,
+        plates_dir: Path | str | None = None,
+        env_dir: Path | str | None = None,
+        plate_index: PlateIndex | None = None,
+        drawing_index: Any | None = None,
     ) -> None:
-        self.drawings_dir = Path(drawings_dir)
-        self.plates_dir = Path(plates_dir)
+        self.drawings_dir = Path(drawings_dir) if drawings_dir else Path("")
+        self.plates_dir = Path(plates_dir) if plates_dir else Path("")
         self.env_dir = Path(env_dir) if env_dir else None
+        self.plate_index = plate_index
+        self.drawing_index = drawing_index
 
         self._drawing_files: list[Path] = []
         self._plate_files: list[Path] = []
         self._index_assets()
+
+    def resolve_reference(
+        self,
+        reference: ReferenceData,
+        plate_index: PlateIndex | None = None,
+        drawing_index: Any | None = None,
+    ) -> ResolutionResult:
+        p_idx = plate_index if plate_index is not None else self.plate_index
+        d_idx = drawing_index if drawing_index is not None else self.drawing_index
+        return resolve_reference(reference=reference, plate_index=p_idx, drawing_index=d_idx)
 
     def _index_assets(self) -> None:
         drawing_files_set: set[Path] = set()

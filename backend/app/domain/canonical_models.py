@@ -46,6 +46,7 @@ class PlateData:
     document_version_id: str | None = None
     panels: list[PlatePanelData] = field(default_factory=list)
     raw_identifier: str | None = None
+    source_kind: str = "plate_pdf"
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,7 @@ class DrawingData:
     document_version_id: str | None = None
     regions: list[DrawingRegionData] = field(default_factory=list)
     raw_identifier: str | None = None
+    source_kind: str = "drawing_pdf"
 
 
 @dataclass(frozen=True, slots=True)

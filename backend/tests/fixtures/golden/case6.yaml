@@ -1,0 +1,21 @@
+case_id: GT_CASE_006
+description: "Case 6 Filename Trap regression: Reference(plate, 45) must resolve canonically to Plate 45 and never pick filename 4. 조사 후_45.JPG"
+body_text: "1지점 청동기시대 6호 석관묘 ... ① 유구(도면 : 30, 도판 : 45ㆍ46)"
+reference:
+  type: "plate"
+  number: "45"
+plate_explicit_identifier: "【도판 45】"
+plate_title: "1지점 청동기시대 6호 석관묘"
+physical_page: 47
+forbidden_link_filename: "4. 조사 후_45.JPG"
+missing_reference:
+  type: "plate"
+  number: "91"
+  decoy_filenames:
+    - "_91.JPG"
+    - "photo_91.JPG"
+    - "조사후_91.JPG"
+ambiguous_filenames:
+  - "photo_45.JPG"
+  - "조사후_45.JPG"
+  - "4. 조사 후_45.JPG"
