@@ -349,6 +349,16 @@ class ProofreadingOrchestrator:
         if self.canonical_repo is not None and all_objects:
             self.canonical_repo.save_archaeology_objects(objects=all_objects)
 
+        # 5b. Persist DEPICTS links from visual assets to ArchaeologyObjects.
+        # Plates/drawings (steps 3-4) and objects (step 5) are already saved,
+        # so the MERGE can MATCH the persisted nodes.
+        if self.canonical_repo is not None:
+            self.canonical_repo.link_visual_assets_to_objects(
+                plates=all_plates,
+                drawings=all_drawings,
+                objects=all_objects,
+            )
+
         # 6. References Extraction & Canonical Resolution
         all_references: list[ReferenceData] = []
         page_by_block_id: dict[str, ParsedPage] = {}

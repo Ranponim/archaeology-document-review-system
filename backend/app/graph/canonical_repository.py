@@ -1,3 +1,5 @@
+import re
+from dataclasses import dataclass
 from typing import Any
 from neo4j import Driver
 
@@ -10,6 +12,101 @@ from app.domain.canonical_models import (
     ReferenceData,
 )
 from app.domain.document_structure import make_reference_id
+
+
+@dataclass(frozen=True, slots=True)
+class DepictsLink:
+    asset_label: str
+    asset_id: str
+    object_id: str
+
+
+def _normalize_identifier(text: str) -> str:
+    return re.sub(r"\s+", "", text or "")
+
+
+def _object_strong_identifiers(obj: ArchaeologyObjectData) -> list[str]:
+    """High-confidence identifiers: canonical name and 지점+유구/유물 combination."""
+    ids: list[str] = []
+    canonical = _normalize_identifier(obj.canonical_name)
+    if canonical:
+        ids.append(canonical)
+    point = _normalize_identifier(obj.point)
+    number = _normalize_identifier(obj.number)
+    type_ = _normalize_identifier(obj.type)
+    if point and number and type_:
+        ids.append(f"{point}{number}{type_}")
+    return ids
+
+
+def _object_weak_identifier(obj: ArchaeologyObjectData) -> str:
+    number = _normalize_identifier(obj.number)
+    type_ = _normalize_identifier(obj.type)
+    if number and type_:
+        return f"{number}{type_}"
+    return ""
+
+
+def compute_depicts_links(
+    plates: list[PlateData] | None = None,
+    panels: list[PlatePanelData] | None = None,
+    drawings: list[DrawingData] | None = None,
+    regions: list[DrawingRegionData] | None = None,
+    objects: list[ArchaeologyObjectData] | None = None,
+) -> tuple[list[DepictsLink], list[tuple[str, str]]]:
+    """Deterministically match visual assets to ArchaeologyObjects.
+
+    Returns (links, ambiguous_assets): links are (label, asset_id, object_id)
+    triples; ambiguous_assets are (label, asset_id) pairs that matched more
+    than one object and must remain in semantic review. Assets whose text
+    merely contains a number never match.
+    """
+    objects = objects or []
+    if not objects:
+        return [], []
+
+    assets: list[tuple[str, str, str]] = []
+    for p in plates or []:
+        assets.append(("Plate", p.plate_id, _normalize_identifier(p.title)))
+        for pan in p.panels:
+            assets.append(("PlatePanel", pan.panel_id, _normalize_identifier(pan.caption)))
+    for pan in panels or []:
+        assets.append(("PlatePanel", pan.panel_id, _normalize_identifier(pan.caption)))
+    for d in drawings or []:
+        assets.append(("Drawing", d.drawing_id, _normalize_identifier(d.title)))
+        for reg in d.regions:
+            assets.append(("DrawingRegion", reg.region_id, _normalize_identifier(reg.title)))
+    for reg in regions or []:
+        assets.append(("DrawingRegion", reg.region_id, _normalize_identifier(reg.title)))
+
+    links: list[DepictsLink] = []
+    ambiguous: list[tuple[str, str]] = []
+
+    for label, asset_id, asset_text in assets:
+        if not asset_text:
+            continue
+        strong_candidates = [
+            o.object_id
+            for o in objects
+            if any(i and i in asset_text for i in _object_strong_identifiers(o))
+        ]
+        if len(strong_candidates) == 1:
+            links.append(DepictsLink(label, asset_id, strong_candidates[0]))
+            continue
+        if len(strong_candidates) > 1:
+            ambiguous.append((label, asset_id))
+            continue
+        weak_candidates = [
+            o.object_id
+            for o in objects
+            if (weak := _object_weak_identifier(o)) and weak in asset_text
+        ]
+        if len(weak_candidates) == 1:
+            links.append(DepictsLink(label, asset_id, weak_candidates[0]))
+        elif len(weak_candidates) > 1:
+            ambiguous.append((label, asset_id))
+
+    return links, ambiguous
 
 
 class CanonicalRepository:
@@ -331,6 +428,66 @@ class CanonicalRepository:
             objects=obj_params,
             **self._query_config(),
         )
+
+    def link_visual_assets_to_objects(
+        self,
+        plates: list[PlateData] | None = None,
+        panels: list[PlatePanelData] | None = None,
+        drawings: list[DrawingData] | None = None,
+        regions: list[DrawingRegionData] | None = None,
+        objects: list[ArchaeologyObjectData] | None = None,
+    ) -> None:
+        """MERGE (asset)-[:DEPICTS]->(obj) for deterministic asset/object matches.
+
+        Assets and objects must already be persisted (save_plates /
+        save_drawings / save_archaeology_objects run earlier in the pipeline).
+        Ambiguous assets are flagged depicts_status='semantic_review' and get
+        no edge.
+        """
+        if self._driver is None:
+            return
+
+        links, ambiguous = compute_depicts_links(
+            plates=plates,
+            panels=panels,
+            drawings=drawings,
+            regions=regions,
+            objects=objects,
+        )
+        if not links and not ambiguous:
+            return
+
+        for label in ("Plate", "PlatePanel", "Drawing", "DrawingRegion"):
+            label_links = [l for l in links if l.asset_label == label]
+            if label_links:
+                self._merge_depicts(label, label_links)
+            label_ambiguous = [(a, i) for (a, i) in ambiguous if a == label]
+            if label_ambiguous:
+                self._mark_depicts_ambiguous(label, label_ambiguous)
+
+    def _merge_depicts(self, label: str, links: list[DepictsLink]) -> None:
+        if label not in self.ALLOWED_TARGET_LABELS:
+            raise ValueError(f"Invalid target label: {label}")
+        params = [{"asset_id": l.asset_id, "object_id": l.object_id} for l in links]
+        cypher = f"""
+        UNWIND $links AS l
+        MATCH (asset:{label} {{id: l.asset_id}})
+        MATCH (obj:ArchaeologyObject {{id: l.object_id}})
+        MERGE (asset)-[:DEPICTS]->(obj)
+        SET asset.depicts_status = 'linked'
+        """
+        self._driver.execute_query(cypher, links=params, **self._query_config())
+
+    def _mark_depicts_ambiguous(self, label: str, assets: list[tuple[str, str]]) -> None:
+        if label not in self.ALLOWED_TARGET_LABELS:
+            raise ValueError(f"Invalid target label: {label}")
+        params = [{"asset_id": asset_id} for _, asset_id in assets]
+        cypher = f"""
+        UNWIND $assets AS a
+        MATCH (asset:{label} {{id: a.asset_id}})
+        SET asset.depicts_status = 'semantic_review'
+        """
+        self._driver.execute_query(cypher, assets=params, **self._query_config())
 
     def get_canonical_evidence_path(self, reference_id: str) -> dict[str, Any]:
         if self._driver is None:
