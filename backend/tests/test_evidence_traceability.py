@@ -233,6 +233,42 @@ def test_save_candidates_builds_provenance_and_archaeology_links():
     assert "[:ABOUT]->" in cypher_queries or "ArchaeologyObject" in cypher_queries
 
 
+def test_save_candidates_cypher_stream_not_filtered_when_archaeology_object_or_page_is_none():
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    # Candidate without archaeology_object_id
+    cand = CorrectionCandidate(
+        candidate_id="cand_no_obj",
+        rule_category="annotation_resolution",
+        change_type="modified",
+        status="pending_review",
+        original_text="old",
+        proposed_text="new",
+        evidence=EvidenceData(
+            id="ev_legacy_nopage",
+            rule_name="annotation",
+            rationale="no page id",
+        ),
+        archaeology_object_id=None,
+    )
+
+    repo.save_candidates(project_id="proj_1", candidates=[cand])
+
+    assert len(driver.queries) >= 1
+    query_text = driver.queries[0]["query"]
+
+    # Verify no stream-filtering WHERE clauses dropping rows before OPTIONAL MATCH
+    assert "WHERE c.archaeology_object_id IS NOT NULL" not in query_text
+    assert "WHERE ev_param.page_id IS NOT NULL" not in query_text
+    assert "WHERE ev_param.document_version_id IS NOT NULL" not in query_text
+
+    # Verify OPTIONAL MATCH is present
+    assert "OPTIONAL MATCH (obj:ArchaeologyObject {id: c.archaeology_object_id})" in query_text
+    assert "OPTIONAL MATCH (p:Page {id: ev_param.page_id})" in query_text
+    assert "OPTIONAL MATCH (v:DocumentVersion {id: ev_param.document_version_id})" in query_text
+
+
 def test_save_evidences_batch():
     driver = FakeNeo4jDriver()
     repo = ReviewRepository(driver=driver, database="arch_test")
@@ -274,6 +310,62 @@ def test_save_evidences_batch():
     assert q["kwargs"]["evidences"][0]["kind"] == "vlm_observation"
     assert q["kwargs"]["evidences"][0]["source_sha256"] == "hash_v1"
     assert q["kwargs"]["evidences"][0]["bbox"] == [5.0, 10.0, 80.0, 40.0]
+
+
+def test_save_evidences_cypher_stream_not_filtered_when_page_or_version_is_none():
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    evidences = [
+        EvidenceData(id="ev_1", rule_name="rule_a"),
+    ]
+
+    repo.save_evidences(evidences)
+
+    assert len(driver.queries) == 1
+    query_text = driver.queries[0]["query"]
+    assert "WHERE e.page_id IS NOT NULL" not in query_text
+    assert "WHERE e.document_version_id IS NOT NULL" not in query_text
+    assert "OPTIONAL MATCH (p:Page {id: e.page_id})" in query_text
+    assert "OPTIONAL MATCH (v:DocumentVersion {id: e.document_version_id})" in query_text
+
+
+def test_get_candidates_cypher_aggregation_and_execution():
+    fake_records = [
+        {
+            "candidate": {
+                "id": "cand_1",
+                "rule_category": "figure_plate_table_photo_ref",
+                "status": "pending_review",
+            },
+            "evidences": [
+                {"id": "ev_1", "kind": "reference"},
+                {"id": "ev_2", "kind": "plate_caption"},
+            ],
+            "decisions": [
+                {"id": "dec_1", "decision_status": "accepted"},
+            ],
+        }
+    ]
+
+    driver = FakeNeo4jDriver(records_to_return=fake_records)
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    results = repo.get_candidates("proj_1")
+
+    assert len(driver.queries) == 1
+    cypher = driver.queries[0]["query"]
+
+    # Verify Cypher aggregation is clean (no unaggregated properties(ev) AS evidence)
+    assert "collect(DISTINCT properties(ev)) AS evidences" in cypher
+    assert "properties(ev) AS evidence" not in cypher
+
+    assert len(results) == 1
+    res = results[0]
+    assert res["id"] == "cand_1"
+    assert res["evidence"]["id"] == "ev_1"
+    assert len(res["evidences"]) == 2
+    assert len(res["decisions"]) == 1
 
 
 def test_get_candidate_traceability_traversal():

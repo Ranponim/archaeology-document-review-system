@@ -158,7 +158,6 @@ class ReviewRepository:
             cand.confidence = c.confidence
         MERGE (proj)-[:HAS_CANDIDATE]->(cand)
         WITH cand, c
-        WHERE c.archaeology_object_id IS NOT NULL
         OPTIONAL MATCH (obj:ArchaeologyObject {id: c.archaeology_object_id})
         FOREACH (_ IN CASE WHEN obj IS NOT NULL THEN [1] ELSE [] END |
             MERGE (cand)-[:ABOUT]->(obj)
@@ -186,13 +185,11 @@ class ReviewRepository:
             ev.rule_name = ev_param.rule_name
         MERGE (cand)-[:SUPPORTED_BY]->(ev)
         WITH ev, ev_param
-        WHERE ev_param.page_id IS NOT NULL
         OPTIONAL MATCH (p:Page {id: ev_param.page_id})
         FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
             MERGE (ev)-[:EXTRACTED_FROM]->(p)
         )
         WITH ev, ev_param
-        WHERE ev_param.document_version_id IS NOT NULL
         OPTIONAL MATCH (v:DocumentVersion {id: ev_param.document_version_id})
         FOREACH (_ IN CASE WHEN v IS NOT NULL THEN [1] ELSE [] END |
             MERGE (ev)-[:FROM_VERSION]->(v)
@@ -253,13 +250,11 @@ class ReviewRepository:
             ev.printed_page_to = e.printed_page_to,
             ev.rule_name = e.rule_name
         WITH ev, e
-        WHERE e.page_id IS NOT NULL
         OPTIONAL MATCH (p:Page {id: e.page_id})
         FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
             MERGE (ev)-[:EXTRACTED_FROM]->(p)
         )
         WITH ev, e
-        WHERE e.document_version_id IS NOT NULL
         OPTIONAL MATCH (v:DocumentVersion {id: e.document_version_id})
         FOREACH (_ IN CASE WHEN v IS NOT NULL THEN [1] ELSE [] END |
             MERGE (ev)-[:FROM_VERSION]->(v)
@@ -401,7 +396,6 @@ class ReviewRepository:
         OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
         RETURN properties(cand) AS candidate,
                collect(DISTINCT properties(ev)) AS evidences,
-               properties(ev) AS evidence,
                collect(DISTINCT properties(dec)) AS decisions
         """
         records, _, _ = self._driver.execute_query(
@@ -413,9 +407,7 @@ class ReviewRepository:
         for row in records:
             cand_dict = dict(row["candidate"]) if row.get("candidate") else {}
             ev_list = [dict(e) for e in (row.get("evidences") or []) if e]
-            cand_dict["evidence"] = (
-                dict(row["evidence"]) if row.get("evidence") else (ev_list[0] if ev_list else None)
-            )
+            cand_dict["evidence"] = ev_list[0] if ev_list else None
             cand_dict["evidences"] = ev_list
             cand_dict["decisions"] = [dict(d) for d in (row.get("decisions") or []) if d]
             results.append(cand_dict)
