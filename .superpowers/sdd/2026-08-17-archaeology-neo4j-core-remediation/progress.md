@@ -1,8 +1,20 @@
 # SDD Progress Ledger: Archaeology Document Review System — Neo4j-Centric Remediation
 
 **Plan:** `docs/superpowers/plans/2026-08-17-archaeology-neo4j-core-remediation.md`
-**Status:** Complete — all 15 tasks + integration tests + Gates A-G verified (see `final-gate-verification.md`)
+**Status:** Complete — all 15 tasks + integration tests + Gates A-G + code-review phases P0-A..P0-D + §11 verified (see `final-gate-verification.md` + `code-review-remediation-final-report.md`)
 **Started:** 2026-08-17
+
+## Code Review Remediation (docs/superpowers/reviews/2026-08-17-neo4j-frontend-mvp-code-review.md)
+| Phase | Status | Commit |
+| :--- | :---: | :--- |
+| P0-A Execution input integrity | Complete | `ab6eefb` |
+| P0-B Neo4j mandatory | Complete | `14ef9a0` |
+| P0-C Semantic visual validation | Complete | `836bf99` |
+| P0-D backend visual asset API | Complete | `f2a50ab` |
+| P0-D frontend real split view | Complete | `ed487cb` |
+| §11 Canonical identity path | Complete | `fad62ab` |
+| Final verification (535 backend / 10 integration / 25 frontend) | Complete | see `code-review-remediation-final-report.md` |
+
 
 ## Preflight Interface Scan
 - Scanned all 15 tasks for cross-task contracts and interfaces.
