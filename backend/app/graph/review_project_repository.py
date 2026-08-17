@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from app.domain.review_round import ReviewRound
-from app.graph.project_repository import (
-    ProjectRepository,
-    ReviewRoundNotFoundError,
-)
+from app.graph.project_repository import ProjectRepository, ReviewRoundNotFoundError
 
 
 class ReviewProjectRepository(ProjectRepository):
-    """Project repository semantics for unbounded ReviewRound execution."""
+    """Project repository semantics for ReviewRound execution.
+
+    ReviewRound resolution passes `stage=None` and therefore resolves exact
+    version identities without a fixed stage ceiling. Legacy direct-version
+    callers that still provide a stage keep strict stage-mismatch validation.
+    """
 
     def resolve_version_input(
         self,
@@ -17,16 +19,7 @@ class ReviewProjectRepository(ProjectRepository):
         stage: str | None = None,
         version_id: str | None = None,
     ):
-        # Exact graph identity wins over legacy human stage labels. This keeps
-        # Round #4, #5... valid even when old callers still pass versionStage.
-        if version_id:
-            stage = None
-        return super().resolve_version_input(
-            project_id,
-            kind,
-            stage,
-            version_id,
-        )
+        return super().resolve_version_input(project_id, kind, stage, version_id)
 
     def approve_review_round(self, project_id: str, round_id: str) -> ReviewRound:
         records, _, _ = self._driver.execute_query(
