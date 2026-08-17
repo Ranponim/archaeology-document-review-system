@@ -24,6 +24,7 @@ jobs:
           python scripts/_patch_structure_source_repo_b.py
           python scripts/_patch_structure_source_repo_c.py
           python scripts/_patch_structure_source_service.py
+          python scripts/_patch_stale_structure_test.py
       - name: Verify targeted backend green
         working-directory: backend
         run: |
@@ -38,7 +39,7 @@ jobs:
           npm test -- --run src/components/ProjectStructureExplorer.test.tsx src/graphPresentation.test.ts
       - name: Commit green implementation
         run: |
-          rm scripts/_patch_structure_source_repo_a.py scripts/_patch_structure_source_repo_b.py scripts/_patch_structure_source_repo_c.py scripts/_patch_structure_source_service.py .github/workflows/_apply_structure_source_tree.yml
+          rm scripts/_patch_structure_source_repo_a.py scripts/_patch_structure_source_repo_b.py scripts/_patch_structure_source_repo_c.py scripts/_patch_structure_source_service.py scripts/_patch_stale_structure_test.py .github/workflows/_apply_structure_source_tree.yml
           git config user.name "Ranponim"
           git config user.email "67833251+Ranponim@users.noreply.github.com"
           git add -A
