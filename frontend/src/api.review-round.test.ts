@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, triggerProofreadingRun } from './api';
+import { triggerProofreadingRun } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -37,7 +37,7 @@ describe('triggerProofreadingRun ReviewRound authority', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(triggerProofreadingRun('proj_1', {})).rejects.toMatchObject<ApiError>({
+    await expect(triggerProofreadingRun('proj_1', {})).rejects.toMatchObject({
       code: 'review_round_required',
     });
     expect(fetchMock).not.toHaveBeenCalled();
