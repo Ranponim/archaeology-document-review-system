@@ -91,6 +91,70 @@ class FileStore:
             upload.content_type,
         )
 
+    def inspect(self, uri: str) -> str:
+        """Return present/missing/unknown without mutating FileStore.
+
+        The URI must be a relative path below DATA_ROOT. Traversal and symlink
+        components fail closed as ``unknown``. Missing directories/files are
+        reported as ``missing`` and are never created by inspection.
+        """
+        try:
+            relative = Path(uri)
+        except (TypeError, ValueError):
+            return "unknown"
+        if (
+            not uri
+            or relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            return "unknown"
+        if not self._data_root.exists():
+            return "missing"
+
+        directory_fds: list[int] = []
+        file_fds: list[int] = []
+        try:
+            try:
+                directory_fd = os.open(self._data_root, DIRECTORY_OPEN_FLAGS)
+            except FileNotFoundError:
+                return "missing"
+            except OSError:
+                return "unknown"
+            directory_fds.append(directory_fd)
+
+            for component in relative.parts[:-1]:
+                try:
+                    child_fd = os.open(
+                        component,
+                        DIRECTORY_OPEN_FLAGS,
+                        dir_fd=directory_fd,
+                    )
+                except FileNotFoundError:
+                    return "missing"
+                except OSError:
+                    return "unknown"
+                directory_fd = child_fd
+                directory_fds.append(directory_fd)
+
+            try:
+                file_fd = os.open(
+                    relative.name,
+                    FILE_READ_FLAGS,
+                    dir_fd=directory_fd,
+                )
+                file_fds.append(file_fd)
+            except FileNotFoundError:
+                return "missing"
+            except OSError:
+                return "unknown"
+            return "present"
+        finally:
+            for file_fd in reversed(file_fds):
+                os.close(file_fd)
+            for directory_fd in reversed(directory_fds):
+                os.close(directory_fd)
+
     @staticmethod
     def _safe_filename(original_name: str) -> str:
         if (

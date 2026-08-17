@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assets import router as assets_router
+from app.api.project_structure import router as project_structure_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
 from app.api.repository_compat import (
@@ -28,11 +29,13 @@ from app.graph.project_repository import (
     ProjectNotFoundError,
     ReviewRoundNotFoundError,
 )
+from app.graph.project_structure_repository import ProjectStructureRepository
 from app.graph.review_project_repository import ReviewProjectRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.services.project_structure_service import ProjectStructureService
 from app.services.visual_asset_service import (
     VisualAssetIncompleteError,
     VisualAssetNotFoundError,
@@ -72,6 +75,7 @@ def create_app(
     static_dir: Path | None = None,
     asset_repository=None,
     visual_asset_service=None,
+    project_structure_service=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -88,6 +92,13 @@ def create_app(
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
                 app.state.orchestrator = build_proofreading_orchestrator(driver)
+        if getattr(app.state, "project_structure_service", None) is None:
+            driver = getattr(app.state, "neo4j_driver", None)
+            if driver is not None:
+                app.state.project_structure_service = ProjectStructureService(
+                    ProjectStructureRepository(driver),
+                    app.state.file_store,
+                )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
         if driver is not None:
@@ -108,6 +119,7 @@ def create_app(
     application.state.run_enqueuer = run_enqueuer or enqueue_proofreading
     application.state.asset_repository = asset_repository
     application.state.visual_asset_service = injected_visual_service
+    application.state.project_structure_service = project_structure_service
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -168,6 +180,7 @@ def create_app(
         return {"status": "ok"}
 
     application.include_router(projects_router)
+    application.include_router(project_structure_router)
     application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
     application.include_router(run_diagnostics_router)
