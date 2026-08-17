@@ -1,4 +1,4 @@
-"""Production orchestrator assembly (plan Task 11 / anti-pattern #14)."""
+"""Production orchestrator assembly for ReviewRound-authoritative analysis."""
 import os
 
 from app.graph.canonical_repository import CanonicalRepository
@@ -20,7 +20,7 @@ from app.services.plate_parser import PlateParser
 from app.services import proofreading_orchestrator as proofreading_orchestrator_module
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
 from app.services.review_budget import select_development_candidates
-from app.services.round_stage_ordering import ordered_round_stage_versions
+from app.services.review_round_orchestrator import ReviewRoundProofreadingOrchestrator
 from app.services.strict_rule_engine import StrictRuleEngine
 from app.services.vlm_review_service import VLMReviewService
 
@@ -42,10 +42,6 @@ def _development_candidate_budget() -> int | None:
 
 
 def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
-    # Compatibility seams for the legacy orchestrator. Production assembly is
-    # ReviewRound-aware even though the base class still exposes old helpers.
-    proofreading_orchestrator_module._ordered_stage_versions = ordered_round_stage_versions
-
     project_repo = ReviewProjectRepository(driver)
     canonical_repo = CanonicalRepository(driver)
     review_repo = ProductionReviewRepository(driver)
@@ -55,9 +51,10 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
 
     budget_value = _development_candidate_budget()
     if budget_value is not None:
-        # The final materialized/UI sample must use the same deterministic,
-        # category-balanced strategy as the pre-AI budget rather than a simple
-        # severity sort + slice that can omit plate/drawing paths entirely.
+        # TODO-remediation: final candidate selection still uses the legacy
+        # module-level hook; expensive work itself is already gated by the
+        # per-instance DevelopmentReviewBudget. This hook is removed in the
+        # next selector-injection task.
         proofreading_orchestrator_module.prioritize_and_cap_candidates = (
             select_development_candidates
         )
@@ -80,7 +77,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
             development_budget=budget,
         )
 
-    return ProofreadingOrchestrator(
+    return ReviewRoundProofreadingOrchestrator(
         project_repo=project_repo,
         canonical_repo=canonical_repo,
         review_repo=review_repo,
