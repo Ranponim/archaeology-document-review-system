@@ -167,6 +167,57 @@ class ReviewProjectRepository(ProjectRepository):
             notes=notes,
         )
 
+    def get_previous_review_round(
+        self,
+        project_id: str,
+        round_id: str,
+    ) -> ReviewRound | None:
+        """Return the immediate predecessor round using graph lineage only.
+
+        DocumentVersion.stage is intentionally absent from this lookup. A body
+        version may be reused by multiple rounds, so only ReviewRound PRECEDES
+        defines which revision immediately precedes the current review.
+        """
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_REVIEW_ROUND]->
+                  (current:ReviewRound {id: $round_id})
+            OPTIONAL MATCH (project)-[:HAS_REVIEW_ROUND]->
+                           (previous:ReviewRound)-[:PRECEDES]->(current:ReviewRound)
+            OPTIONAL MATCH (previous)-[:USES_BODY_VERSION]->(body:DocumentVersion)
+            OPTIONAL MATCH (previous)-[:USES_PLATE_VERSION]->(plate:DocumentVersion)
+            OPTIONAL MATCH (previous)-[:USES_DRAWING_VERSION]->(drawing:DocumentVersion)
+            RETURN previous.id AS id,
+                   project.id AS project_id,
+                   previous.sequence AS sequence,
+                   previous.status AS status,
+                   previous.notes AS notes,
+                   previous.createdAt AS created_at,
+                   previous.approvedAt AS approved_at,
+                   body.id AS body_version_id,
+                   plate.id AS plate_version_id,
+                   drawing.id AS drawing_version_id
+            """,
+            project_id=project_id,
+            round_id=round_id,
+            **self._query_config,
+        )
+        if not records or records[0].get("id") is None:
+            return None
+        record = records[0]
+        return ReviewRound(
+            id=record["id"],
+            project_id=record["project_id"],
+            sequence=record["sequence"],
+            status=record["status"],
+            body_version_id=record.get("body_version_id"),
+            plate_version_id=record.get("plate_version_id"),
+            drawing_version_id=record.get("drawing_version_id"),
+            created_at=record.get("created_at"),
+            approved_at=record.get("approved_at"),
+            notes=record.get("notes"),
+        )
+
     def approve_review_round(self, project_id: str, round_id: str) -> ReviewRound:
         records, _, _ = self._driver.execute_query(
             """
