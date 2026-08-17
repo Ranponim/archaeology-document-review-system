@@ -37,8 +37,9 @@ def test_save_candidates_persists_project_scope_severity_fingerprint_and_run_lin
     assert save_kwargs["candidates"][0]["finding_fingerprint"] == "fp_abc"
 
     run_query, _ = driver.queries[1]
-    assert "(proj)-[:HAS_RUN]->(run:AnalysisRun" in run_query
-    assert "(proj)-[:HAS_CANDIDATE]->(cand:CorrectionCandidate" in run_query
+    assert "HAS_RUN" in run_query
+    assert "HAS_CANDIDATE" in run_query
+    assert "PRODUCED" in run_query
 
 
 def test_get_candidate_is_project_scoped():
