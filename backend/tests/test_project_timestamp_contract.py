@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -102,7 +101,8 @@ def test_publication_documents_endpoint_rejects_source_only_hwp_before_graph_wri
             },
         )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
+    assert response.json()["code"] == "input_error"
     assert repository.versions[project.id] == []
     assert enqueued == []
     assert list(tmp_path.rglob("source.hwp")) == []
