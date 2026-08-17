@@ -103,7 +103,11 @@ def golden_benchmark() -> dict[str, Any]:
 # =============================================================================
 
 def test_golden_dataset_structure_and_completeness(golden_benchmark):
-    """Verify golden dataset metadata, version lock, and full 10-case coverage."""
+    """Verify candidate benchmark metadata and full 10-case coverage.
+
+    These scenarios remain useful as deterministic regression fixtures, but
+    unverified cases must not be presented as expert ground truth.
+    """
     assert golden_benchmark["version"] == "1.0-locked"
     cases = golden_benchmark["benchmark_cases"]
     assert len(cases) == 10, f"Expected exactly 10 golden benchmark cases, found {len(cases)}"
@@ -112,15 +116,19 @@ def test_golden_dataset_structure_and_completeness(golden_benchmark):
     expected_ids = [f"GT_CASE_{i:03d}" for i in range(1, 11)]
     assert case_ids == expected_ids
 
-    # Case 6 is marked as legacy invalid mapping corrected to canonical
+    # Case 6 is the one mapping status directly established by archaeologist feedback.
     case_6 = next(c for c in cases if c["case_id"] == "GT_CASE_006")
     assert case_6["ground_truth_status"] == "INVALID_GROUND_TRUTH_MAPPING"
+    assert case_6.get("expert_verified") is True
     assert "4. 조사 후_45.JPG" in case_6["forbidden_link_filename"]
 
-    # All other 9 cases are valid ground truth
+    # All other cases remain candidate scenarios until an archaeologist supplies
+    # explicit source/provenance verification. They can still exercise algorithmic
+    # invariants below without being mislabeled as factual ground truth.
     other_cases = [c for c in cases if c["case_id"] != "GT_CASE_006"]
     for c in other_cases:
-        assert c["ground_truth_status"] == "VALID_GROUND_TRUTH"
+        assert c["ground_truth_status"] == "NEEDS_REVALIDATION"
+        assert c.get("expert_verified") is False
 
 
 # =============================================================================
@@ -130,7 +138,9 @@ def test_golden_dataset_structure_and_completeness(golden_benchmark):
 def test_gate_1_zero_false_canonical_mappings_across_all_cases(tmp_path, golden_benchmark):
     """Gate 1: Assert zero false canonical mappings (E_false_canonical = 0)
 
-    across all golden benchmark cases. Precision must be 1.0. Decoys must never match.
+    across all candidate benchmark reference scenarios. Precision must be 1.0
+    for the deterministic fixture; decoys must never match. This is a software
+    regression gate, not a claim that unverified fixture semantics are expert truth.
     """
     cases = golden_benchmark["benchmark_cases"]
 
@@ -533,7 +543,7 @@ async def test_gate_5_end_to_end_orchestrator_pipeline_on_golden_dataset(tmp_pat
     """Gate 5: End-to-End Orchestrator Pipeline Verification Gate
 
     Executes ProofreadingOrchestrator over synthetic multi-page document
-    integrating all golden cases, asserts 100% completion, zero false canonical
+    integrating all candidate scenarios, asserts completion, zero false canonical
     mappings, pending_review candidate compliance, and full provenance preservation.
     """
     # 1. Build canonical Plate and Drawing indices
@@ -611,7 +621,7 @@ async def test_gate_5_end_to_end_orchestrator_pipeline_on_golden_dataset(tmp_pat
         ),
     }
 
-    # 2. Setup mock ParsedPages representing golden draft pages
+    # 2. Setup mock ParsedPages representing candidate draft scenarios
     parsed_pages = [
         ParsedPage(
             physical_page=105,
