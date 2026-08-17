@@ -26,6 +26,7 @@ from app.jobs.run_inputs import (
     resolve_plate_index_for_run,
 )
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.services.review_round_execution import resolve_review_round_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -208,14 +209,13 @@ def _record_analysis_failure(
 
 
 async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
-    """Claim-execute payload of the canonical proofreading worker.
+    """Claim and execute one canonical proofreading run.
 
-    Claims the queued AnalysisRun first (status CAS: queued -> running; only
-    one worker wins). Resolution of version inputs + version_pages/version_ids
-    shares the Task 11 helper. The orchestrator itself persists
-    completed/failed statuses via save_analysis_run; this function only
-    records a generic failure when the orchestrator did not already fail the
-    run with a more specific error_code.
+    ReviewRound is re-resolved from Neo4j at execution time.  AnalysisRun keeps
+    input snapshots for auditability, but those snapshots never override the
+    graph-resident round membership.  This is important when a later round
+    deliberately reuses a body/plate/drawing DocumentVersion from an earlier
+    round: round sequence is not DocumentVersion identity.
     """
     review_repo = getattr(orchestrator, "review_repo", None)
     if review_repo is None:
@@ -231,21 +231,55 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
         }
 
     project_id = claim.get("project_id")
-    body_version_id = claim.get("body_version_id")
     try:
-        if not body_version_id:
-            raise ValueError("Queued AnalysisRun has no bodyVersionId")
-        version_stage = claim.get("version_stage") or "1차"
         project_repo = getattr(orchestrator, "project_repo", None)
-        primary_version = None
-        if project_repo is not None:
+        if project_repo is None:
+            raise RuntimeError(
+                "analysis worker requires an orchestrator with a project repository"
+            )
+
+        review_round_id = claim.get("review_round_id")
+        if review_round_id:
+            resolved_round = resolve_review_round_inputs(
+                project_repo,
+                project_id,
+                review_round_id,
+            )
+            primary_version = resolved_round.body
+            body_version_id = resolved_round.body.version_id
+            plate_version_id = (
+                resolved_round.plate.version_id
+                if resolved_round.plate is not None
+                else None
+            )
+            drawing_version_id = (
+                resolved_round.drawing.version_id
+                if resolved_round.drawing is not None
+                else None
+            )
+            # Compatibility label only. It must never participate in canonical
+            # identity resolution for the ReviewRound path.
+            version_stage = resolved_round.compatibility_stage
+        else:
+            # Compatibility path for older queued runs.  New production runs
+            # should always carry reviewRoundId.
+            body_version_id = claim.get("body_version_id")
+            if not body_version_id:
+                raise ValueError("Queued AnalysisRun has no bodyVersionId")
+            version_stage = claim.get("version_stage") or "1차"
             primary_version = project_repo.resolve_version_input(
-                project_id, "report_body", version_stage, body_version_id
+                project_id,
+                "report_body",
+                version_stage,
+                body_version_id,
             )
-        if primary_version is None:
-            raise DocumentVersionNotFoundError(
-                f"DocumentVersion '{body_version_id}' not found for project '{project_id}'"
-            )
+            if primary_version is None:
+                raise DocumentVersionNotFoundError(
+                    f"DocumentVersion '{body_version_id}' not found for project '{project_id}'"
+                )
+            plate_version_id = claim.get("plate_version_id")
+            drawing_version_id = claim.get("drawing_version_id")
+
         version_pages, version_ids = await resolve_body_versions_for_alignment(
             project_repository=project_repo,
             project_id=project_id,
@@ -257,22 +291,22 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
         plate_index = await resolve_plate_index_for_run(
             canonical_repo=getattr(orchestrator, "canonical_repo", None),
             project_repo=project_repo,
-            plate_version_id=claim.get("plate_version_id"),
+            plate_version_id=plate_version_id,
             plate_pdf_path=claim.get("plate_pdf_path"),
             plate_parser=getattr(orchestrator, "plate_parser", None),
         )
         drawing_index = await resolve_drawing_index_for_run(
             canonical_repo=getattr(orchestrator, "canonical_repo", None),
             project_repo=project_repo,
-            drawing_version_id=claim.get("drawing_version_id"),
+            drawing_version_id=drawing_version_id,
             drawing_pdf_path=claim.get("drawing_pdf_path"),
             drawing_parser=getattr(orchestrator, "drawing_parser", None),
         )
         result = await orchestrator.run_proofreading(
             project_id=project_id,
             body_version_id=body_version_id,
-            plate_version_id=claim.get("plate_version_id"),
-            drawing_version_id=claim.get("drawing_version_id"),
+            plate_version_id=plate_version_id,
+            drawing_version_id=drawing_version_id,
             body_pdf_path=claim.get("body_pdf_path"),
             plate_pdf_path=claim.get("plate_pdf_path"),
             drawing_pdf_path=claim.get("drawing_pdf_path"),
