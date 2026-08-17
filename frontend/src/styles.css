@@ -1554,6 +1554,38 @@ code {
   flex-wrap: wrap;
 }
 
+.canonical-path-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #d5cec0;
+}
+
+.canonical-path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.node-text_source {
+  border-color: #7a6a5a;
+}
+
+.node-text_source.active {
+  border-color: #7a6a5a;
+  box-shadow: 0 0 0 2px #7a6a5a;
+}
+
+.node-reference {
+  border-color: #6a7a5a;
+}
+
+.node-reference.active {
+  border-color: #6a7a5a;
+  box-shadow: 0 0 0 2px #6a7a5a;
+}
+
 .node-canonical_asset {
   border-color: #5a6b7a;
 }

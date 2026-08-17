@@ -223,3 +223,83 @@ describe('EvidenceGraphExplorer canonical identity path', () => {
     expect(withoutBundle.edges.map((e) => e.label)).not.toContain('DEPICTS');
   });
 });
+
+describe('EvidenceGraphExplorer canonical identity path from traceability (review §11)', () => {
+  const canonicalTraceability: TraceabilityResponse = {
+    candidate: { id: 'cand_trace_1', status: 'pending_review' },
+    archaeology_object: {
+      id: 'obj_site1_cist_6',
+      canonical_name: '1지점 청동기시대 6호 석관묘',
+    },
+    canonical_path: [
+      {
+        from: 'ver_1_p54_b1',
+        from_label: 'TextBlock',
+        edge: 'REFERENCES',
+        to: 'ref_plate_45',
+        to_label: 'Reference',
+        source: { id: 'ver_1_p54_b1', text: '도판 45를 참조하라', physical_page: 54 },
+        target: { id: 'ref_plate_45', ref_type: 'plate', number: '45', raw_text: '도판 45' },
+      },
+      {
+        from: 'ref_plate_45',
+        from_label: 'Reference',
+        edge: 'RESOLVES_TO',
+        to: 'plate_45',
+        to_label: 'Plate',
+        source: { id: 'ref_plate_45', ref_type: 'plate', number: '45' },
+        target: {
+          id: 'plate_45',
+          number: '45',
+          raw_identifier: '【도판 45】',
+          title: '1지점 청동기시대 6호 석관묘',
+        },
+      },
+      {
+        from: 'plate_45',
+        from_label: 'Plate',
+        edge: 'DEPICTS',
+        to: 'obj_site1_cist_6',
+        to_label: 'ArchaeologyObject',
+        source: { id: 'plate_45', number: '45', raw_identifier: '【도판 45】' },
+        target: { id: 'obj_site1_cist_6', canonical_name: '1지점 청동기시대 6호 석관묘' },
+      },
+    ],
+  };
+
+  it('renders the canonical identity path edges from a canonical_path payload', () => {
+    render(
+      <EvidenceGraphExplorer candidate={candidate} traceability={canonicalTraceability} />,
+    );
+
+    expect(screen.getByTestId('graph-edge-REFERENCES')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-edge-RESOLVES_TO')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-edge-DEPICTS')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-node-text_source')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-node-reference')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-node-canonical_asset')).toBeInTheDocument();
+    expect(screen.getByText('【도판 45】')).toBeInTheDocument();
+  });
+
+  it('does not render canonical path edges when the payload omits canonical_path', () => {
+    render(<EvidenceGraphExplorer candidate={candidate} traceability={traceability} />);
+
+    expect(screen.queryByTestId('graph-edge-REFERENCES')).toBeNull();
+    expect(screen.queryByTestId('graph-edge-RESOLVES_TO')).toBeNull();
+    expect(screen.queryByTestId('graph-edge-DEPICTS')).toBeNull();
+    expect(screen.queryByTestId('graph-node-text_source')).toBeNull();
+    expect(screen.queryByTestId('graph-node-reference')).toBeNull();
+  });
+
+  it('buildGraphModel adds canonical path edges only when canonical_path is present', () => {
+    const withPath = buildGraphModel(candidate, canonicalTraceability);
+    const labels = withPath.edges.map((e) => e.label);
+    expect(labels).toEqual(expect.arrayContaining(['REFERENCES', 'RESOLVES_TO', 'DEPICTS']));
+
+    const withoutPath = buildGraphModel(candidate, traceability);
+    const withoutLabels = withoutPath.edges.map((e) => e.label);
+    expect(withoutLabels).not.toEqual(
+      expect.arrayContaining(['REFERENCES', 'RESOLVES_TO', 'DEPICTS']),
+    );
+  });
+});

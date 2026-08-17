@@ -451,3 +451,143 @@ def test_get_candidate_traceability_traversal():
     assert ev_entry["document_version"]["stage"] == "1차"
     assert len(trace["decisions"]) == 1
     assert trace["decisions"][0]["reviewer"] == "archaeologist_kim"
+
+
+# -----------------------------------------------------------------------------
+# 4. Canonical Identity Path (review §11) Tests
+# -----------------------------------------------------------------------------
+
+
+def test_get_candidate_traceability_returns_canonical_path_when_graph_has_edges():
+    fake_record = {
+        "candidate_props": {
+            "id": "cand_trace_1",
+            "rule_category": "figure_plate_table_photo_ref",
+            "status": "pending_review",
+        },
+        "object_props": {
+            "id": "obj_site1_cist_6",
+            "canonical_name": "1지점 청동기시대 6호 석관묘",
+        },
+        "evidence_chain": [],
+        "decisions": [],
+        "canonical_path_rows": [
+            {
+                "source_label": "TextBlock",
+                "source": {
+                    "id": "ver_1_p54_b1",
+                    "text": "도판 45를 참조하라",
+                    "physical_page": 54,
+                },
+                "ref": {
+                    "id": "ref_plate_45",
+                    "ref_type": "plate",
+                    "number": "45",
+                    "raw_text": "도판 45",
+                },
+                "target_label": "Plate",
+                "target": {
+                    "id": "plate_45",
+                    "number": "45",
+                    "raw_identifier": "【도판 45】",
+                    "title": "1지점 청동기시대 6호 석관묘",
+                },
+                "depicted": {
+                    "id": "obj_site1_cist_6",
+                    "canonical_name": "1지점 청동기시대 6호 석관묘",
+                },
+            }
+        ],
+    }
+
+    driver = FakeNeo4jDriver(records_to_return=[fake_record])
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    trace = repo.get_candidate_traceability(candidate_id="cand_trace_1")
+
+    cypher = driver.queries[0]["query"]
+    assert "[:REFERENCES]->" in cypher
+    assert "[:RESOLVES_TO]->" in cypher
+    assert "[:DEPICTS]->" in cypher
+
+    canonical_path = trace["canonical_path"]
+    assert len(canonical_path) == 3
+    assert canonical_path[0]["edge"] == "REFERENCES"
+    assert canonical_path[0]["from"] == "ver_1_p54_b1"
+    assert canonical_path[0]["from_label"] == "TextBlock"
+    assert canonical_path[0]["to"] == "ref_plate_45"
+    assert canonical_path[0]["to_label"] == "Reference"
+    assert canonical_path[0]["source"]["text"] == "도판 45를 참조하라"
+    assert canonical_path[0]["target"]["ref_type"] == "plate"
+
+    assert canonical_path[1]["edge"] == "RESOLVES_TO"
+    assert canonical_path[1]["from"] == "ref_plate_45"
+    assert canonical_path[1]["from_label"] == "Reference"
+    assert canonical_path[1]["to"] == "plate_45"
+    assert canonical_path[1]["to_label"] == "Plate"
+    assert canonical_path[1]["target"]["raw_identifier"] == "【도판 45】"
+
+    assert canonical_path[2]["edge"] == "DEPICTS"
+    assert canonical_path[2]["from"] == "plate_45"
+    assert canonical_path[2]["from_label"] == "Plate"
+    assert canonical_path[2]["to"] == "obj_site1_cist_6"
+    assert canonical_path[2]["to_label"] == "ArchaeologyObject"
+    assert canonical_path[2]["target"]["canonical_name"] == "1지점 청동기시대 6호 석관묘"
+
+
+def test_get_candidate_traceability_returns_empty_canonical_path_when_graph_lacks_edges():
+    fake_record = {
+        "candidate_props": {
+            "id": "cand_trace_1",
+            "rule_category": "figure_plate_table_photo_ref",
+            "status": "pending_review",
+        },
+        "object_props": {
+            "id": "obj_site1_cist_6",
+            "canonical_name": "1지점 청동기시대 6호 석관묘",
+        },
+        "evidence_chain": [],
+        "decisions": [],
+        "canonical_path_rows": [
+            {
+                "source_label": None,
+                "source": None,
+                "ref": None,
+                "target_label": None,
+                "target": None,
+                "depicted": None,
+            }
+        ],
+    }
+
+    driver = FakeNeo4jDriver(records_to_return=[fake_record])
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    trace = repo.get_candidate_traceability(candidate_id="cand_trace_1")
+
+    assert trace["canonical_path"] == []
+
+
+def test_get_candidate_traceability_canonical_path_defaults_empty_when_rows_absent():
+    fake_record = {
+        "candidate_props": {
+            "id": "cand_trace_1",
+            "rule_category": "figure_plate_table_photo_ref",
+            "status": "pending_review",
+        },
+        "object_props": {
+            "id": "obj_site1_cist_6",
+            "canonical_name": "1지점 청동기시대 6호 석관묘",
+        },
+        "evidence_chain": [],
+        "decisions": [],
+    }
+
+    driver = FakeNeo4jDriver(records_to_return=[fake_record])
+    repo = ReviewRepository(driver=driver, database="arch_test")
+
+    trace = repo.get_candidate_traceability(candidate_id="cand_trace_1")
+
+    assert trace["canonical_path"] == []
+    assert trace["candidate"]["id"] == "cand_trace_1"
+    assert trace["archaeology_object"]["id"] == "obj_site1_cist_6"

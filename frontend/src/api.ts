@@ -168,6 +168,23 @@ export type CandidateListResponse = {
   candidates: CorrectionCandidate[];
 };
 
+/**
+ * One edge of the canonical identity path (review §11) returned by the
+ * backend `get_candidate_traceability`. Only edges the backend actually
+ * traversed in Neo4j are present — the frontend never invents relationships
+ * (anti-pattern #7/#10). `source`/`target` carry the node properties of the
+ * from/to nodes so the graph can render them without synthesizing data.
+ */
+export type CanonicalPathEdge = {
+  from: string;
+  from_label?: string;
+  edge: string;
+  to: string;
+  to_label?: string;
+  source?: Record<string, unknown>;
+  target?: Record<string, unknown>;
+};
+
 export type TraceabilityResponse = {
   candidateId?: string;
   candidate_id?: string;
@@ -195,6 +212,8 @@ export type TraceabilityResponse = {
   decisions?: ReviewDecision[];
   latestDecision?: ReviewDecision | null;
   latest_decision?: ReviewDecision | null;
+  canonicalPath?: CanonicalPathEdge[];
+  canonical_path?: CanonicalPathEdge[];
 };
 
 export type RunTriggerPayload = {

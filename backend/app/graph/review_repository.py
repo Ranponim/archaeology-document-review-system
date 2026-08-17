@@ -805,6 +805,13 @@ class ReviewRepository:
         OPTIONAL MATCH (ev)-[:EXTRACTED_FROM]->(page:Page)
         OPTIONAL MATCH (ev)-[:FROM_VERSION]->(doc_ver:DocumentVersion)
         OPTIONAL MATCH (cand)-[:HAS_DECISION]->(dec:ReviewDecision)
+        OPTIONAL MATCH (source:TextBlock|Caption)
+        WHERE (source)-[:MENTIONS]->(obj) OR (page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
+        OPTIONAL MATCH (source)-[:REFERENCES]->(ref:Reference)
+        OPTIONAL MATCH (ref)-[:RESOLVES_TO]->(target)
+        WHERE target:Plate OR target:PlatePanel OR target:Drawing OR target:DrawingRegion
+        OPTIONAL MATCH (target)-[:DEPICTS]->(depicted:ArchaeologyObject)
+        WHERE obj IS NULL OR depicted.id = obj.id
         RETURN properties(cand) AS candidate_props,
                properties(obj) AS object_props,
                collect(DISTINCT {
@@ -812,7 +819,15 @@ class ReviewRepository:
                    page: properties(page),
                    document_version: properties(doc_ver)
                }) AS evidence_chain,
-               collect(DISTINCT properties(dec)) AS decisions
+               collect(DISTINCT properties(dec)) AS decisions,
+               collect(DISTINCT {
+                   source_label: head(labels(source)),
+                   source: properties(source),
+                   ref: properties(ref),
+                   target_label: head(labels(target)),
+                   target: properties(target),
+                   depicted: properties(depicted)
+               }) AS canonical_path_rows
         """
         records, _, _ = self._driver.execute_query(
             cypher,
@@ -841,12 +856,60 @@ class ReviewRepository:
                 ev_dict["document_version"] = dict(item["document_version"])
             evidences.append(ev_dict)
 
+        canonical_path: list[dict[str, Any]] = []
+        for item in (row.get("canonical_path_rows") or []):
+            if not item:
+                continue
+            source_props = item.get("source")
+            ref_props = item.get("ref")
+            target_props = item.get("target")
+            depicted_props = item.get("depicted")
+            source_label = item.get("source_label")
+            target_label = item.get("target_label")
+            if source_props and ref_props:
+                canonical_path.append(
+                    {
+                        "from": source_props.get("id"),
+                        "from_label": source_label,
+                        "edge": "REFERENCES",
+                        "to": ref_props.get("id"),
+                        "to_label": "Reference",
+                        "source": dict(source_props),
+                        "target": dict(ref_props),
+                    }
+                )
+            if ref_props and target_props:
+                canonical_path.append(
+                    {
+                        "from": ref_props.get("id"),
+                        "from_label": "Reference",
+                        "edge": "RESOLVES_TO",
+                        "to": target_props.get("id"),
+                        "to_label": target_label,
+                        "source": dict(ref_props),
+                        "target": dict(target_props),
+                    }
+                )
+            if target_props and depicted_props:
+                canonical_path.append(
+                    {
+                        "from": target_props.get("id"),
+                        "from_label": target_label,
+                        "edge": "DEPICTS",
+                        "to": depicted_props.get("id"),
+                        "to_label": "ArchaeologyObject",
+                        "source": dict(target_props),
+                        "target": dict(depicted_props),
+                    }
+                )
+
         return {
             "candidate": cand_props,
             "archaeology_object": obj_props,
             "evidence": evidences,
             "decisions": decisions,
             "latest_decision": compute_latest_decision(decisions),
+            "canonical_path": canonical_path,
         }
 
     def get_candidates(

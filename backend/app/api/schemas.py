@@ -218,6 +218,7 @@ class TraceabilityResponse(ApiModel):
     latest_decision: ReviewDecisionResponse | dict[str, Any] | None = Field(
         default=None, alias="latestDecision"
     )
+    canonical_path: list[dict[str, Any]] = Field(default_factory=list, alias="canonicalPath")
 
     @model_validator(mode="before")
     @classmethod

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   type ArchaeologyObject,
   type CandidateVisualBundle,
+  type CanonicalPathEdge,
   type CorrectionCandidate,
   type Evidence,
   type ReviewDecision,
@@ -26,7 +27,9 @@ export type GraphNodeKind =
   | 'page'
   | 'doc_ver'
   | 'decision'
-  | 'canonical_asset';
+  | 'canonical_asset'
+  | 'text_source'
+  | 'reference';
 
 export type GraphNode = {
   id: string;
@@ -70,6 +73,183 @@ function compact(
   rows: Array<{ key: string; value: string } | null>,
 ): Array<{ key: string; value: string }> {
   return rows.filter((r): r is { key: string; value: string } => r !== null);
+}
+
+function canonicalKindForLabel(label: string | undefined): GraphNodeKind {
+  switch (label) {
+    case 'TextBlock':
+    case 'Caption':
+      return 'text_source';
+    case 'Reference':
+      return 'reference';
+    case 'Plate':
+    case 'PlatePanel':
+    case 'Drawing':
+    case 'DrawingRegion':
+      return 'canonical_asset';
+    case 'ArchaeologyObject':
+      return 'arch_obj';
+    default:
+      return 'canonical_asset';
+  }
+}
+
+function canonicalTitleForLabel(
+  label: string | undefined,
+  props: Record<string, unknown>,
+): string {
+  const id = String(props.id ?? '');
+  switch (label) {
+    case 'TextBlock':
+    case 'Caption': {
+      const text = props.text ?? props.raw_text ?? props.normalized_text;
+      if (typeof text === 'string' && text.trim()) return text.slice(0, 40);
+      return id.slice(0, 14);
+    }
+    case 'Reference': {
+      const refType = props.ref_type ?? props.refType;
+      const number = props.number;
+      if (refType && number !== undefined && number !== null && number !== '') {
+        return `참조 ${refType} ${number}`;
+      }
+      return id.slice(0, 14);
+    }
+    case 'Plate':
+    case 'PlatePanel':
+    case 'Drawing':
+    case 'DrawingRegion': {
+      const raw = props.raw_identifier ?? props.rawIdentifier;
+      if (raw) return String(raw);
+      const number = props.number;
+      if (number !== undefined && number !== null && number !== '') {
+        const isDrawing = label === 'Drawing' || label === 'DrawingRegion';
+        return isDrawing ? `【도면 ${number}】` : `【도판 ${number}】`;
+      }
+      return id.slice(0, 14);
+    }
+    case 'ArchaeologyObject': {
+      const name = props.canonical_name ?? props.canonicalName ?? props.title;
+      if (name) return String(name);
+      return id.slice(0, 14);
+    }
+    default:
+      return id.slice(0, 14);
+  }
+}
+
+function canonicalSubtitleForLabel(label: string | undefined): string | undefined {
+  switch (label) {
+    case 'TextBlock':
+    case 'Caption':
+      return '본문/캡션 소스';
+    case 'Reference':
+      return '표준 참조';
+    case 'Plate':
+    case 'PlatePanel':
+    case 'Drawing':
+    case 'DrawingRegion':
+      return '표준 도판/도면 자산';
+    case 'ArchaeologyObject':
+      return '표준 고고학 객체';
+    default:
+      return undefined;
+  }
+}
+
+function canonicalPropsForLabel(
+  label: string | undefined,
+  props: Record<string, unknown>,
+): Array<{ key: string; value: string } | null> {
+  switch (label) {
+    case 'TextBlock':
+    case 'Caption':
+      return [
+        prop('text', props.text ?? props.raw_text),
+        prop('physical_page', props.physical_page),
+        prop('printed_page', props.printed_page),
+      ];
+    case 'Reference':
+      return [
+        prop('ref_type', props.ref_type),
+        prop('number', props.number),
+        prop('raw_text', props.raw_text),
+        prop('physical_page', props.physical_page),
+      ];
+    case 'Plate':
+    case 'PlatePanel':
+    case 'Drawing':
+    case 'DrawingRegion':
+      return [
+        prop('number', props.number),
+        prop('raw_identifier', props.raw_identifier ?? props.rawIdentifier),
+        prop('title', props.title),
+        prop('caption', props.caption),
+        prop('physical_page', props.physical_page),
+      ];
+    case 'ArchaeologyObject':
+      return [
+        prop('canonical_name', props.canonical_name ?? props.canonicalName),
+        prop('site', props.site),
+        prop('period', props.period),
+        prop('type', props.type),
+        prop('number', props.number),
+      ];
+    default:
+      return [];
+  }
+}
+
+function canonicalPathNode(
+  label: string | undefined,
+  props: Record<string, unknown> | undefined,
+): GraphNode | null {
+  if (!props || !props.id) return null;
+  const id = String(props.id);
+  return {
+    id,
+    kind: canonicalKindForLabel(label),
+    typeTag: label ?? 'CanonicalNode',
+    title: canonicalTitleForLabel(label, props),
+    subtitle: canonicalSubtitleForLabel(label),
+    properties: compact([prop('id', id), ...canonicalPropsForLabel(label, props)]),
+  };
+}
+
+export function buildCanonicalChains(
+  canonicalPath: CanonicalPathEdge[],
+  nodeById: Map<string, GraphNode>,
+): Array<Array<{ node: GraphNode; edgeToNext?: string }>> {
+  const edges = canonicalPath.filter((e) => e && e.from && e.to && e.edge);
+  const byFrom = new Map<string, CanonicalPathEdge[]>();
+  for (const e of edges) {
+    const list = byFrom.get(e.from) ?? [];
+    list.push(e);
+    byFrom.set(e.from, list);
+  }
+  const toIds = new Set(edges.map((e) => e.to));
+  const starts = [...new Set(edges.map((e) => e.from))].filter((id) => !toIds.has(id));
+  const chainStarts = starts.length > 0 ? starts : [...byFrom.keys()];
+  const chains: Array<Array<{ node: GraphNode; edgeToNext?: string }>> = [];
+  for (const start of chainStarts) {
+    const chain: Array<{ node: GraphNode; edgeToNext?: string }> = [];
+    let current = start;
+    let guard = 0;
+    while (current && guard < 20) {
+      const node = nodeById.get(current);
+      if (!node) break;
+      const out = byFrom.get(current) ?? [];
+      if (out.length === 0) {
+        chain.push({ node });
+        break;
+      }
+      const edge = out[0];
+      chain.push({ node, edgeToNext: edge.edge });
+      current = edge.to;
+      guard += 1;
+    }
+    if (chain.length > 0) chains.push(chain);
+  }
+  return chains;
 }
 
 /**
@@ -277,6 +457,25 @@ export function buildGraphModel(
     edges.push({ from: candId, to: decId, label: 'HAS_DECISION' });
   });
 
+  // Canonical identity path (review §11): consume traceability.canonical_path.
+  // Only edges the backend actually returned are rendered (anti-pattern #7/#10).
+  const canonicalPath = traceability?.canonical_path ?? traceability?.canonicalPath ?? [];
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const pushNode = (node: GraphNode) => {
+    if (!nodeIds.has(node.id)) {
+      nodeIds.add(node.id);
+      nodes.push(node);
+    }
+  };
+  for (const edge of canonicalPath) {
+    if (!edge || !edge.from || !edge.to || !edge.edge) continue;
+    const sourceNode = canonicalPathNode(edge.from_label, edge.source);
+    const targetNode = canonicalPathNode(edge.to_label, edge.target);
+    if (sourceNode) pushNode(sourceNode);
+    if (targetNode) pushNode(targetNode);
+    edges.push({ from: edge.from, to: edge.to, label: edge.edge });
+  }
+
   return { nodes, edges };
 }
 
@@ -288,6 +487,8 @@ const NODE_KIND_LABEL: Record<GraphNodeKind, string> = {
   doc_ver: 'DocumentVersion (문서 버전 정보)',
   decision: 'ReviewDecision (검수 판정 이력)',
   canonical_asset: 'CanonicalAsset (표준 도판/도면/패널 자산)',
+  text_source: 'TextBlock/Caption (본문/캡션 소스 노드)',
+  reference: 'Reference (표준 참조 노드)',
 };
 
 export function EvidenceGraphExplorer({
@@ -358,6 +559,10 @@ export function EvidenceGraphExplorer({
 
   const canonicalNode = model.nodes.find((n) => n.kind === 'canonical_asset');
   const archObjNode = model.nodes.find((n) => n.kind === 'arch_obj');
+
+  const canonicalPathEdges =
+    traceability?.canonical_path ?? traceability?.canonicalPath ?? [];
+  const canonicalChains = buildCanonicalChains(canonicalPathEdges, nodeById);
 
   function renderNode(node: GraphNode) {
     const isActive = selectedNode?.id === node.id;
@@ -452,7 +657,7 @@ export function EvidenceGraphExplorer({
           </div>
         )}
 
-        {canonicalNode && archObjNode && (
+        {visualBundle?.canonical && canonicalNode && archObjNode && (
           <div className="canonical-identity-section">
             <span className="section-label">CANONICAL IDENTITY PATH</span>
             <p className="canonical-identity-desc">
@@ -465,6 +670,26 @@ export function EvidenceGraphExplorer({
               {renderEdge('DEPICTS')}
               {renderNode(archObjNode)}
             </div>
+          </div>
+        )}
+
+        {canonicalChains.length > 0 && (
+          <div className="canonical-path-section">
+            <span className="section-label">CANONICAL IDENTITY PATH</span>
+            <p className="canonical-identity-desc">
+              본문/캡션 → [:REFERENCES] → 참조 → [:RESOLVES_TO] → 표준 도판/도면 → [:DEPICTS] →
+              표준 객체 경로입니다. 백엔드가 실제로 반환한 관계만 표시합니다 (anti-pattern #7/#10).
+            </p>
+            {canonicalChains.map((chain, chainIdx) => (
+              <div className="canonical-path-row" key={chainIdx}>
+                {chain.map((item, idx) => (
+                  <div className="pathway-segment" key={`${item.node.id}-${idx}`}>
+                    {renderNode(item.node)}
+                    {item.edgeToNext && renderEdge(item.edgeToNext)}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
