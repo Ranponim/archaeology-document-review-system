@@ -59,8 +59,8 @@ describe('SplitViewInspector evidence-aware comparison modes', () => {
     render(<SplitViewInspector projectId="p1" candidate={candidate()} />);
 
     expect(await screen.findByText(/비교 근거: 본문 수정본 간 비교/)).toBeInTheDocument();
-    expect(screen.getByText(/이전 본문/)).toBeInTheDocument();
-    expect(screen.getByText(/현재 본문/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '이전 본문' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '현재 본문' })).toBeInTheDocument();
     expect(await screen.findByTestId('comparison-img')).toHaveAttribute(
       'src',
       '/api/v1/assets/pages/body_v3_p10/render',
@@ -230,6 +230,10 @@ describe('SplitViewInspector evidence-aware comparison modes', () => {
     );
 
     expect(await screen.findByText(/VLM 비전 분석 관찰 소견/)).toBeInTheDocument();
-    expect(screen.getByText(/도판 관찰 결과 실제 본문 주장과 불일치/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/도판 관찰 결과 실제 본문 주장과 불일치/, {
+        selector: '.vlm-verdict-text',
+      }),
+    ).toBeInTheDocument();
   });
 });
