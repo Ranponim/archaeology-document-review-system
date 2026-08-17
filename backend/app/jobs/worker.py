@@ -211,11 +211,10 @@ def _record_analysis_failure(
 async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
     """Claim and execute one canonical proofreading run.
 
-    ReviewRound is re-resolved from Neo4j at execution time.  AnalysisRun keeps
+    ReviewRound is re-resolved from Neo4j at execution time. AnalysisRun keeps
     input snapshots for auditability, but those snapshots never override the
-    graph-resident round membership.  This is important when a later round
-    deliberately reuses a body/plate/drawing DocumentVersion from an earlier
-    round: round sequence is not DocumentVersion identity.
+    graph-resident round membership. Round sequence is a workflow label, never
+    DocumentVersion identity.
     """
     review_repo = getattr(orchestrator, "review_repo", None)
     if review_repo is None:
@@ -232,14 +231,14 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
 
     project_id = claim.get("project_id")
     try:
-        project_repo = getattr(orchestrator, "project_repo", None)
-        if project_repo is None:
-            raise RuntimeError(
-                "analysis worker requires an orchestrator with a project repository"
-            )
-
         review_round_id = claim.get("review_round_id")
+
         if review_round_id:
+            project_repo = getattr(orchestrator, "project_repo", None)
+            if project_repo is None:
+                raise RuntimeError(
+                    "analysis worker requires an orchestrator with a project repository"
+                )
             resolved_round = resolve_review_round_inputs(
                 project_repo,
                 project_id,
@@ -257,15 +256,21 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
                 if resolved_round.drawing is not None
                 else None
             )
-            # Compatibility label only. It must never participate in canonical
-            # identity resolution for the ReviewRound path.
             version_stage = resolved_round.compatibility_stage
         else:
-            # Compatibility path for older queued runs.  New production runs
-            # should always carry reviewRoundId.
+            # Compatibility path for pre-ReviewRound queued jobs. Preserve the
+            # historical fail-closed classification for a missing body id
+            # before requiring collaborators that were not part of that input.
             body_version_id = claim.get("body_version_id")
             if not body_version_id:
                 raise ValueError("Queued AnalysisRun has no bodyVersionId")
+
+            project_repo = getattr(orchestrator, "project_repo", None)
+            if project_repo is None:
+                raise RuntimeError(
+                    "analysis worker requires an orchestrator with a project repository"
+                )
+
             version_stage = claim.get("version_stage") or "1차"
             primary_version = project_repo.resolve_version_input(
                 project_id,
@@ -339,9 +344,9 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
 def run_analysis_worker(analysis_run_id: str) -> dict:
     """RQ entry point for canonical proofreading.
 
-    The worker uses the same complete factory assembly as the app (anti-pattern
-    #14) and raises RetryableAnalysisError for retryable failures so RQ's
-    configured retry policy re-executes the job after state is persisted.
+    The worker uses the same complete factory assembly as the app and raises
+    RetryableAnalysisError for retryable failures so RQ can apply its retry
+    policy after failure state has been persisted.
     """
     driver = create_driver()
     try:
