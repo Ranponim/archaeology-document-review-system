@@ -419,12 +419,9 @@ export async function uploadDocument(
   kind: string,
   _legacyStage?: string,
 ): Promise<UploadAccepted> {
-  const rounds = await fetchReviewRounds(projectId).catch(() => [] as ReviewRound[]);
-  const nextSequence = rounds.length > 0 ? Math.max(...rounds.map((r) => r.sequence)) + 1 : 1;
-  const stage = `${nextSequence}차`;
   const body = new FormData();
   body.append('file', file);
-  const params = new URLSearchParams({ kind, stage });
+  const params = new URLSearchParams({ kind, stage: 'source' });
   const response = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/documents?${params.toString()}`,
     { method: 'POST', body },
