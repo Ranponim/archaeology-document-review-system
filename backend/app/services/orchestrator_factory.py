@@ -3,7 +3,7 @@ import os
 
 from app.graph.audited_review_repository import AuditedReviewRepository
 from app.graph.canonical_repository import CanonicalRepository
-from app.graph.project_repository import ProjectRepository
+from app.graph.review_project_repository import ReviewProjectRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.asset_review_pipeline import AssetReviewPipeline
 from app.services.budgeted_orchestrator import BudgetedProofreadingOrchestrator
@@ -45,7 +45,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
     while a shared budget coordinator limits expensive VLM/LLM operations before
     they execute. Production has no implicit candidate cap.
     """
-    project_repo = ProjectRepository(driver)
+    project_repo = ReviewProjectRepository(driver)
     canonical_repo = CanonicalRepository(driver)
     review_repo = AuditedReviewRepository(driver)
     vlm_service = VLMReviewService()
