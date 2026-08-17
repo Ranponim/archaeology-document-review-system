@@ -13,6 +13,7 @@ from app.api.projects import router as projects_router
 from app.api.assets import router as assets_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
+from app.graph.audited_review_repository import AuditedReviewRepository
 from app.graph.client import create_driver
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -21,7 +22,6 @@ from app.graph.project_repository import (
     ProjectRepository,
     ReviewRoundNotFoundError,
 )
-from app.graph.strict_review_repository import StrictReviewRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
@@ -76,7 +76,7 @@ def create_app(
         if getattr(app.state, "review_repository", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
-                app.state.review_repository = StrictReviewRepository(driver)
+                app.state.review_repository = AuditedReviewRepository(driver)
         if getattr(app.state, "orchestrator", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
