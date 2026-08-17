@@ -92,6 +92,28 @@ def _ordered_stage_versions(
     return ordered
 
 
+def _derive_body_claims(bundle: ObjectEvidenceBundle) -> list[str]:
+    """Derive the body/object claims for VLM comparison from a graph bundle.
+
+    P0-3: the VLM must compare body claims (text_claims + references) against
+    the actual panel/drawing image — not just the asset caption/title.
+    """
+    claims: list[str] = []
+    for ev in bundle.text_claims:
+        val = ev.value
+        if isinstance(val, str) and val.strip():
+            claims.append(val.strip())
+    for ev in bundle.references:
+        val = ev.value
+        if isinstance(val, dict):
+            raw = val.get("raw_text")
+            if raw:
+                claims.append(str(raw))
+        elif isinstance(val, str) and val.strip():
+            claims.append(val.strip())
+    return claims
+
+
 class ProofreadingOrchestrator:
     """End-to-End Canonical Proofreading Orchestrator.
 
@@ -811,13 +833,59 @@ class ProofreadingOrchestrator:
 
             for ref, resolution in resolved_resolutions:
                 try:
-                    ref_p_id = f"{body_version_id}_p{ref.physical_page}" if ref.physical_page else f"{body_version_id}_p1"
+                    # P0-3: derive the body/object claims from the graph bundle
+                    # for the object(s) the reference's source block mentions so
+                    # the VLM compares body claims against the actual panel/
+                    # drawing image — not just the asset caption/title.
+                    matching_objects = [
+                        o
+                        for o in all_objects
+                        if ref.source_block_id
+                        and ref.source_block_id in o.source_block_ids
+                    ]
+                    claims: list[str] = []
+                    expected_feature = ""
+                    expected_site = ""
+                    if len(matching_objects) == 1:
+                        obj = matching_objects[0]
+                        bundle = graph_bundles.get(obj.object_id)
+                        if bundle is not None:
+                            claims = _derive_body_claims(bundle)
+                            expected_feature = obj.canonical_name or obj.number or ""
+                            expected_site = obj.point or obj.site or ""
+
+                    # P0-C #3 / anti-pattern #14: the VLM observation Evidence
+                    # must point to the actual visual DocumentVersion (plate/
+                    # drawing), never the body version.
+                    target = resolution.target
+                    if isinstance(target, (PlateData, PlatePanelData)):
+                        visual_version_id = (
+                            getattr(target, "document_version_id", None)
+                            or plate_version_id
+                        )
+                    elif isinstance(target, (DrawingData, DrawingRegionData)):
+                        visual_version_id = (
+                            getattr(target, "document_version_id", None)
+                            or drawing_version_id
+                        )
+                    else:
+                        visual_version_id = None
+                    visual_version_id = visual_version_id or body_version_id
+
+                    ref_p_id = (
+                        f"{visual_version_id}_p{ref.physical_page}"
+                        if ref.physical_page
+                        else f"{visual_version_id}_p1"
+                    )
                     vlm_cands = await pipeline.review_canonical_reference(
                         reference=ref,
                         resolution=resolution,
                         analysis_run_id=run_id,
-                        document_version_id=body_version_id,
+                        document_version_id=visual_version_id,
                         page_id=ref_p_id,
+                        claims=claims or None,
+                        expected_feature=expected_feature,
+                        expected_site=expected_site,
                     )
                     for vc in vlm_cands:
                         for ev in vc.evidences:
@@ -829,14 +897,8 @@ class ProofreadingOrchestrator:
                         # evidence becomes reachable through the graph bundle.
                         vc_obj_id = vc.archaeology_object_id
                         if not vc_obj_id:
-                            matching_objects = [
-                                o.object_id
-                                for o in all_objects
-                                if ref.source_block_id
-                                and ref.source_block_id in o.source_block_ids
-                            ]
                             if len(matching_objects) == 1:
-                                vc_obj_id = matching_objects[0]
+                                vc_obj_id = matching_objects[0].object_id
                             elif len(matching_objects) > 1:
                                 warnings.append(
                                     f"VLM candidate '{vc.candidate_id}' for reference "

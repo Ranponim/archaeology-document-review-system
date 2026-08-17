@@ -200,6 +200,7 @@ class CanonicalRepository:
             "number": region.number,
             "title": region.title,
             "bbox": list(region.bbox) if region.bbox is not None else None,
+            "bbox_status": region.bbox_status,
             "physical_page": region.physical_page,
             "render_uri": region.render_uri,
             "source_sha256": region.source_sha256,
@@ -377,6 +378,7 @@ class CanonicalRepository:
                 region.number = reg.number,
                 region.title = reg.title,
                 region.bbox = reg.bbox,
+                region.bbox_status = reg.bbox_status,
                 region.physical_page = reg.physical_page,
                 region.render_uri = reg.render_uri,
                 region.source_sha256 = reg.source_sha256
@@ -598,6 +600,7 @@ class CanonicalRepository:
                     number=str(r.get("number") or ""),
                     title=r.get("title") or "",
                     bbox=_as_bbox(r.get("bbox")),
+                    bbox_status=r.get("bbox_status"),
                     physical_page=r.get("physical_page"),
                     render_uri=r.get("render_uri"),
                     source_sha256=r.get("source_sha256"),
