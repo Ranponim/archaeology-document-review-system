@@ -16,8 +16,8 @@ class FakeDriver:
         return [FakeRecord(row) for row in rows], None, None
 
 
-def test_review_round_exact_version_resolution_uses_no_stage_filter():
-    driver = FakeDriver(responses=[[{
+def _body_v4_row():
+    return {
         "version_id": "body_4",
         "document_id": "doc_body",
         "project_id": "p1",
@@ -26,7 +26,11 @@ def test_review_round_exact_version_resolution_uses_no_stage_filter():
         "uri": "b4.pdf",
         "sha256": "sha",
         "mime_type": "application/pdf",
-    }]])
+    }
+
+
+def test_review_round_exact_version_resolution_uses_no_stage_filter():
+    driver = FakeDriver(responses=[[_body_v4_row()]])
     repo = ReviewProjectRepository(driver)
     version = repo.resolve_version_input("p1", "report_body", None, "body_4")
     assert version.version_id == "body_4"
@@ -34,12 +38,21 @@ def test_review_round_exact_version_resolution_uses_no_stage_filter():
     assert kwargs["stage"] is None
 
 
-def test_legacy_direct_resolution_preserves_stage_filter():
+def test_exact_version_id_wins_over_stale_legacy_stage_metadata():
+    driver = FakeDriver(responses=[[_body_v4_row()]])
+    repo = ReviewProjectRepository(driver)
+    version = repo.resolve_version_input("p1", "report_body", "1차", "body_4")
+    assert version.version_id == "body_4"
+    _, kwargs = driver.queries[0]
+    assert kwargs["stage"] is None
+
+
+def test_stage_only_legacy_lookup_still_uses_stage():
     driver = FakeDriver(responses=[])
     repo = ReviewProjectRepository(driver)
-    assert repo.resolve_version_input("p1", "report_body", "1차", "body_4") is None
+    assert repo.resolve_version_input("p1", "report_body", "4차", None) is None
     _, kwargs = driver.queries[0]
-    assert kwargs["stage"] == "1차"
+    assert kwargs["stage"] == "4차"
 
 
 def test_approve_round_preserves_first_approved_timestamp():
