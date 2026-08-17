@@ -1,8 +1,8 @@
 """Shared proofreading job-input resolution.
 
-ReviewRound runs compare the current body with its immediate predecessor and
-support unbounded N차 sequences. Legacy injected/direct-version workers retain
-the old 1차/2차/3차/final comparison behavior only for backward compatibility.
+ReviewRound runs compare the current body with its immediate predecessor via
+ReviewRound PRECEDES. Legacy injected/direct-version workers retain the old
+1차/2차/3차/final comparison behavior only for backward compatibility.
 """
 from pathlib import Path
 import re
@@ -23,6 +23,7 @@ _LEGACY_BODY_STAGES = ("1차", "2차", "3차", "final")
 
 
 def body_stages_for_round(primary_stage: str) -> tuple[str, ...]:
+    """Legacy compatibility helper; ReviewRound execution must not call this."""
     match = _ROUND_STAGE_RE.match(str(primary_stage).strip())
     if not match:
         return (primary_stage,)
@@ -41,6 +42,60 @@ def resolve_stored_pdf_path(version: VersionInput) -> Path | None:
     if Path(version.uri).is_file():
         return Path(version.uri)
     return None
+
+
+async def resolve_round_body_versions_for_alignment(
+    *,
+    project_repository,
+    project_id: str,
+    current_body: VersionInput,
+    previous_body: VersionInput | None,
+    current_pdf_path: str | None,
+    pdf_parser,
+) -> tuple[dict[str, list[ParsedPage]], dict[str, str]]:
+    """Parse an explicit ReviewRound body pair without stage-based lookup.
+
+    `previous_body` and `current_body` are already canonical VersionInputs
+    resolved from ReviewRound relationships. Semantic keys are deliberately
+    `previous`/`current`; they are labels for alignment only, never identity.
+    """
+    del project_repository  # explicit inputs are the authority; no lookup here
+    version_pages: dict[str, list[ParsedPage]] = {}
+    version_ids: dict[str, str] = {}
+
+    versions: list[tuple[str, VersionInput | None]] = [
+        ("previous", previous_body),
+        ("current", current_body),
+    ]
+    for role, version in versions:
+        if version is None:
+            continue
+        if role == "current" and current_pdf_path:
+            pdf_path = Path(current_pdf_path)
+        else:
+            pdf_path = resolve_stored_pdf_path(version)
+        if pdf_path is None or not pdf_path.is_file():
+            raise DocumentVersionNotFoundError(
+                f"Stored PDF for {role} body version '{version.version_id}' "
+                f"not found for project '{project_id}'"
+            )
+        pages = await run_in_threadpool(
+            pdf_parser.parse_pdf,
+            pdf_path,
+            version_id=version.version_id,
+        )
+        if not pages:
+            raise ValueError(
+                f"Body version '{version.version_id}' ({role}) produced zero parsed pages"
+            )
+        version_pages[role] = pages
+        version_ids[role] = version.version_id
+
+    if "current" not in version_ids:
+        raise DocumentVersionNotFoundError(
+            f"Current body version '{current_body.version_id}' was not resolved"
+        )
+    return version_pages, version_ids
 
 
 async def resolve_plate_index_for_run(canonical_repo, project_repo, plate_version_id, plate_pdf_path, plate_parser) -> PlateIndex:
@@ -100,13 +155,49 @@ async def resolve_body_versions_for_alignment(
     pdf_parser,
     review_round_id: str | None = None,
 ) -> tuple[dict[str, list[ParsedPage]], dict[str, str]]:
+    if review_round_id is not None:
+        current_round = await run_in_threadpool(
+            project_repository.get_review_round,
+            project_id,
+            review_round_id,
+        )
+        if current_round is None:
+            raise DocumentVersionNotFoundError(
+                f"ReviewRound '{review_round_id}' not found for project '{project_id}'"
+            )
+        previous_round = await run_in_threadpool(
+            project_repository.get_previous_review_round,
+            project_id,
+            review_round_id,
+        )
+        previous_body: VersionInput | None = None
+        if previous_round is not None and previous_round.body_version_id:
+            previous_body = await run_in_threadpool(
+                project_repository.resolve_version_input,
+                project_id,
+                "report_body",
+                None,
+                previous_round.body_version_id,
+            )
+            if previous_body is None:
+                raise DocumentVersionNotFoundError(
+                    f"Predecessor ReviewRound '{previous_round.id}' points to missing "
+                    f"body version '{previous_round.body_version_id}'"
+                )
+        return await resolve_round_body_versions_for_alignment(
+            project_repository=project_repository,
+            project_id=project_id,
+            current_body=primary_body_version,
+            previous_body=previous_body,
+            current_pdf_path=primary_pdf_path,
+            pdf_parser=pdf_parser,
+        )
+
+    # Legacy queued jobs only: retain historical stage-based discovery.
     version_pages: dict[str, list[ParsedPage]] = {}
     version_ids: dict[str, str] = {}
     seen_version_ids: set[str] = set()
-    is_round_aware = review_round_id is not None or isinstance(
-        project_repository, ReviewProjectRepository
-    )
-    stages = body_stages_for_round(primary_stage) if is_round_aware else _LEGACY_BODY_STAGES
+    stages = _LEGACY_BODY_STAGES
 
     for stage in stages:
         if stage == primary_stage:
@@ -131,14 +222,14 @@ async def resolve_body_versions_for_alignment(
         if stage_pdf_path is None or not stage_pdf_path.is_file():
             raise DocumentVersionNotFoundError(
                 f"Stored PDF for body version '{stage_version.version_id}' "
-                f"(round stage '{stage}') not found for project '{project_id}'"
+                f"(legacy stage '{stage}') not found for project '{project_id}'"
             )
         pages = await run_in_threadpool(
             pdf_parser.parse_pdf, stage_pdf_path, version_id=stage_version.version_id
         )
         if not pages:
             raise ValueError(
-                f"Body version '{stage_version.version_id}' (round stage '{stage}') produced zero parsed pages"
+                f"Body version '{stage_version.version_id}' (legacy stage '{stage}') produced zero parsed pages"
             )
         version_pages[stage] = pages
         version_ids[stage] = stage_version.version_id
