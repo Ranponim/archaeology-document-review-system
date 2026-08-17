@@ -205,7 +205,7 @@ describe('EvidenceGraphExplorer canonical identity path', () => {
 
     expect(screen.getByTestId('graph-node-canonical_asset')).toBeInTheDocument();
     expect(screen.getByTestId('graph-edge-DEPICTS')).toBeInTheDocument();
-    expect(screen.getByText('【도판 45】')).toBeInTheDocument();
+    expect(screen.getByText('[도판 패널] 조사 전')).toBeInTheDocument();
   });
 
   it('does not invent the canonical identity path when the visual-bundle is absent', () => {
@@ -278,7 +278,7 @@ describe('EvidenceGraphExplorer canonical identity path from traceability (revie
     expect(screen.getByTestId('graph-node-text_source')).toBeInTheDocument();
     expect(screen.getByTestId('graph-node-reference')).toBeInTheDocument();
     expect(screen.getByTestId('graph-node-canonical_asset')).toBeInTheDocument();
-    expect(screen.getByText('【도판 45】')).toBeInTheDocument();
+    expect(screen.getByText('[도판 45] 1지점 청동기시대 6호 석관묘')).toBeInTheDocument();
   });
 
   it('does not render canonical path edges when the payload omits canonical_path', () => {
