@@ -18,7 +18,7 @@ from app.services.object_resolver import ObjectResolver
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateParser
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
-from app.services.rule_engine import RuleEngine
+from app.services.strict_rule_engine import StrictRuleEngine
 from app.services.vlm_review_service import VLMReviewService
 
 
@@ -50,7 +50,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
     review_repo = AuditedReviewRepository(driver)
     vlm_service = VLMReviewService()
     ai_service = AIReviewService()
-    rule_engine = RuleEngine()
+    rule_engine = StrictRuleEngine()
 
     budget_value = _development_candidate_budget()
     if budget_value is not None:
