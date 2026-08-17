@@ -6,6 +6,7 @@ import {
   type ReviewDecision,
   type ReviewDecisionPayload,
   type TraceabilityResponse,
+  type VisualAssetMetadata,
   fetchVisualBundle,
   submitReviewDecision,
 } from '../api';
@@ -19,8 +20,106 @@ type Props = {
   onDecisionSubmitted?: (decision: ReviewDecision) => void;
 };
 
+type ComparisonType =
+  | 'version_change'
+  | 'plate_reference'
+  | 'drawing_reference'
+  | 'text_evidence';
+
+type RenderStatus = 'ready' | 'missing_render' | 'not_applicable';
+
+type VisualReferenceMetadata = {
+  type: string;
+  number: string;
+  referenceId?: string | null;
+  reference_id?: string | null;
+  targetId?: string | null;
+  target_id?: string | null;
+};
+
+type EvidenceAwareVisualBundle = CandidateVisualBundle & {
+  comparisonType?: ComparisonType;
+  comparison_type?: ComparisonType;
+  comparison?: VisualAssetMetadata | null;
+  reference?: VisualReferenceMetadata | null;
+  renderStatus?: RenderStatus;
+  render_status?: RenderStatus;
+  unresolved_reason?: string | null;
+};
+
 function isDrawingType(assetType: string | undefined): boolean {
   return assetType === 'drawing' || assetType === 'drawing_region';
+}
+
+function inferLegacyComparisonType(
+  candidate: CorrectionCandidate,
+  canonicalAsset: VisualAssetMetadata | null,
+  comparisonAsset: VisualAssetMetadata | null,
+): ComparisonType {
+  if (comparisonAsset) return 'version_change';
+  if (canonicalAsset && isDrawingType(canonicalAsset.assetType)) return 'drawing_reference';
+  if (canonicalAsset) return 'plate_reference';
+
+  const category = candidate.rule_category ?? candidate.ruleCategory ?? candidate.category ?? '';
+  if (category === 'figure_plate_table_photo_ref') return 'plate_reference';
+  return 'text_evidence';
+}
+
+function RenderDiagnostic({
+  asset,
+  reference,
+  unresolvedReason,
+}: {
+  asset: VisualAssetMetadata | null;
+  reference: VisualReferenceMetadata | null;
+  unresolvedReason: string | null;
+}) {
+  const targetId = reference?.targetId ?? reference?.target_id ?? asset?.regionId ?? null;
+
+  return (
+    <div className="visual-asset-pane fallback-pane render-diagnostic" data-testid="render-diagnostic">
+      <div className="visual-asset-header">
+        <span className="visual-asset-title">Graph 대상은 확인됨 — 렌더 파일 사용 불가</span>
+      </div>
+      <div className="visual-asset-fallback-box">
+        <div className="fallback-icon">⚠️</div>
+        <p className="fallback-main-msg">대조 대상의 식별자는 확정되었지만 이미지 렌더를 제공할 수 없습니다.</p>
+        <p className="fallback-sub-msg">
+          이 상태는 “도판/도면이 없음”이 아니라 Graph의 RESOLVES_TO 대상과 렌더 파일 사이의 문제입니다.
+        </p>
+      </div>
+      <div className="pane-meta-grid">
+        {targetId && (
+          <div className="meta-item">
+            <span className="meta-label">Graph target ID:</span>
+            <span className="meta-value"><code>{targetId}</code></span>
+          </div>
+        )}
+        {asset?.documentVersionId && (
+          <div className="meta-item">
+            <span className="meta-label">DocumentVersion:</span>
+            <span className="meta-value"><code>{asset.documentVersionId}</code></span>
+          </div>
+        )}
+        {asset?.physicalPage != null && (
+          <div className="meta-item">
+            <span className="meta-label">물리 페이지:</span>
+            <span className="meta-value">{asset.physicalPage}</span>
+          </div>
+        )}
+        <div className="meta-item">
+          <span className="meta-label">Render status:</span>
+          <span className="meta-value"><code>missing_render</code></span>
+        </div>
+        {unresolvedReason && (
+          <div className="meta-item">
+            <span className="meta-label">원인 코드:</span>
+            <span className="meta-value"><code>{unresolvedReason}</code></span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function SplitViewInspector({
@@ -73,9 +172,19 @@ export function SplitViewInspector({
     };
   }, [projectId, candidate.id, visualBundleProp]);
 
-  const sourceAsset = visualBundle?.source ?? null;
-  const canonicalAsset = visualBundle?.canonical ?? null;
-  const canonicalIsDrawing = canonicalAsset ? isDrawingType(canonicalAsset.assetType) : false;
+  const evidenceAwareBundle = visualBundle as EvidenceAwareVisualBundle | null;
+  const sourceAsset = evidenceAwareBundle?.source ?? null;
+  const comparisonAsset = evidenceAwareBundle?.comparison ?? null;
+  const canonicalAsset = evidenceAwareBundle?.canonical ?? null;
+  const reference = evidenceAwareBundle?.reference ?? null;
+  const unresolvedReason =
+    evidenceAwareBundle?.unresolvedReason ?? evidenceAwareBundle?.unresolved_reason ?? null;
+  const renderStatus =
+    evidenceAwareBundle?.renderStatus ?? evidenceAwareBundle?.render_status ?? 'not_applicable';
+  const comparisonType =
+    evidenceAwareBundle?.comparisonType ??
+    evidenceAwareBundle?.comparison_type ??
+    inferLegacyComparisonType(candidate, canonicalAsset, comparisonAsset);
 
   const originalText = candidate.original_text ?? candidate.originalText ?? '';
   const proposedText = candidate.proposed_text ?? candidate.proposedText ?? '';
@@ -86,7 +195,6 @@ export function SplitViewInspector({
     candidate.latest_decision ?? candidate.latestDecision ?? null;
   const latestOutcome = latestDecision?.decision_status ?? latestDecision?.decision ?? null;
 
-  // Primary and secondary evidence resolution
   const primaryEvidence: Evidence | undefined =
     candidate.evidence ??
     (Array.isArray(traceability?.evidence)
@@ -95,17 +203,20 @@ export function SplitViewInspector({
     candidate.evidences?.[0];
 
   const allEvidences: Evidence[] = [
+    ...(candidate.evidence ? [candidate.evidence] : []),
     ...(candidate.evidences ?? []),
     ...(Array.isArray(traceability?.evidence) ? traceability.evidence : []),
   ].filter(
     (ev, idx, arr) => ev && arr.findIndex((item) => item?.id === ev.id) === idx,
   );
+  const vlmEvidence = allEvidences.find((ev) => ev.kind === 'vlm_observation');
 
   const sourceSha256 =
     primaryEvidence?.source_sha256 ??
     primaryEvidence?.sourceSha256 ??
     traceability?.source_sha256 ??
     traceability?.sourceSha256 ??
+    sourceAsset?.sourceSha256 ??
     '해시 정보 없음';
 
   const docVersionId =
@@ -113,6 +224,7 @@ export function SplitViewInspector({
     primaryEvidence?.documentVersionId ??
     traceability?.document_version_id ??
     traceability?.documentVersionId ??
+    sourceAsset?.documentVersionId ??
     'doc_ver_unknown';
 
   const pageNum =
@@ -121,6 +233,7 @@ export function SplitViewInspector({
     primaryEvidence?.page?.physical_page ??
     primaryEvidence?.page_id ??
     traceability?.page_id ??
+    sourceAsset?.physicalPage ??
     '미상';
 
   const printedPageNum =
@@ -129,7 +242,7 @@ export function SplitViewInspector({
     primaryEvidence?.page?.printed_page ??
     '';
 
-  const bbox = primaryEvidence?.bbox ?? traceability?.bbox;
+  const bbox = primaryEvidence?.bbox ?? traceability?.bbox ?? sourceAsset?.bbox;
   const bboxText = Array.isArray(bbox)
     ? `[${bbox.map((v) => (typeof v === 'number' ? v.toFixed(2) : String(v))).join(', ')}]`
     : '전체 영역';
@@ -139,15 +252,26 @@ export function SplitViewInspector({
     candidate.archaeology_object_id ??
     candidate.archaeologyObjectId ??
     archObj?.id ??
-    '【도판 식별자 미지정】';
+    '객체 식별자 없음';
 
-  // Decisions list
   const decisions: ReviewDecision[] = [
     ...(candidate.decisions ?? []),
     ...(traceability?.decisions ?? []),
   ].filter(
     (dec, idx, arr) => dec && arr.findIndex((item) => item?.id === dec.id) === idx,
   );
+
+  const referenceNumber = reference?.number ?? canonicalAsset?.printedIdentifier ?? '';
+  const referenceTargetId = reference?.targetId ?? reference?.target_id ?? canonicalAsset?.regionId ?? null;
+
+  const comparisonHeading =
+    comparisonType === 'version_change'
+      ? '비교 근거: 본문 수정본 간 비교'
+      : comparisonType === 'plate_reference'
+        ? `비교 근거: 본문 ↔ 도판 ${referenceNumber || '식별자 미상'}`
+        : comparisonType === 'drawing_reference'
+          ? `비교 근거: 본문 ↔ 도면 ${referenceNumber || '식별자 미상'}`
+          : '비교 근거: 규칙 기반 본문 Evidence';
 
   async function handleActionSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -180,9 +304,7 @@ export function SplitViewInspector({
       setActionSuccess(
         `검수 판정 [${decisionLabel[decisionType] ?? decisionType}]이 성공적으로 기록되었습니다.`,
       );
-      if (onDecisionSubmitted) {
-        onDecisionSubmitted(result);
-      }
+      if (onDecisionSubmitted) onDecisionSubmitted(result);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '판정 기록 중 오류가 발생했습니다.');
     } finally {
@@ -200,7 +322,6 @@ export function SplitViewInspector({
 
   return (
     <div className="split-view-inspector" data-testid="split-view-inspector">
-      {/* Top Meta Bar */}
       <header className="inspector-header">
         <div className="inspector-title-group">
           <div className="badge-row">
@@ -234,13 +355,24 @@ export function SplitViewInspector({
         </div>
       </header>
 
-      {/* Side-by-Side Comparison Container */}
+      <div className="comparison-grounding-banner" role="note">
+        <strong>{comparisonHeading}</strong>
+        {unresolvedReason && (
+          <span className="comparison-warning"> · Graph/렌더 상태: {unresolvedReason}</span>
+        )}
+      </div>
+
       <div className="split-panes-grid">
-        {/* LEFT PANE: Source Document Claim */}
         <section className="pane-card source-pane" aria-labelledby="source-pane-heading">
           <div className="pane-header">
-            <span className="pane-tag">SOURCE CLAIM (본문 원본)</span>
-            <h4 id="source-pane-heading">원본 추출 문맥 및 주장</h4>
+            <span className="pane-tag">
+              {comparisonType === 'version_change'
+                ? 'PREVIOUS VERSION (이전 본문)'
+                : 'SOURCE CLAIM (본문 근거)'}
+            </span>
+            <h4 id="source-pane-heading">
+              {comparisonType === 'version_change' ? '이전 본문' : '원본 추출 문맥 및 주장'}
+            </h4>
           </div>
 
           {loadingVisual && (
@@ -253,7 +385,11 @@ export function SplitViewInspector({
           {!loadingVisual && sourceAsset && (
             <VisualAssetPane
               asset={sourceAsset}
-              title="본문 PDF — 실제 렌더 페이지"
+              title={
+                comparisonType === 'version_change'
+                  ? '이전 본문 PDF — 실제 렌더 페이지'
+                  : '본문 PDF — 실제 렌더 페이지'
+              }
               subtitle={
                 sourceAsset.physicalPage != null
                   ? `물리 ${sourceAsset.physicalPage}쪽`
@@ -265,21 +401,29 @@ export function SplitViewInspector({
           {!loadingVisual && !sourceAsset && (
             <VisualAssetPane
               asset={null}
-              title="본문 PDF — 실제 렌더 페이지"
+              title={
+                comparisonType === 'version_change'
+                  ? '이전 본문 PDF — 실제 렌더 페이지'
+                  : '본문 PDF — 실제 렌더 페이지'
+              }
               testIdPrefix="source"
-              fallbackMessage="본문 시각 에셋 렌더링 준비 중"
+              fallbackMessage={
+                comparisonType === 'version_change'
+                  ? '이전 본문 렌더 provenance 없음'
+                  : '본문 시각 에셋 렌더링 준비 중'
+              }
             />
           )}
 
           <div className="pane-meta-grid">
             <div className="meta-item">
               <span className="meta-label">문서 버전:</span>
-              <span className="meta-value"><code>{docVersionId}</code></span>
+              <span className="meta-value"><code>{sourceAsset?.documentVersionId ?? docVersionId}</code></span>
             </div>
             <div className="meta-item">
               <span className="meta-label">페이지 위치:</span>
               <span className="meta-value">
-                물리 {pageNum}쪽 {printedPageNum ? `(본문 인쇄 ${printedPageNum}쪽)` : ''}
+                물리 {sourceAsset?.physicalPage ?? pageNum}쪽 {printedPageNum ? `(본문 인쇄 ${printedPageNum}쪽)` : ''}
               </span>
             </div>
             <div className="meta-item">
@@ -289,10 +433,10 @@ export function SplitViewInspector({
             <div className="meta-item hash-item">
               <span className="meta-label">원본 무결성 해시:</span>
               <div className="hash-wrap">
-                <code className="sha-code" title={sourceSha256}>
-                  {sourceSha256.length > 20
-                    ? `${sourceSha256.slice(0, 10)}...${sourceSha256.slice(-8)}`
-                    : sourceSha256}
+                <code className="sha-code" title={sourceAsset?.sourceSha256 ?? sourceSha256}>
+                  {(sourceAsset?.sourceSha256 ?? sourceSha256).length > 20
+                    ? `${(sourceAsset?.sourceSha256 ?? sourceSha256).slice(0, 10)}...${(sourceAsset?.sourceSha256 ?? sourceSha256).slice(-8)}`
+                    : sourceAsset?.sourceSha256 ?? sourceSha256}
                 </code>
                 <button
                   type="button"
@@ -307,7 +451,9 @@ export function SplitViewInspector({
           </div>
 
           <div className="claim-box">
-            <p className="box-sublabel">보고서 본문 추출 문장</p>
+            <p className="box-sublabel">
+              {comparisonType === 'version_change' ? '이전 본문 값/문장' : '보고서 본문 추출 문장'}
+            </p>
             <blockquote className="claim-text">
               {originalText || '(추출된 원본 텍스트 없음)'}
             </blockquote>
@@ -321,22 +467,63 @@ export function SplitViewInspector({
                 {primaryEvidence.rationale || '규칙 기반 대조 패턴 감지'}
               </p>
               {allEvidences.length > 1 && (
-                <p className="more-evidence-count">
-                  + 추가 근거 {allEvidences.length - 1}건 연결됨
-                </p>
+                <p className="more-evidence-count">+ 추가 근거 {allEvidences.length - 1}건 연결됨</p>
               )}
             </div>
           )}
         </section>
 
-        {/* RIGHT PANE: Canonical Target & VLM Observation */}
         <section className="pane-card canonical-pane" aria-labelledby="canonical-pane-heading">
           <div className="pane-header">
-            <span className="pane-tag">CANONICAL TARGET (표준 대조군)</span>
-            <h4 id="canonical-pane-heading">도면·도판 대조 표준 및 제안</h4>
+            <span className="pane-tag">
+              {comparisonType === 'version_change'
+                ? 'CURRENT VERSION (현재 본문)'
+                : comparisonType === 'plate_reference'
+                  ? 'RESOLVED PLATE (도판 대조)'
+                  : comparisonType === 'drawing_reference'
+                    ? 'RESOLVED DRAWING (도면 대조)'
+                    : 'TEXT EVIDENCE (본문 규칙 근거)'}
+            </span>
+            <h4 id="canonical-pane-heading">
+              {comparisonType === 'version_change'
+                ? '현재 본문'
+                : comparisonType === 'plate_reference'
+                  ? '도판 대조 표준 및 제안'
+                  : comparisonType === 'drawing_reference'
+                    ? '도면 대조 표준 및 제안'
+                    : '규칙 기반 Evidence 및 제안'}
+            </h4>
           </div>
 
-          {!loadingVisual && canonicalAsset && !canonicalIsDrawing && (
+          {!loadingVisual && comparisonType === 'version_change' && comparisonAsset && (
+            <VisualAssetPane
+              asset={comparisonAsset}
+              title="현재 본문 PDF — 실제 렌더 페이지"
+              subtitle={
+                comparisonAsset.physicalPage != null
+                  ? `물리 ${comparisonAsset.physicalPage}쪽`
+                  : undefined
+              }
+              testIdPrefix="comparison"
+            />
+          )}
+          {!loadingVisual && comparisonType === 'version_change' && !comparisonAsset && (
+            <VisualAssetPane
+              asset={null}
+              title="현재 본문 PDF — 실제 렌더 페이지"
+              testIdPrefix="comparison"
+              fallbackMessage="현재 본문 렌더 provenance 없음"
+            />
+          )}
+
+          {!loadingVisual && comparisonType === 'plate_reference' && renderStatus === 'missing_render' && (
+            <RenderDiagnostic
+              asset={canonicalAsset}
+              reference={reference}
+              unresolvedReason={unresolvedReason}
+            />
+          )}
+          {!loadingVisual && comparisonType === 'plate_reference' && renderStatus !== 'missing_render' && canonicalAsset && (
             <VisualAssetPane
               asset={canonicalAsset}
               title="표준 도판 / 사진 — 실제 패널 이미지"
@@ -344,43 +531,110 @@ export function SplitViewInspector({
               testIdPrefix="canonical"
             />
           )}
-          {!loadingVisual && !canonicalAsset && !canonicalIsDrawing && (
+          {!loadingVisual && comparisonType === 'plate_reference' && renderStatus !== 'missing_render' && !canonicalAsset && (
             <VisualAssetPane
               asset={null}
               title="표준 도판 / 사진 — 실제 패널 이미지"
               testIdPrefix="canonical"
-              fallbackMessage="해당 에셋 렌더 없음"
+              fallbackMessage="도판 Reference는 있으나 canonical target이 확정되지 않음"
             />
           )}
-          {!loadingVisual && canonicalIsDrawing && (
-            <p className="visual-note">
-              이 후보의 표준 대조 자산은 도면입니다. 아래 [표준 도면] 영역에서 실제 도면 렌더와
-              영역 하이라이트를 확인하세요.
-            </p>
+
+          {!loadingVisual && comparisonType === 'drawing_reference' && renderStatus === 'missing_render' && (
+            <RenderDiagnostic
+              asset={canonicalAsset}
+              reference={reference}
+              unresolvedReason={unresolvedReason}
+            />
+          )}
+          {!loadingVisual && comparisonType === 'drawing_reference' && renderStatus !== 'missing_render' && canonicalAsset && (
+            <VisualAssetPane
+              asset={canonicalAsset}
+              title="표준 도면 — 실제 렌더 및 영역 하이라이트"
+              subtitle={canonicalAsset.printedIdentifier ?? undefined}
+              testIdPrefix="drawing"
+            />
+          )}
+          {!loadingVisual && comparisonType === 'drawing_reference' && renderStatus !== 'missing_render' && !canonicalAsset && (
+            <VisualAssetPane
+              asset={null}
+              title="표준 도면 — 실제 렌더 및 영역 하이라이트"
+              testIdPrefix="drawing"
+              fallbackMessage="도면 Reference는 있으나 canonical target이 확정되지 않음"
+            />
           )}
 
-          <div className="pane-meta-grid">
-            <div className="meta-item">
-              <span className="meta-label">대상 유물/도판:</span>
-              <span className="meta-value canonical-id-highlight">
-                <strong>{archObjId}</strong>
-              </span>
+          {comparisonType === 'text_evidence' && (
+            <div className="evidence-summary-box text-evidence-comparison" data-testid="text-evidence-comparison">
+              <span className="box-sublabel">이 후보는 시각 자산 비교 대상이 아닙니다.</span>
+              <p className="evidence-rationale">
+                도판/도면을 임의로 연결하지 않고, Candidate에 연결된 규칙 및 본문 Evidence만 검수 근거로 사용합니다.
+              </p>
+              {allEvidences.length > 0 && (
+                <ul className="evidence-list">
+                  {allEvidences.map((ev) => (
+                    <li key={ev.id}>
+                      <strong>{ev.kind ?? ev.method ?? 'evidence'}:</strong>{' '}
+                      {ev.rationale ?? '세부 근거 설명 없음'}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <div className="meta-item">
-              <span className="meta-label">도판/도면 명칭:</span>
-              <span className="meta-value">
-                {archObj?.title || '도판/도면 명칭 연계됨'}
-              </span>
-            </div>
-            {archObj?.object_type && (
-              <div className="meta-item">
-                <span className="meta-label">유물 분류:</span>
-                <span className="meta-value">{archObj.object_type}</span>
-              </div>
-            )}
-          </div>
+          )}
 
-          {/* Diff Box */}
+          {comparisonType === 'version_change' && (
+            <div className="pane-meta-grid">
+              <div className="meta-item">
+                <span className="meta-label">이전 DocumentVersion:</span>
+                <span className="meta-value"><code>{sourceAsset?.documentVersionId ?? 'provenance 없음'}</code></span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">현재 DocumentVersion:</span>
+                <span className="meta-value"><code>{comparisonAsset?.documentVersionId ?? 'provenance 없음'}</code></span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">Render status:</span>
+                <span className="meta-value"><code>{renderStatus}</code></span>
+              </div>
+            </div>
+          )}
+
+          {(comparisonType === 'plate_reference' || comparisonType === 'drawing_reference') && (
+            <div className="pane-meta-grid">
+              <div className="meta-item">
+                <span className="meta-label">Graph Reference:</span>
+                <span className="meta-value">
+                  {reference?.type ?? (comparisonType === 'drawing_reference' ? 'drawing' : 'plate')} {reference?.number ?? '미상'}
+                </span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">Resolved target:</span>
+                <span className="meta-value canonical-id-highlight">
+                  <strong>{referenceTargetId ?? 'target 미확정'}</strong>
+                </span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">DocumentVersion:</span>
+                <span className="meta-value"><code>{canonicalAsset?.documentVersionId ?? '미상'}</code></span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">대상 유물/객체:</span>
+                <span className="meta-value"><strong>{archObjId}</strong></span>
+              </div>
+              {archObj?.title && (
+                <div className="meta-item">
+                  <span className="meta-label">객체 명칭:</span>
+                  <span className="meta-value">{archObj.title}</span>
+                </div>
+              )}
+              <div className="meta-item">
+                <span className="meta-label">Render status:</span>
+                <span className="meta-value"><code>{renderStatus}</code></span>
+              </div>
+            </div>
+          )}
+
           <div className="proposed-box">
             <p className="box-sublabel">제안된 교정 내용 (Proposed Revision)</p>
             <div className="diff-view">
@@ -395,49 +649,27 @@ export function SplitViewInspector({
             </div>
           </div>
 
-          {/* VLM / AI Observation Box */}
-          <div className="vlm-observation-box">
-            <div className="vlm-header">
-              <span className="vlm-tag">VLM 비전 분석 관찰 소견</span>
-              <span className="vlm-confidence">
-                AI 예측도: {Math.round((primaryEvidence?.confidence ?? candidate.confidence ?? 0.9) * 100)}%
-              </span>
+          {vlmEvidence && (
+            <div className="vlm-observation-box">
+              <div className="vlm-header">
+                <span className="vlm-tag">VLM 비전 분석 관찰 소견</span>
+                <span className="vlm-confidence">
+                  AI 예측도: {Math.round((vlmEvidence.confidence ?? candidate.confidence ?? 0) * 100)}%
+                </span>
+              </div>
+              <p className="vlm-verdict-text">{vlmEvidence.rationale ?? 'VLM 관찰 세부 설명 없음'}</p>
+              <div className="vlm-warning-callout" role="note">
+                <strong>⚠️ AI 관찰 결과 안내:</strong> 위 VLM 소견은 인공지능 보조 관찰이며 최종 고고학적 확정이 아닙니다. 전문 검수자의 학술적 확인이 필요합니다.
+              </div>
             </div>
-            <p className="vlm-verdict-text">
-              {archObj?.vlm_verdict ||
-                primaryEvidence?.rationale ||
-                '도판 내 유물 번호와 본문 서술 간의 번호 상이점 교차 검증됨.'}
-            </p>
-            <div className="vlm-warning-callout" role="note">
-              <strong>⚠️ AI 관찰 결과 안내:</strong> 위 VLM 및 규칙 소견은 인공지능 보조 알고리즘에
-              의한 예측이며, 최종 고고학적 확정이 아닙니다. 전문 검수자의 학술적 확인이 필요합니다.
-            </div>
-          </div>
+          )}
         </section>
       </div>
 
-      {/* CANONICAL DRAWING SECTION (review §9) */}
-      {!loadingVisual && canonicalAsset && canonicalIsDrawing && (
-        <section className="pane-card drawing-pane" aria-labelledby="drawing-pane-heading">
-          <div className="pane-header">
-            <span className="pane-tag">CANONICAL DRAWING (표준 도면)</span>
-            <h4 id="drawing-pane-heading">표준 도면 — 실제 렌더 및 영역 하이라이트</h4>
-          </div>
-          <VisualAssetPane
-            asset={canonicalAsset}
-            title="표준 도면 — 실제 렌더"
-            subtitle={canonicalAsset.printedIdentifier ?? undefined}
-            testIdPrefix="drawing"
-          />
-        </section>
-      )}
-
-      {/* EXPERT REVIEW ACTION FORM */}
       <section className="review-action-section" aria-labelledby="action-heading">
         <h4 id="action-heading" className="section-subtitle">
           전문가 검수 판정 (Audit Decision)
         </h4>
-
         <form onSubmit={handleActionSubmit} className="review-form">
           <div className="form-row-2col">
             <div className="form-field">
@@ -527,7 +759,6 @@ export function SplitViewInspector({
         </form>
       </section>
 
-      {/* AUDIT DECISION HISTORY TIMELINE */}
       {decisions.length > 0 && (
         <section className="decision-history-section" aria-labelledby="history-heading">
           <h4 id="history-heading" className="section-subtitle">
@@ -552,9 +783,7 @@ export function SplitViewInspector({
                     <strong>{dec.reviewer || '검수관'}</strong>
                     <span className="timeline-time">{dec.created_at ?? dec.createdAt ?? '방금 전'}</span>
                     {dec.previous_decision_id && (
-                      <span className="supersedes-tag">
-                        이전 판정({dec.previous_decision_id}) 갱신
-                      </span>
+                      <span className="supersedes-tag">이전 판정({dec.previous_decision_id}) 갱신</span>
                     )}
                   </div>
                   {(dec.note || dec.rationale) && (
