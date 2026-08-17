@@ -25,6 +25,17 @@ from app.services.strict_rule_engine import StrictRuleEngine
 from app.services.vlm_review_service import VLMReviewService
 
 
+# ProofreadingOrchestrator historically imported its final selector as a module
+# symbol. Keep one stable selector for every process configuration instead of
+# mutating it only when a development orchestrator happens to be constructed.
+# With max_candidates=None the representative selector returns the full ordered
+# set, so production remains uncapped; with a development limit it guarantees
+# plate/drawing/category coverage deterministically.
+proofreading_orchestrator_module.prioritize_and_cap_candidates = (
+    select_development_candidates
+)
+
+
 def _development_candidate_budget() -> int | None:
     raw = os.environ.get("DEVELOPMENT_CANDIDATE_BUDGET") or os.environ.get(
         "CANDIDATE_BUDGET"
@@ -51,13 +62,6 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
 
     budget_value = _development_candidate_budget()
     if budget_value is not None:
-        # TODO-remediation: final candidate selection still uses the legacy
-        # module-level hook; expensive work itself is already gated by the
-        # per-instance DevelopmentReviewBudget. This hook is removed in the
-        # next selector-injection task.
-        proofreading_orchestrator_module.prioritize_and_cap_candidates = (
-            select_development_candidates
-        )
         budget = DevelopmentReviewBudget(max_expensive_operations=budget_value)
         return BudgetedProofreadingOrchestrator(
             project_repo=project_repo,
