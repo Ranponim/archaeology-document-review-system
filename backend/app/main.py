@@ -19,9 +19,9 @@ from app.graph.project_repository import (
     AnalysisRunNotFoundError,
     DocumentVersionNotFoundError,
     ProjectNotFoundError,
-    ProjectRepository,
     ReviewRoundNotFoundError,
 )
+from app.graph.review_project_repository import ReviewProjectRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
@@ -71,7 +71,7 @@ def create_app(
         if app.state.project_repository is None:
             driver = create_driver()
             app.state.neo4j_driver = driver
-            app.state.project_repository = ProjectRepository(driver)
+            app.state.project_repository = ReviewProjectRepository(driver)
             ensure_schema(driver)
         if getattr(app.state, "review_repository", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
