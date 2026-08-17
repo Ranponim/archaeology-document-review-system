@@ -1,5 +1,5 @@
 from app.domain.models import StoredFile
-from app.graph.project_repository import ProjectRepository
+from app.graph.review_project_repository import ReviewProjectRepository
 
 
 class FakeResult:
@@ -33,7 +33,7 @@ def test_document_version_creation_does_not_create_stage_based_precedes_edges():
         original_name="본문 수정본.pdf",
     )
 
-    ProjectRepository._create_document_and_version(
+    ReviewProjectRepository._create_document_and_version(
         tx,
         "project_1",
         "doc_1",
