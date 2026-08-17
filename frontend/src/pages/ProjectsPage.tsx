@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 
 import { ApiError, createProject, fetchProjects, type Project } from '../api';
+import './ProjectsPage.css';
 
 type Props = {
   onCreated: (project: Project) => void;
@@ -70,12 +71,7 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
             <h2 id="existing-title">진행 중인 검수 프로젝트</h2>
             <p className="muted">이전에 생성된 프로젝트를 선택하여 이어서 검수를 진행합니다.</p>
           </div>
-          <button
-            type="button"
-            className="secondary-button projects-refresh-button"
-            onClick={loadProjectList}
-            disabled={loadingProjects}
-          >
+          <button type="button" className="secondary-button projects-refresh-button" onClick={loadProjectList} disabled={loadingProjects}>
             {loadingProjects ? '새로고침 중…' : '목록 새로고침'}
           </button>
         </div>
@@ -91,16 +87,11 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
         ) : (
           <div className="project-list">
             {projects.map((project) => (
-              <div
-                className="project-card-item"
-                key={project.id}
-                onClick={() => handleSelect(project)}
-              >
+              <div className="project-card-item" key={project.id} onClick={() => handleSelect(project)}>
                 <div className="project-card-copy">
                   <h3 className="project-card-title">{project.name}</h3>
                   <p className="project-card-meta">
-                    ID: {project.id}
-                    {project.internalCode ? ` · 코드: ${project.internalCode}` : ''}
+                    ID: {project.id}{project.internalCode ? ` · 코드: ${project.internalCode}` : ''}
                   </p>
                   <p className="project-created-at">{formatProjectCreatedAt(project.createdAt)}</p>
                 </div>
@@ -126,23 +117,11 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
           <h2 id="create-title">새 프로젝트 만들기</h2>
           <p className="muted">새로운 고고학 보고서 검수 프로젝트를 생성합니다.</p>
         </div>
-
         <form onSubmit={submit} className="form-stack">
           <label htmlFor="project-name">프로젝트명</label>
-          <input
-            id="project-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={200}
-            autoComplete="off"
-            placeholder="예: 논산 산노리 산17-1번지 유적 발굴조사보고서"
-            required
-          />
-          <button type="submit" disabled={submitting || !name.trim()}>
-            {submitting ? '생성 중…' : '프로젝트 생성'}
-          </button>
+          <input id="project-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} autoComplete="off" placeholder="예: 논산 산노리 산17-1번지 유적 발굴조사보고서" required />
+          <button type="submit" disabled={submitting || !name.trim()}>{submitting ? '생성 중…' : '프로젝트 생성'}</button>
         </form>
-
         {errorCode && <p className="error-code">{errorCode}</p>}
       </section>
     </div>
