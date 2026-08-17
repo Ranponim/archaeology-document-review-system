@@ -1,12 +1,11 @@
-"""Shared proofreading job-input resolution (plan Task 12).
+"""Shared proofreading job-input resolution.
 
-Task 11 resolved body versions inside the sync HTTP route; Task 12 moves the
-whole resolution onto the RQ worker. This module is the single shared
-implementation so the worker (and any future caller) resolves one-format
-inputs identically: real DocumentVersions from the graph, real stored PDFs,
-real version-bound page ids — never fabricated stage-derived ids.
+ReviewRound is the authoritative execution unit. Body alignment compares the
+current round body with the immediately preceding numbered round when that
+version exists; there is no fixed 1/2/3/final stage ceiling.
 """
 from pathlib import Path
+import re
 
 from starlette.concurrency import run_in_threadpool
 
@@ -17,7 +16,18 @@ from app.graph.project_repository import DocumentVersionNotFoundError
 from app.services.drawing_parser import DrawingIndex
 from app.services.plate_parser import PlateIndex
 
-BODY_STAGES = ("1차", "2차", "3차", "final")
+
+_ROUND_STAGE_RE = re.compile(r"^(\d+)차$")
+
+
+def body_stages_for_round(primary_stage: str) -> tuple[str, ...]:
+    match = _ROUND_STAGE_RE.match(str(primary_stage).strip())
+    if not match:
+        return (primary_stage,)
+    sequence = int(match.group(1))
+    if sequence <= 1:
+        return ("1차",)
+    return (f"{sequence - 1}차", f"{sequence}차")
 
 
 def resolve_stored_pdf_path(version: VersionInput) -> Path | None:
@@ -38,13 +48,6 @@ async def resolve_plate_index_for_run(
     plate_pdf_path: str | None,
     plate_parser,
 ) -> PlateIndex:
-    """Resolve the canonical PlateIndex for a selected plate version.
-
-    Graph-first: reconstruct from (v)-[:HAS_PLATE]->(p:Plate) + HAS_PANEL.
-    Fallback: reparse the stored PDF of the selected version. Fail closed
-    (raise) when the version was explicitly selected but no canonical index
-    resolves — never silently substitute an empty PlateIndex (anti-pattern #5).
-    """
     if not plate_version_id:
         return PlateIndex()
     if canonical_repo is not None:
@@ -71,13 +74,6 @@ async def resolve_drawing_index_for_run(
     drawing_pdf_path: str | None,
     drawing_parser,
 ) -> DrawingIndex:
-    """Resolve the canonical DrawingIndex for a selected drawing version.
-
-    Graph-first: reconstruct from (v)-[:HAS_DRAWING]->(d:Drawing) + HAS_REGION.
-    Fallback: reparse the stored PDF of the selected version. Fail closed
-    (raise) when the version was explicitly selected but no canonical index
-    resolves — never silently substitute an empty DrawingIndex (anti-pattern #5).
-    """
     if not drawing_version_id:
         return DrawingIndex()
     if canonical_repo is not None:
@@ -119,14 +115,18 @@ async def resolve_body_versions_for_alignment(
     primary_pdf_path: str | None,
     pdf_parser,
 ) -> tuple[dict[str, list[ParsedPage]], dict[str, str]]:
-    """Resolve every report_body DocumentVersion by stage, parse its stored
-    PDF with the real version id, and build version_pages/version_ids so
-    PRECEDES + ALIGNED_TO persist on a real run (Task 8 M1 fold-in). Fail
-    closed when a stored body PDF is missing (plan §3 Gate G)."""
+    """Resolve only the current round body and its immediate predecessor.
+
+    `primary_body_version` is already resolved by exact graph identity. The
+    current sequence label is compatibility metadata for alignment only; it is
+    not allowed to override that version identity.
+    """
     version_pages: dict[str, list[ParsedPage]] = {}
     version_ids: dict[str, str] = {}
-    for stage in BODY_STAGES:
-        if stage == primary_stage and primary_body_version is not None:
+    seen_version_ids: set[str] = set()
+
+    for stage in body_stages_for_round(primary_stage):
+        if stage == primary_stage:
             stage_version = primary_body_version
         else:
             stage_version = await run_in_threadpool(
@@ -137,6 +137,10 @@ async def resolve_body_versions_for_alignment(
             )
         if stage_version is None:
             continue
+        if stage_version.version_id in seen_version_ids:
+            continue
+        seen_version_ids.add(stage_version.version_id)
+
         if stage == primary_stage and primary_pdf_path:
             stage_pdf_path = Path(primary_pdf_path)
         else:
@@ -144,16 +148,22 @@ async def resolve_body_versions_for_alignment(
         if stage_pdf_path is None or not stage_pdf_path.is_file():
             raise DocumentVersionNotFoundError(
                 f"Stored PDF for body version '{stage_version.version_id}' "
-                f"(stage '{stage}') not found for project '{project_id}'"
+                f"(round stage '{stage}') not found for project '{project_id}'"
             )
         pages = await run_in_threadpool(
             pdf_parser.parse_pdf, stage_pdf_path, version_id=stage_version.version_id
         )
         if not pages:
             raise ValueError(
-                f"Body version '{stage_version.version_id}' (stage '{stage}') "
+                f"Body version '{stage_version.version_id}' (round stage '{stage}') "
                 "produced zero parsed pages"
             )
         version_pages[stage] = pages
         version_ids[stage] = stage_version.version_id
+
+    if primary_body_version.version_id not in seen_version_ids:
+        raise DocumentVersionNotFoundError(
+            f"Primary body version '{primary_body_version.version_id}' was not resolved "
+            f"for ReviewRound stage '{primary_stage}'"
+        )
     return version_pages, version_ids
