@@ -9,8 +9,10 @@ class ReviewProjectRepository(ProjectRepository):
 
     A concrete DocumentVersion id is canonical graph identity. Human stage
     labels such as ``2차`` are compatibility/display metadata and must never
-    reject an exact id selected by a ReviewRound. Stage-only legacy lookup is
-    still supported when no version id is supplied.
+    reject an exact id selected by a ReviewRound. Every production ReviewRound
+    owns a complete canonical input set: body + plate/photo book + drawing book.
+    Later rounds may reuse an earlier plate/drawing DocumentVersion, but the
+    graph relationship must still be explicit on that round.
     """
 
     def resolve_version_input(
@@ -23,6 +25,37 @@ class ReviewProjectRepository(ProjectRepository):
         if version_id:
             stage = None
         return super().resolve_version_input(project_id, kind, stage, version_id)
+
+    def create_review_round(
+        self,
+        project_id: str,
+        body_version_id: str | None = None,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        notes: str | None = None,
+    ) -> ReviewRound:
+        missing = [
+            label
+            for label, value in (
+                ("report_body", body_version_id),
+                ("plate_book", plate_version_id),
+                ("drawing_book", drawing_version_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "ReviewRound requires the complete canonical input set "
+                "(report_body + plate_book + drawing_book); missing: "
+                + ", ".join(missing)
+            )
+        return super().create_review_round(
+            project_id=project_id,
+            body_version_id=body_version_id,
+            plate_version_id=plate_version_id,
+            drawing_version_id=drawing_version_id,
+            notes=notes,
+        )
 
     def approve_review_round(self, project_id: str, round_id: str) -> ReviewRound:
         records, _, _ = self._driver.execute_query(
