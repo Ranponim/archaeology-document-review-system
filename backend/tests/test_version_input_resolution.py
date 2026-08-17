@@ -368,105 +368,26 @@ async def test_orchestrator_fails_closed_when_plate_pdf_file_missing_on_disk():
 
 
 # =============================================================================
-# 4. Elimination of Synthetic Fallbacks in Reviews API
+# 4. Strict ReviewRound API rejects synthetic/direct-version fallbacks
 # =============================================================================
 
-def test_reviews_api_rejects_missing_body_version_without_fallback():
-    # Setup project with no document versions
-    proj_repo = MockProjectRepository()
-    proj_repo.versions["proj_1"] = []  # No versions exist!
-
-    app = create_app(project_repository=proj_repo)
-    client = TestClient(app)
-
-    # Trigger run without bodyVersionId -> MUST FAIL with 404 (not fallback to ver_proj_1_body)
-    resp = client.post("/api/v1/projects/proj_1/runs", json={})
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "input_error"
-
-
-def test_reviews_api_rejects_non_existent_body_version_id():
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"bodyVersionId": "ver_body_real_001"},
+        {"plateVersionId": "ver_plate_missing_001"},
+        {"versionStage": "1차"},
+        {"bodyPdfPath": "/tmp/body.pdf"},
+        {"reviewRoundId": "round-x", "drawingVersionId": "ver_drawing_legacy"},
+    ],
+)
+def test_reviews_api_rejects_legacy_run_inputs_before_version_resolution(payload):
     proj_repo = MockProjectRepository()
     app = create_app(project_repository=proj_repo)
     client = TestClient(app)
 
-    resp = client.post(
-        "/api/v1/projects/proj_1/runs",
-        json={"bodyVersionId": "ver_does_not_exist_999"},
-    )
-    assert resp.status_code == 404
+    resp = client.post("/api/v1/projects/proj_1/runs", json=payload)
+
+    assert resp.status_code == 422
     assert resp.json()["code"] == "input_error"
-
-
-def test_reviews_api_rejects_non_existent_plate_version_id():
-    proj_repo = MockProjectRepository()
-    app = create_app(project_repository=proj_repo)
-    client = TestClient(app)
-
-    resp = client.post(
-        "/api/v1/projects/proj_1/runs",
-        json={
-            "bodyVersionId": "ver_body_real_001",
-            "plateVersionId": "ver_plate_missing_001",
-        },
-    )
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "input_error"
-
-
-def test_reviews_api_resolves_real_version_and_enqueues_async_run():
-    proj_repo = MockProjectRepository()
-    rev_repo = FakeReviewRepositoryForOrchestrator()
-    orch_calls: list[str] = []
-
-    class FakeOrch:
-        async def run_proofreading(self, project_id: str, body_version_id: str, **kwargs):
-            orch_calls.append(body_version_id)
-            return OrchestratorResult(
-                project_id=project_id,
-                analysis_run_id="run_resolved_001",
-                status="completed",
-                pages_parsed=5,
-                objects_resolved=3,
-                references_resolved=10,
-                candidates=[],
-                evidences=[],
-                objects=[],
-                plates=[],
-                drawings=[],
-            )
-
-    enqueued: list[str] = []
-    app = create_app(
-        project_repository=proj_repo,
-        review_repository=rev_repo,
-        orchestrator=FakeOrch(),
-        run_enqueuer=lambda run_id: enqueued.append(run_id) or f"proofreading-{run_id}",
-    )
-    client = TestClient(app)
-
-    # 1. Calling with explicit valid bodyVersionId -> queued + enqueued
-    resp1 = client.post(
-        "/api/v1/projects/proj_1/runs",
-        json={"bodyVersionId": "ver_body_real_001"},
-    )
-    assert resp1.status_code == 202
-    data1 = resp1.json()
-    assert data1["status"] == "queued"
-    assert data1["runId"].startswith("run_")
-    assert rev_repo.runs[data1["runId"]]["status"] == "queued"
-    assert rev_repo.runs[data1["runId"]]["body_version_id"] == "ver_body_real_001"
-    assert enqueued == [data1["runId"]]
-
-    # 2. Calling without bodyVersionId -> auto-resolves report_body for "1차"
-    resp2 = client.post(
-        "/api/v1/projects/proj_1/runs",
-        json={"versionStage": "1차"},
-    )
-    assert resp2.status_code == 202
-    data2 = resp2.json()
-    assert data2["status"] == "queued"
-    assert rev_repo.runs[data2["runId"]]["body_version_id"] == "ver_body_real_001"
-    assert enqueued[-1] == data2["runId"]
-
-    assert orch_calls == [], "proofreading must not run inside the request"
