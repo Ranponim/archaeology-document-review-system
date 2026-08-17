@@ -752,6 +752,7 @@ async def test_gate_5_end_to_end_orchestrator_pipeline_on_golden_dataset(tmp_pat
         rule_engine=RuleEngine(),
         canonical_repo=canonical_repo,
         review_repo=review_repo,
+        allow_degraded_mode=True,
     )
 
     # 6. Execute Orchestration

@@ -515,6 +515,7 @@ async def test_rewired_orchestrator_degrades_explicitly_when_graph_has_no_eviden
     orchestrator = ProofreadingOrchestrator(
         canonical_repo=canonical_repo,
         review_repo=review_repo,
+        allow_degraded_mode=True,
     )
     result = await orchestrator.run_proofreading(
         project_id="proj_deg",
@@ -532,6 +533,208 @@ async def test_rewired_orchestrator_degrades_explicitly_when_graph_has_no_eviden
     assert any("DEGRADED" in w for w in result.warnings), (
         "degradation must be explicit and recorded, never silent"
     )
+
+
+@pytest.mark.anyio
+async def test_production_mode_fails_closed_when_graph_db_unavailable():
+    """Review P0-2: with allow_degraded_mode=False (production default), a
+    missing canonical repository fails the run closed with
+    GRAPH_EVIDENCE_UNAVAILABLE — never a silent in-memory fallback."""
+    driver = FakeNeo4jDriver()
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=None,
+        review_repo=review_repo,
+    )
+
+    with pytest.raises(RuntimeError, match="GRAPH_EVIDENCE_UNAVAILABLE"):
+        await orchestrator.run_proofreading(
+            project_id="proj_fail_closed",
+            body_version_id="ver_g",
+            body_pages=[_gate_d_page()],
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
+
+    failed_saves = [
+        q["kwargs"]
+        for q in driver.queries
+        if q["kwargs"].get("status") == "failed"
+        and q["kwargs"].get("error_code") == "GRAPH_EVIDENCE_UNAVAILABLE"
+    ]
+    assert failed_saves, "the run must be persisted as failed with GRAPH_EVIDENCE_UNAVAILABLE"
+
+
+@pytest.mark.anyio
+async def test_production_mode_fails_closed_when_bundle_query_raises():
+    """Review P0-2: a graph DB error during bundle retrieval fails the run
+    closed in production mode (never a silent in-memory fallback)."""
+
+    class _RaisingDriver(FakeNeo4jDriver):
+        def execute_query(self, query: str, **kwargs):
+            self.queries.append({"query": query, "kwargs": kwargs})
+            if "RETURN properties(obj) AS obj" in query:
+                raise RuntimeError("Database connection lost")
+            return [], None, None
+
+    driver = _RaisingDriver()
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+    )
+
+    with pytest.raises(RuntimeError, match="GRAPH_EVIDENCE_UNAVAILABLE"):
+        await orchestrator.run_proofreading(
+            project_id="proj_fail_closed_raise",
+            body_version_id="ver_g",
+            body_pages=[_gate_d_page()],
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
+
+    failed_saves = [
+        q["kwargs"]
+        for q in driver.queries
+        if q["kwargs"].get("status") == "failed"
+        and q["kwargs"].get("error_code") == "GRAPH_EVIDENCE_UNAVAILABLE"
+    ]
+    assert failed_saves, "the run must be persisted as failed with GRAPH_EVIDENCE_UNAVAILABLE"
+
+
+@pytest.mark.anyio
+async def test_production_mode_marks_object_unresolved_when_bundle_missing():
+    """Review P0-2: a required object graph bundle missing in production mode
+    marks the object unresolved/manual_review with a persisted reason and does
+    NOT produce a candidate from in-memory lists (anti-pattern #6)."""
+    driver = FakeNeo4jDriver()
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+    )
+
+    result = await orchestrator.run_proofreading(
+        project_id="proj_unresolved",
+        body_version_id="ver_g",
+        body_pages=[_gate_d_page()],
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+
+    assert result.status == "completed"
+    assert result.candidates == [], "no candidate may be produced from in-memory lists"
+    assert result.unresolved, "the object must be marked unresolved"
+    assert result.unresolved[0]["reason_code"] == "GRAPH_EVIDENCE_UNAVAILABLE"
+    assert result.summary["unresolved_objects"] == 1
+
+    unresolved_saves = [
+        q for q in driver.queries if "unresolvedObjects" in q["query"]
+    ]
+    assert unresolved_saves, "the unresolved reason must be persisted, never silently skipped"
+    entry = unresolved_saves[0]["kwargs"]["entry"]
+    assert entry["object_id"] == result.unresolved[0]["object_id"]
+    assert entry["reason_code"] == "GRAPH_EVIDENCE_UNAVAILABLE"
+
+
+@pytest.mark.anyio
+async def test_production_mode_produces_candidate_from_graph_evidence():
+    """Review P0-2: production mode (allow_degraded_mode=False) with a valid
+    graph bundle produces the candidate from graph evidence and records no
+    unresolved objects."""
+    driver = ScriptedFakeNeo4jDriver()
+    driver.respond(
+        "RETURN properties(obj) AS obj",
+        [{"obj": {"canonical_name": "1지점 청동기시대 1호 주거지"}}],
+    )
+    driver.respond("[:MENTIONS]->(obj:ArchaeologyObject", _graph_bundle_rows()[1:])
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+    )
+
+    result = await orchestrator.run_proofreading(
+        project_id="proj_prod_graph",
+        body_version_id="ver_g",
+        body_pages=[_gate_d_page()],
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+
+    assert result.status == "completed"
+    numeric = [c for c in result.candidates if c.rule_category == "numeric_value"]
+    assert numeric, "production mode must produce the candidate from graph evidence"
+    assert result.unresolved == []
+    assert not any("DEGRADED" in w for w in result.warnings)
+
+
+@pytest.mark.anyio
+async def test_kill_switch_relationship_deletion_changes_analysis_outcome():
+    """Review P0-2 / Test B (unit): deleting a load-bearing graph relationship
+    (simulated by an empty bundle on the second run) must change the analysis
+    OUTCOME — the candidate produced from graph evidence is NOT produced and
+    the object becomes unresolved with a persisted reason. A node-count-only
+    assertion is insufficient; the candidate outcome must change."""
+    # Run 1: valid graph evidence -> production mode produces the numeric candidate
+    driver = ScriptedFakeNeo4jDriver()
+    driver.respond(
+        "RETURN properties(obj) AS obj",
+        [{"obj": {"canonical_name": "1지점 청동기시대 1호 주거지"}}],
+    )
+    driver.respond("[:MENTIONS]->(obj:ArchaeologyObject", _graph_bundle_rows()[1:])
+    canonical_repo = CanonicalRepository(driver=driver, database="test_db")
+    review_repo = ReviewRepository(driver=driver, database="test_db")
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo,
+        review_repo=review_repo,
+    )
+    result = await orchestrator.run_proofreading(
+        project_id="proj_kill_switch",
+        body_version_id="ver_g",
+        body_pages=[_gate_d_page()],
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+    assert result.status == "completed"
+    numeric = [c for c in result.candidates if c.rule_category == "numeric_value"]
+    assert numeric, "run 1 must produce the numeric candidate from graph evidence"
+    assert result.unresolved == []
+
+    # Run 2: the load-bearing MENTIONS relationship is gone -> empty bundle
+    empty_driver = FakeNeo4jDriver()
+    canonical_repo2 = CanonicalRepository(driver=empty_driver, database="test_db")
+    review_repo2 = ReviewRepository(driver=empty_driver, database="test_db")
+    orchestrator2 = ProofreadingOrchestrator(
+        canonical_repo=canonical_repo2,
+        review_repo=review_repo2,
+    )
+    result2 = await orchestrator2.run_proofreading(
+        project_id="proj_kill_switch",
+        body_version_id="ver_g",
+        body_pages=[_gate_d_page()],
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+    assert result2.status == "completed"
+    numeric2 = [c for c in result2.candidates if c.rule_category == "numeric_value"]
+    assert numeric2 == [], (
+        "run 2 must NOT produce the candidate after the relationship is deleted"
+    )
+    assert result2.unresolved, "the object must be marked unresolved with a persisted reason"
+    assert result2.unresolved[0]["reason_code"] == "GRAPH_EVIDENCE_UNAVAILABLE"
+    assert result2.summary["unresolved_objects"] == 1
+
+    unresolved_saves = [
+        q for q in empty_driver.queries if "unresolvedObjects" in q["query"]
+    ]
+    assert unresolved_saves, "the unresolved reason must be persisted, never silently skipped"
+    entry = unresolved_saves[0]["kwargs"]["entry"]
+    assert entry["object_id"] == result2.unresolved[0]["object_id"]
+    assert entry["reason_code"] == "GRAPH_EVIDENCE_UNAVAILABLE"
 
 
 def _real_driver():

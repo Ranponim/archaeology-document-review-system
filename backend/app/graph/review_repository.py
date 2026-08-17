@@ -641,6 +641,38 @@ class ReviewRepository:
             **self._query_config(),
         )
 
+    def save_object_unresolved_reason(
+        self,
+        project_id: str,
+        run_id: str,
+        object_id: str,
+        reason_code: str,
+        message: str,
+    ) -> None:
+        """Persist a structured unresolved reason on the AnalysisRun node.
+
+        Production fail-closed (review P0-2): when a required object graph
+        evidence bundle is missing, the object's semantic consistency check is
+        skipped and the reason is recorded on the run — never silently dropped.
+        The run node carries an `unresolvedObjects` list of
+        {object_id, reason_code, message} entries so the outcome is auditable.
+        """
+        if self._driver is None:
+            return
+        self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $run_id})
+            SET run.unresolvedObjects = coalesce(run.unresolvedObjects, []) + [$entry]
+            """,
+            run_id=run_id,
+            entry={
+                "object_id": object_id,
+                "reason_code": reason_code,
+                "message": message,
+            },
+            **self._query_config(),
+        )
+
     def update_run_progress(
         self,
         run_id: str,

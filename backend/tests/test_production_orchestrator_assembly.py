@@ -7,6 +7,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -426,6 +427,77 @@ async def test_analysis_worker_non_contiguous_stages_fail_closed(
     all_queries = "\n".join(q["query"] for q in driver.queries)
     assert "PRECEDES" not in all_queries
     assert "ALIGNED_TO" not in all_queries
+
+
+@pytest.mark.anyio
+async def test_analysis_worker_fails_closed_when_graph_evidence_unavailable(
+    tmp_path: Path, asset_cache_dir
+):
+    """P0-B: a production worker run whose graph bundle query fails (graph DB
+    unavailable) fails the run closed with GRAPH_EVIDENCE_UNAVAILABLE — never
+    a silent in-memory success (review P0-2 / anti-pattern #6)."""
+    text = "1지점 청동기시대 1호 주거지 규모는 길이 275cm이다."
+    pdf1 = _make_text_pdf(tmp_path, "1.pdf", text)
+    proj_repo = FakeProjectRepository(
+        {"1차": _body_version("ver_1cha", "1차", pdf1)}
+    )
+    claim = _run_context("ver_1cha", "1차")
+
+    class _GraphDownDriver(FakeNeo4jDriver):
+        def __init__(self):
+            super().__init__()
+            self.claim_returned = False
+
+        def execute_query(self, query: str, **kwargs):
+            self.queries.append({"query": query, "kwargs": kwargs})
+            if not self.claim_returned and "run.attemptCount" in query:
+                self.claim_returned = True
+                return [FakeNeo4jRecord(claim)], None, None
+            if "RETURN properties(obj) AS obj" in query:
+                raise RuntimeError("Database connection lost")
+            return [], None, None
+
+    driver = _GraphDownDriver()
+    orch = _full_orchestrator(driver, proj_repo)
+
+    # pymupdf cannot embed the Korean font, so the real parser garbles the
+    # object mention; stub the parser so the body page carries it.
+    from app.domain.document_structure import ParsedPage, TextBlockData
+
+    korean_page = ParsedPage(
+        page_id="ver_1cha_p1",
+        physical_page=1,
+        printed_page=1,
+        header="",
+        raw_text=text,
+        normalized_text=text,
+        text_blocks=[
+            TextBlockData(
+                block_id="ver_1cha_p1_b1",
+                text=text,
+                normalized_text=text,
+                block_type="paragraph",
+                order=1,
+                source_sha256="sha256_body",
+            )
+        ],
+        source_sha256="sha256_body",
+    )
+    orch.pdf_parser.parse_pdf = MagicMock(return_value=[korean_page])
+
+    outcome = await _run_analysis_worker("run_graph_down", orch)
+
+    assert outcome["status"] == "failed"
+    assert outcome["executed"] is True
+    failed_saves = [
+        q["kwargs"]
+        for q in driver.queries
+        if q["kwargs"].get("status") == "failed"
+        and q["kwargs"].get("error_code") == "GRAPH_EVIDENCE_UNAVAILABLE"
+    ]
+    assert failed_saves, (
+        "the run must be persisted as failed with GRAPH_EVIDENCE_UNAVAILABLE"
+    )
 
 
 def test_run_trigger_response_preserves_warnings_field_when_run_is_queued():

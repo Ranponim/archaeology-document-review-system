@@ -57,6 +57,7 @@ class OrchestratorResult:
     summary: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    unresolved: list[dict[str, str]] = field(default_factory=list)
 
 
 STAGE_ORDER = {"1차": 0, "2차": 1, "3차": 2, "final": 3}
@@ -113,6 +114,7 @@ class ProofreadingOrchestrator:
         review_repo: ReviewRepository | None = None,
         vlm_service: VLMReviewService | None = None,
         project_repo: Any | None = None,
+        allow_degraded_mode: bool | None = None,
     ) -> None:
         self.pdf_parser = pdf_parser or PDFParser()
         self.plate_parser = plate_parser or PlateParser()
@@ -126,6 +128,11 @@ class ProofreadingOrchestrator:
         self.review_repo = review_repo
         self.vlm_service = vlm_service
         self.project_repo = project_repo
+        if allow_degraded_mode is None:
+            from app.config import get_allow_degraded_mode
+
+            allow_degraded_mode = get_allow_degraded_mode()
+        self.allow_degraded_mode = allow_degraded_mode
 
     @staticmethod
     def _compute_sha256(path: Path | str) -> str:
@@ -161,11 +168,15 @@ class ProofreadingOrchestrator:
         project_repo: Any | None = None,
         version_pages: dict[str, list[ParsedPage]] | None = None,
         version_ids: dict[str, str] | None = None,
+        allow_degraded_mode: bool | None = None,
     ) -> OrchestratorResult:
         run_id = analysis_run_id or f"run_{uuid.uuid4().hex[:12]}"
         errors: list[str] = []
         warnings: list[str] = []
+        unresolved: list[dict[str, str]] = []
         effective_project_repo = project_repo or self.project_repo
+        if allow_degraded_mode is None:
+            allow_degraded_mode = self.allow_degraded_mode
 
         # 0. Fail-closed validation for body_version_id
         if not body_version_id or not str(body_version_id).strip():
@@ -639,31 +650,93 @@ class ProofreadingOrchestrator:
         if self.review_repo is not None and all_evidences:
             self.review_repo.save_evidences(all_evidences)
 
-        # 7b. Graph evidence bundles (Task 7, Gate B). When the canonical
-        # repository is available, query the Neo4j graph for each object's
-        # evidence bundle and feed Rule/LLM with graph-derived evidence. The
-        # in-memory lists remain ONLY as an explicit degradation path with a
-        # recorded warning — never silently.
+        # 7b. Graph evidence bundles (Task 7, Gate B). Neo4j is a mandatory
+        # operational dependency of the proofreading flow (review P0-2 /
+        # anti-pattern #6). In production (allow_degraded_mode=False) a missing
+        # graph DB fails the run closed and a missing required object bundle
+        # marks the object unresolved/manual_review with a persisted reason —
+        # semantic checks never run on in-memory lists. Degraded mode (explicit
+        # in-memory fallback with a recorded warning) exists only for local
+        # development / explicit tests.
         graph_bundles: dict[str, ObjectEvidenceBundle] = {}
-        if self.canonical_repo is not None:
+        if self.canonical_repo is None:
+            if allow_degraded_mode:
+                warnings.append(
+                    "canonical repository unavailable — DEGRADED mode: "
+                    "in-memory evidence only"
+                )
+            else:
+                if self.review_repo is not None:
+                    self.review_repo.save_analysis_run(
+                        project_id=project_id,
+                        run_id=run_id,
+                        status="failed",
+                        step="proofreading",
+                        error_code="GRAPH_EVIDENCE_UNAVAILABLE",
+                        retryable=False,
+                    )
+                raise RuntimeError(
+                    "Neo4j canonical repository unavailable; production "
+                    "proofreading requires graph evidence "
+                    "(GRAPH_EVIDENCE_UNAVAILABLE)"
+                )
+        else:
             for obj in all_objects:
                 try:
                     bundle = self.canonical_repo.get_object_evidence_bundle(
                         obj.object_id, analysis_run_id=run_id
                     )
-                except Exception as exc:  # noqa: BLE001 - degrade explicitly
-                    warnings.append(
+                except Exception as exc:  # noqa: BLE001 - fail closed in production
+                    if allow_degraded_mode:
+                        warnings.append(
+                            f"graph evidence unavailable for object '{obj.object_id}': "
+                            f"{exc} — falling back to in-memory evidence (DEGRADED)"
+                        )
+                        continue
+                    if self.review_repo is not None:
+                        self.review_repo.save_analysis_run(
+                            project_id=project_id,
+                            run_id=run_id,
+                            status="failed",
+                            step="proofreading",
+                            error_code="GRAPH_EVIDENCE_UNAVAILABLE",
+                            retryable=False,
+                        )
+                    raise RuntimeError(
                         f"graph evidence unavailable for object '{obj.object_id}': "
-                        f"{exc} — falling back to in-memory evidence (DEGRADED)"
-                    )
-                    continue
+                        f"{exc} (GRAPH_EVIDENCE_UNAVAILABLE)"
+                    ) from exc
                 if bundle.has_graph_evidence():
                     graph_bundles[obj.object_id] = bundle
-                else:
+                elif allow_degraded_mode:
                     warnings.append(
                         f"graph evidence empty for object '{obj.object_id}' — "
                         "falling back to in-memory evidence (DEGRADED)"
                     )
+                else:
+                    unresolved.append(
+                        {
+                            "object_id": obj.object_id,
+                            "reason_code": "GRAPH_EVIDENCE_UNAVAILABLE",
+                            "message": (
+                                f"required object graph bundle missing for object "
+                                f"'{obj.object_id}' — semantic consistency check "
+                                "skipped"
+                            ),
+                        }
+                    )
+                    if self.review_repo is not None:
+                        self.review_repo.save_object_unresolved_reason(
+                            project_id=project_id,
+                            run_id=run_id,
+                            object_id=obj.object_id,
+                            reason_code="GRAPH_EVIDENCE_UNAVAILABLE",
+                            message=(
+                                f"required object graph bundle missing for object "
+                                f"'{obj.object_id}' — semantic consistency check "
+                                "skipped"
+                            ),
+                        )
 
         # 8. Run Consistency Rules & AI Review Pipelines
         all_candidates: list[CorrectionCandidateData] = []
@@ -684,7 +757,7 @@ class ProofreadingOrchestrator:
                             archaeology_object=obj,
                         )
                     )
-                else:
+                elif allow_degraded_mode:
                     rule_candidates.extend(
                         self.rule_engine.check_object_consistency(
                             archaeology_object=obj,
@@ -695,7 +768,8 @@ class ProofreadingOrchestrator:
                             drawings=all_drawings,
                         )
                     )
-        else:
+                # production: object already marked unresolved; semantic check skipped
+        elif allow_degraded_mode:
             rule_candidates = self.rule_engine.check_objects_consistency(
                 objects_with_evidences=objects_with_evidences,
                 plate_index=active_plate_index,
@@ -703,6 +777,8 @@ class ProofreadingOrchestrator:
                 plates=all_plates,
                 drawings=all_drawings,
             )
+        # production with no graph bundles: every object was marked unresolved
+        # (or the run already failed closed) — no in-memory candidates.
         for rc in rule_candidates:
             # Enforce auditability invariants
             cand = CorrectionCandidateData(
@@ -813,12 +889,26 @@ class ProofreadingOrchestrator:
                         refreshed = self.canonical_repo.get_object_evidence_bundle(
                             obj.object_id, analysis_run_id=run_id
                         )
-                    except Exception as exc:  # noqa: BLE001 - degrade explicitly
-                        warnings.append(
+                    except Exception as exc:  # noqa: BLE001 - fail closed in production
+                        if allow_degraded_mode:
+                            warnings.append(
+                                f"graph evidence refresh failed for object '{obj.object_id}': "
+                                f"{exc} — keeping pre-VLM bundle"
+                            )
+                            continue
+                        if self.review_repo is not None:
+                            self.review_repo.save_analysis_run(
+                                project_id=project_id,
+                                run_id=run_id,
+                                status="failed",
+                                step="proofreading",
+                                error_code="GRAPH_EVIDENCE_UNAVAILABLE",
+                                retryable=False,
+                            )
+                        raise RuntimeError(
                             f"graph evidence refresh failed for object '{obj.object_id}': "
-                            f"{exc} — keeping pre-VLM bundle"
-                        )
-                        continue
+                            f"{exc} (GRAPH_EVIDENCE_UNAVAILABLE)"
+                        ) from exc
                     if refreshed.has_graph_evidence():
                         graph_bundles[obj.object_id] = refreshed
                     else:
@@ -848,7 +938,7 @@ class ProofreadingOrchestrator:
                             version_stage=version_stage,
                             analysis_run_id=run_id,
                         )
-                    else:
+                    elif allow_degraded_mode:
                         warnings.append(
                             f"no graph evidence for object '{obj.object_id}' — "
                             "LLM review falls back to in-memory evidence (DEGRADED)"
@@ -863,6 +953,10 @@ class ProofreadingOrchestrator:
                             plates=all_plates,
                             drawings=all_drawings,
                         )
+                    else:
+                        # production: object already marked unresolved; LLM review
+                        # never runs on in-memory evidence
+                        continue
                     for ac in ai_cands:
                         for ev in ac.evidences:
                             if ev not in all_evidences:
@@ -918,6 +1012,7 @@ class ProofreadingOrchestrator:
             "total_objects": len(all_objects),
             "total_references": len(all_references),
             "resolved_references": resolved_refs_count,
+            "unresolved_objects": len(unresolved),
         }
 
         for c in deduped_candidates:
@@ -941,6 +1036,7 @@ class ProofreadingOrchestrator:
             summary=summary,
             errors=errors,
             warnings=warnings,
+            unresolved=unresolved,
         )
 
     def persist_version_alignment(

@@ -469,7 +469,9 @@ async def test_llm_receives_graph_bundle_fields_only_and_no_full_document_text(t
 
 async def test_llm_degrades_explicitly_to_in_memory_without_graph_evidence():
     """No graph evidence -> LLM falls back to the in-memory path with an
-    explicit DEGRADED warning (never silent), consistent with Task 7."""
+    explicit DEGRADED warning (never silent), consistent with Task 7. This is
+    the explicit degraded mode (allow_degraded_mode=True); production mode
+    fails closed instead (see test_graph_evidence_bundle kill-switch tests)."""
     driver = EmptyFakeNeo4jDriver()
     canonical_repo = CanonicalRepository(driver=driver, database="test_db")
     review_repo = ReviewRepository(driver=driver, database="test_db")
@@ -479,6 +481,7 @@ async def test_llm_degrades_explicitly_to_in_memory_without_graph_evidence():
         canonical_repo=canonical_repo,
         review_repo=review_repo,
         ai_review_service=ai,
+        allow_degraded_mode=True,
     )
     result = await orchestrator.run_proofreading(
         project_id="proj_llm_deg",

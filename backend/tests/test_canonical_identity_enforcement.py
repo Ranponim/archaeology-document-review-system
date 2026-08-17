@@ -282,6 +282,7 @@ async def test_production_orchestrator_quarantines_legacy_matching():
 
     orchestrator = ProofreadingOrchestrator(
         asset_matcher=matcher,
+        allow_degraded_mode=True,
     )
 
     result = await orchestrator.run_proofreading(

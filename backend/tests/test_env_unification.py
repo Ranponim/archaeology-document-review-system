@@ -1,10 +1,11 @@
 """Task 11 env unification tests: OPENROUTER_API_KEY is the canonical OpenRouter
 key; the legacy AI_API_KEY is honored only as an optional alias with a
-deprecation warning.
+deprecation warning. Also covers the P0-B ALLOW_DEGRADED_MODE flag whose
+production default is False (Neo4j is a mandatory operational dependency).
 """
 import pytest
 
-from app.config import get_openrouter_api_key
+from app.config import get_allow_degraded_mode, get_openrouter_api_key
 from app.services.openrouter_client import OpenRouterConfig
 
 
@@ -47,3 +48,21 @@ def test_openrouter_config_from_env_honors_legacy_alias(monkeypatch):
         config = OpenRouterConfig.from_env()
 
     assert config.api_key == "sk-legacy"
+
+
+def test_allow_degraded_mode_defaults_to_false(monkeypatch):
+    monkeypatch.delenv("ALLOW_DEGRADED_MODE", raising=False)
+
+    assert get_allow_degraded_mode() is False
+
+
+def test_allow_degraded_mode_true_when_env_set(monkeypatch):
+    monkeypatch.setenv("ALLOW_DEGRADED_MODE", "true")
+
+    assert get_allow_degraded_mode() is True
+
+
+def test_allow_degraded_mode_false_when_env_set_to_false(monkeypatch):
+    monkeypatch.setenv("ALLOW_DEGRADED_MODE", "false")
+
+    assert get_allow_degraded_mode() is False

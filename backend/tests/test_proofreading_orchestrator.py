@@ -246,6 +246,7 @@ async def test_full_pipeline_execution_with_preparsed_data():
         asset_matcher=AssetMatcher(plate_index=plate_index),
         rule_engine=RuleEngine(),
         ai_review_service=ai_service,
+        allow_degraded_mode=True,
     )
 
     result = await orchestrator.run_proofreading(
@@ -286,7 +287,7 @@ async def test_full_pipeline_with_real_plate_golden_fixture():
     assert GOLDEN_FIXTURE.is_file(), f"Golden fixture missing at {GOLDEN_FIXTURE}"
     pages = _create_sample_parsed_pages()
 
-    orchestrator = ProofreadingOrchestrator()
+    orchestrator = ProofreadingOrchestrator(allow_degraded_mode=True)
 
     result = await orchestrator.run_proofreading(
         project_id="proj_golden_test",
@@ -321,6 +322,7 @@ async def test_orchestrator_persists_to_neo4j_repositories():
     orchestrator = ProofreadingOrchestrator(
         canonical_repo=canonical_repo,
         review_repo=review_repo,
+        allow_degraded_mode=True,
     )
 
     result = await orchestrator.run_proofreading(
@@ -355,7 +357,7 @@ async def test_orchestrator_integrity_all_candidates_pending_review():
     plates = _create_sample_plates()
 
     # RuleEngine will detect blank references and other discrepancies
-    orchestrator = ProofreadingOrchestrator()
+    orchestrator = ProofreadingOrchestrator(allow_degraded_mode=True)
 
     result = await orchestrator.run_proofreading(
         project_id="proj_integrity",
@@ -398,6 +400,7 @@ async def test_orchestrator_vlm_integration(tmp_path: Path):
     orchestrator = ProofreadingOrchestrator(
         asset_review_pipeline=vlm_pipeline,
         vlm_service=mock_vlm,
+        allow_degraded_mode=True,
     )
 
     # Provide sample image bytes to simulate valid panel render
@@ -585,6 +588,7 @@ async def test_orchestrator_module_level_run_proofreading_helper():
         plates=plates,
         enable_vlm=False,
         enable_ai_review=False,
+        allow_degraded_mode=True,
     )
 
     assert isinstance(result, OrchestratorResult)
@@ -632,7 +636,7 @@ async def test_orchestrator_detects_archaeological_discrepancies_end_to_end():
         source_sha256="sha256_disc",
     )
 
-    orchestrator = ProofreadingOrchestrator()
+    orchestrator = ProofreadingOrchestrator(allow_degraded_mode=True)
 
     result = await orchestrator.run_proofreading(
         project_id="proj_discrepancy",
@@ -683,7 +687,10 @@ async def test_orchestrator_ai_grounding_rejects_hallucinated_candidates():
     )
 
     ai_service = AIReviewService(client=mock_client, model="openai/gpt-5.6-luna")
-    orchestrator = ProofreadingOrchestrator(ai_review_service=ai_service)
+    orchestrator = ProofreadingOrchestrator(
+        ai_review_service=ai_service,
+        allow_degraded_mode=True,
+    )
 
     result = await orchestrator.run_proofreading(
         project_id="proj_grounding_test",
