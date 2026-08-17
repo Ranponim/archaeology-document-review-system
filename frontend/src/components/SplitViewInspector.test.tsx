@@ -110,4 +110,31 @@ describe('SplitViewInspector real visual split view', () => {
       '/api/v1/assets/drawing-regions/draw_30_region_1/render',
     );
   });
+
+  it('renders informative fallback when visual bundle assets are unavailable', async () => {
+    apiMocks.fetchVisualBundle.mockResolvedValue({
+      candidateId: 'cand_1',
+      source: null,
+      canonical: null,
+    });
+    render(<SplitViewInspector projectId="proj_1" candidate={candidate} />);
+
+    const sourceFallback = await screen.findByTestId('source-fallback');
+    expect(sourceFallback).toBeInTheDocument();
+    expect(screen.getByText(/본문 시각 에셋 렌더링 준비 중/)).toBeInTheDocument();
+
+    const canonicalFallback = await screen.findByTestId('canonical-fallback');
+    expect(canonicalFallback).toBeInTheDocument();
+    expect(screen.getByText(/해당 에셋 렌더 없음/)).toBeInTheDocument();
+  });
+
+  it('supports zoom controls on rendered visual assets', async () => {
+    apiMocks.fetchVisualBundle.mockResolvedValue(bundle);
+    render(<SplitViewInspector projectId="proj_1" candidate={candidate} />);
+
+    await screen.findByTestId('source-img');
+    const zoomButtons = screen.getAllByRole('button', { name: '확대' });
+    expect(zoomButtons.length).toBeGreaterThan(0);
+  });
 });
+

@@ -35,6 +35,35 @@ export type AnalysisRun = {
   totalPages?: number | null;
 };
 
+export interface ReviewRound {
+  id: string;
+  projectId?: string;
+  project_id?: string;
+  sequence: number;
+  status: 'draft' | 'reviewing' | 'revisions_requested' | 'approved';
+  bodyVersionId?: string | null;
+  body_version_id?: string | null;
+  plateVersionId?: string | null;
+  plate_version_id?: string | null;
+  drawingVersionId?: string | null;
+  drawing_version_id?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+  approvedAt?: string | null;
+  approved_at?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateReviewRoundPayload {
+  body_version_id?: string | null;
+  bodyVersionId?: string | null;
+  plate_version_id?: string | null;
+  plateVersionId?: string | null;
+  drawing_version_id?: string | null;
+  drawingVersionId?: string | null;
+  notes?: string | null;
+}
+
 export type ProjectDetail = Project & {
   documents: Document[];
   documentVersions: DocumentVersion[];
@@ -494,3 +523,52 @@ export async function retryAnalysisRun(
   );
   return decode<RetryAnalysisRunResponse>(response);
 }
+
+export async function fetchReviewRounds(projectId: string): Promise<ReviewRound[]> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/rounds`);
+  const data = await decode<{ items?: ReviewRound[] } | ReviewRound[]>(response);
+  if (Array.isArray(data)) return data;
+  return data.items ?? [];
+}
+
+export async function fetchReviewRound(
+  projectId: string,
+  roundId: string,
+): Promise<ReviewRound> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/rounds/${encodeURIComponent(roundId)}`,
+  );
+  return decode<ReviewRound>(response);
+}
+
+export async function createReviewRound(
+  projectId: string,
+  payload: CreateReviewRoundPayload,
+): Promise<ReviewRound> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/rounds`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      body_version_id: payload.body_version_id ?? payload.bodyVersionId ?? null,
+      plate_version_id: payload.plate_version_id ?? payload.plateVersionId ?? null,
+      drawing_version_id: payload.drawing_version_id ?? payload.drawingVersionId ?? null,
+      notes: payload.notes ?? null,
+    }),
+  });
+  return decode<ReviewRound>(response);
+}
+
+export async function approveReviewRound(
+  projectId: string,
+  roundId: string,
+): Promise<ReviewRound> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/rounds/${encodeURIComponent(roundId)}/approve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+  );
+  return decode<ReviewRound>(response);
+}
+

@@ -13,6 +13,10 @@ const apiMocks = vi.hoisted(() => ({
   fetchTraceability: vi.fn(),
   fetchVisualBundle: vi.fn(),
   retryAnalysisRun: vi.fn(),
+  fetchReviewRounds: vi.fn(),
+  fetchReviewRound: vi.fn(),
+  createReviewRound: vi.fn(),
+  approveReviewRound: vi.fn(),
 }));
 
 vi.mock('../api', async (importOriginal) => {
@@ -74,6 +78,7 @@ beforeEach(() => {
   apiMocks.fetchTraceability.mockResolvedValue({});
   apiMocks.fetchVisualBundle.mockResolvedValue({ candidateId: 'x' });
   apiMocks.getProject.mockResolvedValue(makeDetail());
+  apiMocks.fetchReviewRounds.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -81,10 +86,10 @@ afterEach(() => {
 });
 
 describe('ProjectDetailPage upload form', () => {
-  it('shows document kind and revision stage selectors before upload', () => {
+  it('shows document kind and revision stage selectors before upload', async () => {
     render(<ProjectDetailPage project={project} />);
 
-    const kind = screen.getByLabelText('문서 종류');
+    const kind = await screen.findByLabelText('문서 종류');
     expect(kind).toBeInTheDocument();
     expect(within(kind).getByRole('option', { name: '본문' })).toBeInTheDocument();
     expect(within(kind).getByRole('option', { name: '도판' })).toBeInTheDocument();
@@ -359,5 +364,177 @@ describe('ProjectDetailPage retry + severity honesty', () => {
     expect(screen.queryByLabelText('중요도:')).toBeNull();
     expect(screen.queryByLabelText('중요도')).toBeNull();
     expect(screen.queryByRole('option', { name: '높음 (High)' })).toBeNull();
+  });
+});
+
+describe('ProjectDetailPage Review Round Management', () => {
+  it('fetches and displays review rounds with sequence and status badges', async () => {
+    apiMocks.fetchReviewRounds.mockResolvedValue([
+      {
+        id: 'round_1',
+        projectId: 'proj_1',
+        sequence: 1,
+        status: 'approved',
+        bodyVersionId: 'ver_body_1',
+        plateVersionId: 'ver_plate_1',
+        drawingVersionId: 'ver_draw_1',
+        notes: '1차 완독 검수 완료',
+      },
+      {
+        id: 'round_2',
+        projectId: 'proj_1',
+        sequence: 2,
+        status: 'reviewing',
+        bodyVersionId: 'ver_body_2',
+        plateVersionId: 'ver_plate_1',
+        drawingVersionId: 'ver_draw_1',
+        notes: '2차 수정본 검수 중',
+      },
+    ]);
+
+    render(<ProjectDetailPage project={project} />);
+
+    expect(await screen.findByText('1차 검수')).toBeInTheDocument();
+    expect(screen.getByText('2차 검수')).toBeInTheDocument();
+    expect(screen.getAllByText('검수중').length).toBeGreaterThan(0);
+  });
+
+  it('creates a new review round with asset reuse checkboxes and notes', async () => {
+    const user = userEvent.setup();
+    apiMocks.fetchReviewRounds.mockResolvedValue([
+      {
+        id: 'round_1',
+        projectId: 'proj_1',
+        sequence: 1,
+        status: 'approved',
+        bodyVersionId: 'ver_body_1',
+        plateVersionId: 'ver_plate_1',
+        drawingVersionId: 'ver_draw_1',
+      },
+    ]);
+    apiMocks.createReviewRound.mockResolvedValue({
+      id: 'round_2',
+      projectId: 'proj_1',
+      sequence: 2,
+      status: 'draft',
+      bodyVersionId: 'ver_body_1',
+      plateVersionId: 'ver_plate_1',
+      drawingVersionId: 'ver_draw_1',
+      notes: '2차 도판 재사용 검수',
+    });
+
+    render(<ProjectDetailPage project={project} />);
+
+    const createBtn = await screen.findByRole('button', { name: '+ 새 검수 라운드 생성' });
+    await user.click(createBtn);
+
+    expect(screen.getByText('새 검수 라운드 생성')).toBeInTheDocument();
+    expect(screen.getByLabelText(/이전 도판 재사용/)).toBeChecked();
+    expect(screen.getByLabelText(/이전 도면 재사용/)).toBeChecked();
+
+    const notesInput = screen.getByLabelText(/검수 차수 메모/);
+    await user.type(notesInput, '2차 도판 재사용 검수');
+
+    const submitBtn = screen.getByRole('button', { name: '검수 라운드 생성' });
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(apiMocks.createReviewRound).toHaveBeenCalledWith(
+        'proj_1',
+        expect.objectContaining({
+          body_version_id: 'ver_body_1',
+          plate_version_id: 'ver_plate_1',
+          drawing_version_id: 'ver_draw_1',
+          notes: '2차 도판 재사용 검수',
+        }),
+      );
+    });
+  });
+
+  it('approves an active review round when the approve button is clicked', async () => {
+    const user = userEvent.setup();
+    apiMocks.fetchReviewRounds.mockResolvedValue([
+      {
+        id: 'round_1',
+        projectId: 'proj_1',
+        sequence: 1,
+        status: 'reviewing',
+        bodyVersionId: 'ver_body_1',
+        plateVersionId: 'ver_plate_1',
+        drawingVersionId: 'ver_draw_1',
+      },
+    ]);
+    apiMocks.approveReviewRound.mockResolvedValue({
+      id: 'round_1',
+      projectId: 'proj_1',
+      sequence: 1,
+      status: 'approved',
+      approved_at: '2026-08-17T16:00:00Z',
+    });
+
+    render(<ProjectDetailPage project={project} />);
+
+    const approveBtn = await screen.findByRole('button', { name: '✓ 검수 라운드 승인' });
+    await user.click(approveBtn);
+
+    await waitFor(() => {
+      expect(apiMocks.approveReviewRound).toHaveBeenCalledWith('proj_1', 'round_1');
+    });
+    expect(await screen.findByText('✓ 승인 완료 (Approved)')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPage Batch Upload & Pipeline Progress', () => {
+  it('supports multi-file selection for batch upload', async () => {
+    const user = userEvent.setup();
+    let uploadCount = 0;
+    apiMocks.uploadDocument.mockImplementation(async () => {
+      uploadCount += 1;
+      return {
+        documentVersionId: `ver_batch_${uploadCount}`,
+        analysisRunId: `run_batch_${uploadCount}`,
+      };
+    });
+
+    render(<ProjectDetailPage project={project} />);
+
+    const fileInput = screen.getByLabelText('원본 파일') as HTMLInputElement;
+    expect(fileInput.multiple).toBe(true);
+
+    const file1 = new File(['dummy content 1'], '도판-일괄.pdf', { type: 'application/pdf' });
+    const file2 = new File(['dummy content 2'], '도면-일괄.pdf', { type: 'application/pdf' });
+
+    await user.upload(fileInput, [file1, file2]);
+
+    await waitFor(() => {
+      expect(apiMocks.uploadDocument).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('renders pipeline stage progress indicators for active analysis runs', async () => {
+    apiMocks.getProject.mockResolvedValue(
+      makeDetail({
+        analysisRuns: [
+          {
+            id: 'run_prog_1',
+            status: 'running',
+            step: 'ingest',
+            documentVersionId: 'ver_body_1',
+            errorCode: null,
+            retryable: false,
+            progressStage: '파싱 중',
+            currentPage: 5,
+            totalPages: 10,
+          },
+        ],
+      }),
+    );
+
+    render(<ProjectDetailPage project={project} />);
+
+    expect(await screen.findByText(/5 \/ 10 페이지/)).toBeInTheDocument();
+    expect(screen.getAllByText(/파싱 중/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('엔티티 추출 중').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('시각 에셋 대조 중').length).toBeGreaterThan(0);
   });
 });

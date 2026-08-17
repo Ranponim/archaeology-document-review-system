@@ -5,15 +5,20 @@ import {
   type CandidateFilters,
   type CandidateVisualBundle,
   type CorrectionCandidate,
+  type CreateReviewRoundPayload,
   type DocumentVersion,
   type Project,
   type ProjectDetail,
   type ReviewDecision,
   type ReviewMetrics,
+  type ReviewRound,
   type RunTriggerResponse,
   type TraceabilityResponse,
+  approveReviewRound,
+  createReviewRound,
   fetchCandidates,
   fetchMetrics,
+  fetchReviewRounds,
   fetchTraceability,
   fetchVisualBundle,
   getProject,
@@ -44,12 +49,23 @@ const STAGE_LABELS: Record<string, string> = {
   final: '최종',
 };
 
+const ROUND_STATUS_LABELS: Record<string, string> = {
+  draft: '초안',
+  reviewing: '검수중',
+  revisions_requested: '수정요청',
+  approved: '승인됨',
+};
+
 function kindLabel(kind: string | undefined): string {
   return kind ? KIND_LABELS[kind] ?? kind : '문서';
 }
 
 function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage;
+}
+
+function roundStatusLabel(status: string): string {
+  return ROUND_STATUS_LABELS[status] ?? status;
 }
 
 function versionLabel(version: DocumentVersion, kind: string): string {
@@ -70,6 +86,19 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   // Upload form state
   const [uploadKind, setUploadKind] = useState('report_body');
   const [uploadStage, setUploadStage] = useState('1차');
+
+  // Review Rounds State
+  const [rounds, setRounds] = useState<ReviewRound[]>([]);
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
+  const [isCreateRoundOpen, setIsCreateRoundOpen] = useState(false);
+  const [newRoundBodyVersionId, setNewRoundBodyVersionId] = useState('');
+  const [reusePlate, setReusePlate] = useState(true);
+  const [reuseDrawing, setReuseDrawing] = useState(true);
+  const [customPlateVersionId, setCustomPlateVersionId] = useState('');
+  const [customDrawingVersionId, setCustomDrawingVersionId] = useState('');
+  const [roundNotes, setRoundNotes] = useState('');
+  const [creatingRound, setCreatingRound] = useState(false);
+  const [approvingRound, setApprovingRound] = useState(false);
 
   // Proofreading & Candidates State
   const [runningProofread, setRunningProofread] = useState(false);
@@ -99,6 +128,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
 
   // Active View Tab for Inspector
   const [activeTab, setActiveTab] = useState<TabType>('split');
+
 
   // Load project details, candidates, and metrics
   const loadReviewData = useCallback(async () => {
@@ -280,40 +310,116 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     [project.id, loadReviewData],
   );
 
-  async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file || uploading) return;
+  const loadReviewRounds = useCallback(async () => {
+    try {
+      const items = await fetchReviewRounds(project.id);
+      setRounds(items);
+      if (items.length > 0) {
+        setSelectedRoundId((prev) =>
+          prev && items.some((r) => r.id === prev) ? prev : items[items.length - 1].id,
+        );
+      }
+    } catch {
+      // Non-critical data loading error
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    void loadReviewRounds();
+  }, [loadReviewRounds]);
+
+  const latestRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+
+  async function handleCreateRound(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreatingRound(true);
+    setErrorCode(null);
+    try {
+      const finalPlateId = reusePlate
+        ? (latestRound?.plateVersionId ?? latestRound?.plate_version_id ?? plateVersionId ?? null)
+        : (customPlateVersionId || null);
+      const finalDrawingId = reuseDrawing
+        ? (latestRound?.drawingVersionId ?? latestRound?.drawing_version_id ?? drawingVersionId ?? null)
+        : (customDrawingVersionId || null);
+
+      const targetBodyId = newRoundBodyVersionId || bodyVersionId || (bodyVersions[0]?.id ?? null);
+
+      const newRound = await createReviewRound(project.id, {
+        body_version_id: targetBodyId,
+        plate_version_id: finalPlateId,
+        drawing_version_id: finalDrawingId,
+        notes: roundNotes || null,
+      });
+
+      setRounds((prev) => [...prev, newRound]);
+      setSelectedRoundId(newRound.id);
+      setIsCreateRoundOpen(false);
+      setRoundNotes('');
+    } catch (err) {
+      setErrorCode(err instanceof Error ? err.message : '새 검수 라운드 생성에 실패했습니다.');
+    } finally {
+      setCreatingRound(false);
+    }
+  }
+
+  async function handleApproveRound(roundId: string) {
+    setApprovingRound(true);
+    setErrorCode(null);
+    try {
+      const updated = await approveReviewRound(project.id, roundId);
+      setRounds((prev) =>
+        prev.map((r) => (r.id === roundId ? { ...r, ...updated, status: 'approved' } : r)),
+      );
+    } catch (err) {
+      setErrorCode(err instanceof Error ? err.message : '검수 라운드 승인에 실패했습니다.');
+    } finally {
+      setApprovingRound(false);
+    }
+  }
+
+  async function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files || files.length === 0 || uploading) return;
 
     setUploading(true);
     setErrorCode(null);
     try {
-      const accepted = await uploadDocument(project.id, file, uploadKind, uploadStage);
-      setDetail((current) => ({
-        ...current,
-        documentVersions: [
-          ...current.documentVersions,
-          {
-            id: accepted.documentVersionId,
-            documentId: accepted.documentVersionId,
-            originalName: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            sizeBytes: file.size,
-            stage: uploadStage,
-            kind: uploadKind,
-          },
-        ],
-        analysisRuns: [
-          ...current.analysisRuns,
-          {
-            id: accepted.analysisRunId,
-            status: 'queued',
-            step: 'ingest',
-            documentVersionId: accepted.documentVersionId,
-            errorCode: null,
-            retryable: false,
-          },
-        ],
-      }));
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let kind = uploadKind;
+        const lower = file.name.toLowerCase();
+        if (lower.includes('도판') || lower.includes('plate')) kind = 'plate_book';
+        else if (lower.includes('도면') || lower.includes('drawing')) kind = 'drawing_book';
+        else if (lower.includes('본문') || lower.includes('body')) kind = 'report_body';
+
+        const accepted = await uploadDocument(project.id, file, kind, uploadStage);
+        setDetail((current) => ({
+          ...current,
+          documentVersions: [
+            ...current.documentVersions,
+            {
+              id: accepted.documentVersionId,
+              documentId: accepted.documentVersionId,
+              originalName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              sizeBytes: file.size,
+              stage: uploadStage,
+              kind,
+            },
+          ],
+          analysisRuns: [
+            ...current.analysisRuns,
+            {
+              id: accepted.analysisRunId,
+              status: 'queued',
+              step: 'ingest',
+              documentVersionId: accepted.documentVersionId,
+              errorCode: null,
+              retryable: false,
+            },
+          ],
+        }));
+      }
       void refreshLater();
     } catch (error) {
       setErrorCode(error instanceof ApiError ? error.code : 'server_error');
@@ -418,6 +524,10 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     candidates.find((c) => c.id === selectedCandidateId) ||
     (candidates.length > 0 ? candidates[0] : null);
 
+  const selectedRound =
+    rounds.find((r) => r.id === selectedRoundId) ||
+    (rounds.length > 0 ? rounds[rounds.length - 1] : null);
+
   const selectedTraceability = selectedCandidate
     ? traceabilityMap[selectedCandidate.id] || null
     : null;
@@ -518,7 +628,8 @@ export function ProjectDetailPage({ project, onBack }: Props) {
               type="file"
               accept="application/pdf,.pdf"
               aria-label="원본 파일"
-              onChange={chooseFile}
+              multiple
+              onChange={chooseFiles}
               disabled={uploading}
             />
           </label>
@@ -526,6 +637,242 @@ export function ProjectDetailPage({ project, onBack }: Props) {
       </div>
 
       {errorCode && <p className="error-code">{errorCode}</p>}
+
+      {/* REVIEW ROUNDS MANAGEMENT PANEL */}
+      <section className="panel review-rounds-panel" aria-labelledby="rounds-panel-title">
+        <div className="panel-header-row">
+          <div>
+            <p className="section-label">REVIEW ROUND MANAGEMENT</p>
+            <h2 id="rounds-panel-title">검수 라운드 관리 및 승인</h2>
+          </div>
+          <button
+            type="button"
+            className="btn-create-round"
+            onClick={() => setIsCreateRoundOpen(true)}
+          >
+            + 새 검수 라운드 생성
+          </button>
+        </div>
+
+        {/* Round Selector Tabs */}
+        {rounds.length === 0 ? (
+          <p className="empty-state">
+            등록된 검수 라운드가 없습니다. 상단의 <strong>[+ 새 검수 라운드 생성]</strong>을 클릭하여 1차 검수를 시작하세요.
+          </p>
+        ) : (
+          <div className="rounds-container">
+            <div className="round-tabs-bar" role="tablist" aria-label="검수 라운드 탭 목록">
+              {rounds.map((r) => {
+                const isSelected = r.id === selectedRound?.id;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isSelected}
+                    className={`round-tab-item ${isSelected ? 'active' : ''}`}
+                    onClick={() => setSelectedRoundId(r.id)}
+                  >
+                    <span className="round-tab-sequence">{r.sequence}차 검수</span>
+                    <span className={`status-badge status-${r.status}`}>
+                      {roundStatusLabel(r.status)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Round Info & Action Box */}
+            {selectedRound && (
+              <div className="active-round-card">
+                <div className="active-round-header">
+                  <div className="round-info-title">
+                    <span className="round-badge-large">{selectedRound.sequence}차 검수 라운드</span>
+                    <span className={`status status-${selectedRound.status}`}>
+                      {roundStatusLabel(selectedRound.status)}
+                    </span>
+                  </div>
+                  <div className="round-actions">
+                    {selectedRound.status !== 'approved' ? (
+                      <button
+                        type="button"
+                        className="btn-approve-round"
+                        onClick={() => void handleApproveRound(selectedRound.id)}
+                        disabled={approvingRound}
+                      >
+                        {approvingRound ? '승인 처리 중...' : '✓ 검수 라운드 승인'}
+                      </button>
+                    ) : (
+                      <span className="approved-stamp">✓ 승인 완료 (Approved)</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="active-round-details-grid">
+                  <div className="detail-item">
+                    <span className="detail-label">본문 버전:</span>
+                    <span className="detail-value">
+                      <code>{selectedRound.bodyVersionId ?? selectedRound.body_version_id ?? '미지정'}</code>
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">도판 버전:</span>
+                    <span className="detail-value">
+                      <code>{selectedRound.plateVersionId ?? selectedRound.plate_version_id ?? '이전 차수 도판 재사용 / 미지정'}</code>
+                    </span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">도면 버전:</span>
+                    <span className="detail-value">
+                      <code>{selectedRound.drawingVersionId ?? selectedRound.drawing_version_id ?? '이전 차수 도면 재사용 / 미지정'}</code>
+                    </span>
+                  </div>
+                  {selectedRound.notes && (
+                    <div className="detail-item full-width">
+                      <span className="detail-label">차수 메모:</span>
+                      <span className="detail-value">{selectedRound.notes}</span>
+                    </div>
+                  )}
+                  {selectedRound.created_at || selectedRound.createdAt ? (
+                    <div className="detail-item">
+                      <span className="detail-label">생성 일시:</span>
+                      <span className="detail-value">
+                        {selectedRound.created_at ?? selectedRound.createdAt}
+                      </span>
+                    </div>
+                  ) : null}
+                  {selectedRound.approved_at || selectedRound.approvedAt ? (
+                    <div className="detail-item">
+                      <span className="detail-label">승인 일시:</span>
+                      <span className="detail-value">
+                        {selectedRound.approved_at ?? selectedRound.approvedAt}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Modal for creating a new review round */}
+        {isCreateRoundOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-round-modal-title">
+            <div className="modal-card">
+              <div className="modal-header">
+                <h3 id="create-round-modal-title">새 검수 라운드 생성</h3>
+                <button
+                  type="button"
+                  className="btn-close-modal"
+                  onClick={() => setIsCreateRoundOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleCreateRound} className="modal-form">
+                <div className="form-field">
+                  <label htmlFor="modal-body-version">본문 문서 버전</label>
+                  <select
+                    id="modal-body-version"
+                    value={newRoundBodyVersionId || bodyVersionId}
+                    onChange={(e) => setNewRoundBodyVersionId(e.target.value)}
+                  >
+                    {bodyVersions.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {versionLabel(v, versionKind(v))} ({v.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="asset-reuse-section">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={reusePlate}
+                      onChange={(e) => setReusePlate(e.target.checked)}
+                    />
+                    <span>이전 도판 재사용</span>
+                  </label>
+                  {!reusePlate && (
+                    <div className="form-field sub-field">
+                      <label htmlFor="modal-plate-version">도판 버전 선택</label>
+                      <select
+                        id="modal-plate-version"
+                        value={customPlateVersionId}
+                        onChange={(e) => setCustomPlateVersionId(e.target.value)}
+                      >
+                        <option value="">도판 버전 선택 안 함</option>
+                        {plateVersions.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {versionLabel(v, versionKind(v))} ({v.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="asset-reuse-section">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={reuseDrawing}
+                      onChange={(e) => setReuseDrawing(e.target.checked)}
+                    />
+                    <span>이전 도면 재사용</span>
+                  </label>
+                  {!reuseDrawing && (
+                    <div className="form-field sub-field">
+                      <label htmlFor="modal-drawing-version">도면 버전 선택</label>
+                      <select
+                        id="modal-drawing-version"
+                        value={customDrawingVersionId}
+                        onChange={(e) => setCustomDrawingVersionId(e.target.value)}
+                      >
+                        <option value="">도면 버전 선택 안 함</option>
+                        {drawingVersions.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {versionLabel(v, versionKind(v))} ({v.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="modal-round-notes">검수 차수 메모 / 수정 지시사항</label>
+                  <textarea
+                    id="modal-round-notes"
+                    rows={3}
+                    value={roundNotes}
+                    onChange={(e) => setRoundNotes(e.target.value)}
+                    placeholder="예: 2차 수정본 대조 및 도판 번호 교차 재검증"
+                  />
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => setIsCreateRoundOpen(false)}
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-create-submit"
+                    disabled={creatingRound}
+                  >
+                    {creatingRound ? '생성 중...' : '검수 라운드 생성'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Analysis Runs & Proofreading Trigger Panel */}
       <section className="panel proofreading-panel" aria-labelledby="proofread-panel-title">
@@ -695,6 +1042,25 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                         )}
                       </div>
                     )}
+
+                    {/* Pipeline Stage Indicators */}
+                    <div className="run-stages-track">
+                      <span className={`stage-badge ${run?.status === 'completed' || isRunning ? 'active' : ''}`}>
+                        {isRunning && (!run?.progressStage || run.progressStage.includes('파싱')) ? '▶ 파싱 중' : '파싱 중'}
+                      </span>
+                      <span className="stage-arrow">→</span>
+                      <span className={`stage-badge ${run?.status === 'completed' || (isRunning && (run?.progressStage?.includes('추출') || run?.step === 'analysis')) ? 'active' : ''}`}>
+                        {isRunning && run?.progressStage?.includes('추출') ? '▶ 엔티티 추출 중' : '엔티티 추출 중'}
+                      </span>
+                      <span className="stage-arrow">→</span>
+                      <span className={`stage-badge ${run?.status === 'completed' || (isRunning && (run?.progressStage?.includes('대조') || run?.progressStage?.includes('vlm'))) ? 'active' : ''}`}>
+                        {isRunning && run?.progressStage?.includes('대조') ? '▶ 시각 에셋 대조 중' : '시각 에셋 대조 중'}
+                      </span>
+                      <span className="stage-arrow">→</span>
+                      <span className={`stage-badge ${run?.status === 'completed' ? 'active completed' : ''}`}>
+                        {run?.status === 'completed' ? '✓ 완료' : '완료'}
+                      </span>
+                    </div>
 
                     {isQueued && (
                       <div className="run-progress-box" style={{ background: '#fdfaf5', borderColor: '#e0d6c4' }}>

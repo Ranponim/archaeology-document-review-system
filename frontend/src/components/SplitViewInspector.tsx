@@ -262,6 +262,14 @@ export function SplitViewInspector({
               testIdPrefix="source"
             />
           )}
+          {!loadingVisual && !sourceAsset && (
+            <VisualAssetPane
+              asset={null}
+              title="본문 PDF — 실제 렌더 페이지"
+              testIdPrefix="source"
+              fallbackMessage="본문 시각 에셋 렌더링 준비 중"
+            />
+          )}
 
           <div className="pane-meta-grid">
             <div className="meta-item">
@@ -334,6 +342,14 @@ export function SplitViewInspector({
               title="표준 도판 / 사진 — 실제 패널 이미지"
               subtitle={canonicalAsset.printedIdentifier ?? undefined}
               testIdPrefix="canonical"
+            />
+          )}
+          {!loadingVisual && !canonicalAsset && !canonicalIsDrawing && (
+            <VisualAssetPane
+              asset={null}
+              title="표준 도판 / 사진 — 실제 패널 이미지"
+              testIdPrefix="canonical"
+              fallbackMessage="해당 에셋 렌더 없음"
             />
           )}
           {!loadingVisual && canonicalIsDrawing && (
