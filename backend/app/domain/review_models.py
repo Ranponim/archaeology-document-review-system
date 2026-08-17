@@ -10,15 +10,6 @@ RuleCategory = Literal[
     "direction_period_term",
 ]
 
-RuleCategory = Literal[
-    "figure_plate_table_photo_ref",
-    "annotation_resolution",
-    "feature_or_artifact_id",
-    "numeric_value",
-    "site_or_area_name",
-    "direction_period_term",
-]
-
 ChangeType = Literal["added", "deleted", "modified", "moved"]
 ReviewStatus = Literal[
     "confirmed",
