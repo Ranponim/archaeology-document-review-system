@@ -22,10 +22,12 @@ from app.domain.models import (
     StoredFile,
     VersionInput,
 )
+from app.domain.review_round import ReviewRound
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
     DocumentVersionNotFoundError,
     ProjectNotFoundError,
+    ReviewRoundNotFoundError,
 )
 from app.services.file_store import FileStore
 
@@ -81,6 +83,25 @@ class ProjectRepositoryPort(Protocol):
 
     def prepare_ingest_retry(self, project_id: str, analysis_run_id: str) -> str: ...
 
+    def create_review_round(
+        self,
+        project_id: str,
+        body_version_id: str | None = None,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        notes: str | None = None,
+    ) -> ReviewRound: ...
+
+    def list_review_rounds(self, project_id: str) -> list[ReviewRound]: ...
+
+    def get_review_round(
+        self, project_id: str, round_id: str
+    ) -> ReviewRound | None: ...
+
+    def approve_review_round(
+        self, project_id: str, round_id: str
+    ) -> ReviewRound: ...
+
 
 
 def get_file_store(request: Request) -> FileStore:
@@ -104,6 +125,8 @@ async def _run_repository(operation, *args):
     except ProjectNotFoundError:
         raise
     except AnalysisRunNotFoundError:
+        raise
+    except ReviewRoundNotFoundError:
         raise
     except Exception:  # noqa: BLE001 - sanitize adapter failures at the API boundary
         raise ServerOperationError from None

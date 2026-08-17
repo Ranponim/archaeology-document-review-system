@@ -15,14 +15,20 @@ from app.api.schemas import (
     CandidateListResponse,
     CandidateResponse,
     CandidateVisualBundle,
+    CreateReviewRoundRequest,
     ReviewDecisionRequest,
     ReviewDecisionResponse,
     ReviewMetricsResponse,
+    ReviewRoundListResponse,
+    ReviewRoundResponse,
     RunTriggerRequest,
     RunTriggerResponse,
     TraceabilityResponse,
 )
-from app.graph.project_repository import DocumentVersionNotFoundError
+from app.graph.project_repository import (
+    DocumentVersionNotFoundError,
+    ReviewRoundNotFoundError,
+)
 from app.graph.review_repository import ReviewRepository
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.visual_asset_service import VisualAssetService
@@ -357,3 +363,132 @@ async def get_project_review_metrics(
         review_repository.get_metrics, project_id
     )
     return ReviewMetricsResponse.model_validate(metrics_data)
+
+
+# =============================================================================
+# 7. Review Round Endpoints (Review 1)
+# =============================================================================
+
+
+@router.post(
+    "/{project_id}/rounds",
+    response_model=ReviewRoundResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_review_round(
+    project_id: str,
+    payload: CreateReviewRoundRequest,
+    project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+) -> ReviewRoundResponse:
+    await _run_repository(project_repository.get_project, project_id)
+    round_obj = await _run_repository(
+        project_repository.create_review_round,
+        project_id,
+        payload.body_version_id,
+        payload.plate_version_id,
+        payload.drawing_version_id,
+        payload.notes,
+    )
+    return ReviewRoundResponse(
+        id=round_obj.id,
+        project_id=round_obj.project_id,
+        sequence=round_obj.sequence,
+        status=round_obj.status,
+        body_version_id=round_obj.body_version_id,
+        plate_version_id=round_obj.plate_version_id,
+        drawing_version_id=round_obj.drawing_version_id,
+        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
+        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
+        notes=round_obj.notes,
+    )
+
+
+@router.get(
+    "/{project_id}/rounds",
+    response_model=ReviewRoundListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_review_rounds(
+    project_id: str,
+    project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+) -> ReviewRoundListResponse:
+    await _run_repository(project_repository.get_project, project_id)
+    rounds = await _run_repository(project_repository.list_review_rounds, project_id)
+    return ReviewRoundListResponse(
+        items=[
+            ReviewRoundResponse(
+                id=r.id,
+                project_id=r.project_id,
+                sequence=r.sequence,
+                status=r.status,
+                body_version_id=r.body_version_id,
+                plate_version_id=r.plate_version_id,
+                drawing_version_id=r.drawing_version_id,
+                created_at=str(r.created_at) if r.created_at is not None else None,
+                approved_at=str(r.approved_at) if r.approved_at is not None else None,
+                notes=r.notes,
+            )
+            for r in rounds
+        ]
+    )
+
+
+@router.get(
+    "/{project_id}/rounds/{round_id}",
+    response_model=ReviewRoundResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_review_round(
+    project_id: str,
+    round_id: str,
+    project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+) -> ReviewRoundResponse:
+    await _run_repository(project_repository.get_project, project_id)
+    round_obj = await _run_repository(
+        project_repository.get_review_round, project_id, round_id
+    )
+    if round_obj is None:
+        raise ReviewRoundNotFoundError(
+            f"Review round {round_id} not found in project {project_id}"
+        )
+    return ReviewRoundResponse(
+        id=round_obj.id,
+        project_id=round_obj.project_id,
+        sequence=round_obj.sequence,
+        status=round_obj.status,
+        body_version_id=round_obj.body_version_id,
+        plate_version_id=round_obj.plate_version_id,
+        drawing_version_id=round_obj.drawing_version_id,
+        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
+        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
+        notes=round_obj.notes,
+    )
+
+
+@router.post(
+    "/{project_id}/rounds/{round_id}/approve",
+    response_model=ReviewRoundResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def approve_review_round(
+    project_id: str,
+    round_id: str,
+    project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+) -> ReviewRoundResponse:
+    await _run_repository(project_repository.get_project, project_id)
+    round_obj = await _run_repository(
+        project_repository.approve_review_round, project_id, round_id
+    )
+    return ReviewRoundResponse(
+        id=round_obj.id,
+        project_id=round_obj.project_id,
+        sequence=round_obj.sequence,
+        status=round_obj.status,
+        body_version_id=round_obj.body_version_id,
+        plate_version_id=round_obj.plate_version_id,
+        drawing_version_id=round_obj.drawing_version_id,
+        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
+        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
+        notes=round_obj.notes,
+    )
+

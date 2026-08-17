@@ -318,3 +318,40 @@ class CandidateVisualBundle(ApiModel):
     candidate_id: str = Field(alias="candidateId")
     source: VisualAssetMetadata | None = None
     canonical: VisualAssetMetadata | None = None
+
+
+# =============================================================================
+# Review Round Schemas (Review 1)
+# =============================================================================
+
+
+class CreateReviewRoundRequest(ApiModel):
+    body_version_id: str | None = Field(default=None, alias="bodyVersionId")
+    plate_version_id: str | None = Field(default=None, alias="plateVersionId")
+    drawing_version_id: str | None = Field(default=None, alias="drawingVersionId")
+    notes: str | None = None
+
+
+class ReviewRoundResponse(ApiModel):
+    id: str
+    project_id: str = Field(alias="projectId")
+    sequence: int
+    status: str
+    body_version_id: str | None = Field(default=None, alias="bodyVersionId")
+    plate_version_id: str | None = Field(default=None, alias="plateVersionId")
+    drawing_version_id: str | None = Field(default=None, alias="drawingVersionId")
+    created_at: str | None = Field(default=None, alias="createdAt")
+    approved_at: str | None = Field(default=None, alias="approvedAt")
+    notes: str | None = None
+
+    @field_validator("created_at", "approved_at", mode="before")
+    @classmethod
+    def serialize_datetime_fields(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+
+class ReviewRoundListResponse(ApiModel):
+    items: list[ReviewRoundResponse]
+

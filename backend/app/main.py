@@ -19,6 +19,7 @@ from app.graph.project_repository import (
     DocumentVersionNotFoundError,
     ProjectNotFoundError,
     ProjectRepository,
+    ReviewRoundNotFoundError,
 )
 
 from app.graph.review_repository import ReviewRepository
@@ -118,8 +119,13 @@ def create_app(
         return _error_response(request, 404)
 
     @application.exception_handler(CandidateNotFoundError)
-
     async def missing_candidate(request: Request, _error: CandidateNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(ReviewRoundNotFoundError)
+    async def missing_review_round(
+        request: Request, _error: ReviewRoundNotFoundError
+    ):
         return _error_response(request, 404)
 
     @application.exception_handler(AnalysisRunNotFoundError)
