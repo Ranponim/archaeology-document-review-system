@@ -17,7 +17,9 @@ from app.services.drawing_parser import DrawingParser
 from app.services.object_resolver import ObjectResolver
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateParser
+from app.services import proofreading_orchestrator as proofreading_orchestrator_module
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
+from app.services.round_stage_ordering import ordered_round_stage_versions
 from app.services.strict_rule_engine import StrictRuleEngine
 from app.services.vlm_review_service import VLMReviewService
 
@@ -39,6 +41,11 @@ def _development_candidate_budget() -> int | None:
 
 
 def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
+    # Compatibility seam: the legacy orchestrator calls a module-level stage
+    # ordering helper. Replace it with the ReviewRound-aware unbounded version
+    # before any run is executed.
+    proofreading_orchestrator_module._ordered_stage_versions = ordered_round_stage_versions
+
     project_repo = ReviewProjectRepository(driver)
     canonical_repo = CanonicalRepository(driver)
     review_repo = ProductionReviewRepository(driver)
