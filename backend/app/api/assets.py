@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from app.api.schemas import VisualAssetMetadata
-from app.graph.asset_repository import AssetRepository
+from app.graph.strict_asset_repository import StrictAssetRepository
+from app.services.strict_visual_asset_service import StrictVisualAssetService
 from app.services.visual_asset_service import (
     VisualAssetIncompleteError,
     VisualAssetNotFoundError,
@@ -27,8 +28,8 @@ def get_visual_asset_service(request: Request) -> VisualAssetService:
         repo = getattr(request.app.state, "asset_repository", None)
         if repo is None:
             driver = getattr(request.app.state, "neo4j_driver", None)
-            repo = AssetRepository(driver)
-        svc = VisualAssetService(asset_repo=repo)
+            repo = StrictAssetRepository(driver)
+        svc = StrictVisualAssetService(asset_repo=repo)
         request.app.state.visual_asset_service = svc
     return svc
 
