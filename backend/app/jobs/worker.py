@@ -287,14 +287,18 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             plate_version_id = claim.get("plate_version_id")
             drawing_version_id = claim.get("drawing_version_id")
 
+        alignment_kwargs = {
+            "project_repository": project_repo,
+            "project_id": project_id,
+            "primary_body_version": primary_version,
+            "primary_stage": version_stage,
+            "primary_pdf_path": claim.get("body_pdf_path"),
+            "pdf_parser": getattr(orchestrator, "pdf_parser", None),
+        }
+        if review_round_id:
+            alignment_kwargs["review_round_id"] = review_round_id
         version_pages, version_ids = await resolve_body_versions_for_alignment(
-            project_repository=project_repo,
-            project_id=project_id,
-            primary_body_version=primary_version,
-            primary_stage=version_stage,
-            primary_pdf_path=claim.get("body_pdf_path"),
-            pdf_parser=getattr(orchestrator, "pdf_parser", None),
-            review_round_id=review_round_id,
+            **alignment_kwargs
         )
         plate_index = await resolve_plate_index_for_run(
             canonical_repo=getattr(orchestrator, "canonical_repo", None),
