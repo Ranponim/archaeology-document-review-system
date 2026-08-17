@@ -10,9 +10,11 @@ from app.api.projects import (
     _run_repository,
     get_project_repository,
 )
+from app.api.assets import get_visual_asset_service
 from app.api.schemas import (
     CandidateListResponse,
     CandidateResponse,
+    CandidateVisualBundle,
     ReviewDecisionRequest,
     ReviewDecisionResponse,
     ReviewMetricsResponse,
@@ -23,6 +25,7 @@ from app.api.schemas import (
 from app.graph.project_repository import DocumentVersionNotFoundError
 from app.graph.review_repository import ReviewRepository
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.services.visual_asset_service import VisualAssetService
 
 
 class CandidateNotFoundError(RuntimeError):
@@ -304,7 +307,35 @@ async def get_candidate_traceability(
 
 
 # =============================================================================
-# 5. GET /api/v1/projects/{project_id}/metrics
+# 5. GET /api/v1/projects/{project_id}/candidates/{candidate_id}/visual-bundle
+# =============================================================================
+
+@router.get(
+    "/{project_id}/candidates/{candidate_id}/visual-bundle",
+    response_model=CandidateVisualBundle,
+    status_code=status.HTTP_200_OK,
+)
+async def get_candidate_visual_bundle(
+    project_id: str,
+    candidate_id: str,
+    project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+    visual_asset_service: Annotated[VisualAssetService, Depends(get_visual_asset_service)],
+) -> CandidateVisualBundle:
+    """Mandatory Test D: return the source body page + canonical visual asset
+    (with bbox + sha256) for one candidate so the frontend can render both
+    images and highlight both bboxes."""
+    await _run_repository(project_repository.get_project, project_id)
+
+    bundle = await run_in_threadpool(
+        visual_asset_service.get_candidate_visual_bundle, candidate_id
+    )
+    if not bundle:
+        raise CandidateNotFoundError(candidate_id)
+    return CandidateVisualBundle.model_validate(bundle)
+
+
+# =============================================================================
+# 6. GET /api/v1/projects/{project_id}/metrics
 # =============================================================================
 
 @router.get(

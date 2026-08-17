@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
+from app.api.assets import router as assets_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.graph.client import create_driver
@@ -25,6 +26,10 @@ from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.services.visual_asset_service import (
+    VisualAssetIncompleteError,
+    VisualAssetNotFoundError,
+)
 
 
 def _request_id(request: Request) -> str:
@@ -58,6 +63,8 @@ def create_app(
     ingest_enqueuer=None,
     run_enqueuer=None,
     static_dir: Path | None = None,
+    asset_repository=None,
+    visual_asset_service=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -86,6 +93,8 @@ def create_app(
     application.state.orchestrator = orchestrator
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
     application.state.run_enqueuer = run_enqueuer or enqueue_proofreading
+    application.state.asset_repository = asset_repository
+    application.state.visual_asset_service = visual_asset_service
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -121,6 +130,19 @@ def create_app(
     async def retry_conflict(request: Request, _error: AnalysisRunRetryConflict):
         return _error_response(request, 409)
 
+    @application.exception_handler(VisualAssetNotFoundError)
+    async def missing_visual_asset(request: Request, _error: VisualAssetNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(VisualAssetIncompleteError)
+    async def incomplete_visual_asset(
+        request: Request, _error: VisualAssetIncompleteError
+    ):
+        return JSONResponse(
+            status_code=404,
+            content={"code": "evidence_incomplete", "request_id": _request_id(request)},
+        )
+
     @application.exception_handler(ValueError)
     async def invalid_input(request: Request, _error: ValueError):
         return _error_response(request, 400)
@@ -135,6 +157,7 @@ def create_app(
 
     application.include_router(projects_router)
     application.include_router(reviews_router)
+    application.include_router(assets_router)
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
     if frontend_dir.is_dir():

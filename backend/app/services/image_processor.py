@@ -82,6 +82,28 @@ class ImageProcessor:
         regions on a page render); otherwise it is treated as absolute pixel
         coordinates.
         """
+        return ImageProcessor._crop(image_bytes, bbox, max_dimension=max_dimension, quality=quality)
+
+    @staticmethod
+    def crop_region_full(
+        image_bytes: bytes,
+        bbox: tuple[float, float, float, float] | list[float] | None,
+    ) -> bytes:
+        """Crop region from image bytes based on bbox WITHOUT resizing.
+
+        Serves the actual cropped region at full resolution (Phase P0-D visual
+        asset delivery). Same bbox convention and fail-closed b"" behavior as
+        crop_region.
+        """
+        return ImageProcessor._crop(image_bytes, bbox, max_dimension=None, quality=95)
+
+    @staticmethod
+    def _crop(
+        image_bytes: bytes,
+        bbox: tuple[float, float, float, float] | list[float] | None,
+        max_dimension: int | None = 768,
+        quality: int = 75,
+    ) -> bytes:
         if not image_bytes:
             return b""
 
@@ -128,21 +150,22 @@ class ImageProcessor:
                     img = img.crop(crop_box)
 
                 # Resize maintaining aspect ratio if largest dimension exceeds max_dimension
-                cur_w, cur_h = img.size
-                if max(cur_w, cur_h) > max_dimension:
-                    if cur_w >= cur_h:
-                        new_width = max_dimension
-                        new_height = max(1, int(round(cur_h * (max_dimension / cur_w))))
-                    else:
-                        new_height = max_dimension
-                        new_width = max(1, int(round(cur_w * (max_dimension / cur_h))))
+                if max_dimension is not None:
+                    cur_w, cur_h = img.size
+                    if max(cur_w, cur_h) > max_dimension:
+                        if cur_w >= cur_h:
+                            new_width = max_dimension
+                            new_height = max(1, int(round(cur_h * (max_dimension / cur_w))))
+                        else:
+                            new_height = max_dimension
+                            new_width = max(1, int(round(cur_w * (max_dimension / cur_h))))
 
-                    resample_filter = getattr(
-                        getattr(Image, "Resampling", Image),
-                        "LANCZOS",
-                        getattr(Image, "LANCZOS", 1),
-                    )
-                    img = img.resize((new_width, new_height), resample=resample_filter)
+                        resample_filter = getattr(
+                            getattr(Image, "Resampling", Image),
+                            "LANCZOS",
+                            getattr(Image, "LANCZOS", 1),
+                        )
+                        img = img.resize((new_width, new_height), resample=resample_filter)
 
                 output_buffer = io.BytesIO()
                 img.save(output_buffer, format="JPEG", quality=quality)

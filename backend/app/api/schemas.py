@@ -279,3 +279,41 @@ class ReviewMetricsResponse(ApiModel):
     by_status: dict[str, int] = Field(default_factory=dict, alias="byStatus")
     completion_rate: float = Field(default=0.0, alias="completionRate")
     accuracy_rate: float = Field(default=0.0, alias="accuracyRate")
+
+
+# =============================================================================
+# Visual Asset Delivery Schemas (review §10 / Phase P0-D)
+# =============================================================================
+
+
+class VisualAssetMetadata(ApiModel):
+    """Metadata contract for one renderable visual asset (review §10).
+
+    `imageUrl` is a relative API path to the render route — never a server
+    filesystem path (anti-pattern #15). `bbox` is normalized (0..1, PDF
+    top-left origin) for plate panels / drawing regions so the frontend can
+    overlay a highlight using renderWidth/renderHeight.
+    """
+
+    asset_type: str = Field(alias="assetType")
+    image_url: str = Field(alias="imageUrl")
+    document_version_id: str | None = Field(default=None, alias="documentVersionId")
+    source_sha256: str | None = Field(default=None, alias="sourceSha256")
+    physical_page: int | None = Field(default=None, alias="physicalPage")
+    printed_identifier: str | None = Field(default=None, alias="printedIdentifier")
+    region_id: str | None = Field(default=None, alias="regionId")
+    bbox: list[float] | None = None
+    caption: str | None = None
+    render_width: int | None = Field(default=None, alias="renderWidth")
+    render_height: int | None = Field(default=None, alias="renderHeight")
+    content_type: str = Field(default="image/png", alias="contentType")
+
+
+class CandidateVisualBundle(ApiModel):
+    """Mandatory Test D: one candidate's source body page + canonical visual
+    asset together, so the frontend can render both images and highlight both
+    bboxes without opening external files."""
+
+    candidate_id: str = Field(alias="candidateId")
+    source: VisualAssetMetadata | None = None
+    canonical: VisualAssetMetadata | None = None
