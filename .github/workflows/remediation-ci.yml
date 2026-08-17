@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - review-remediation-20260817
+      - review-remediation-20260818-strict-run-contract
       - windows-docker-foundation
   workflow_dispatch:
 
