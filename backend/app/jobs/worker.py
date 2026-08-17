@@ -294,6 +294,7 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             primary_stage=version_stage,
             primary_pdf_path=claim.get("body_pdf_path"),
             pdf_parser=getattr(orchestrator, "pdf_parser", None),
+            review_round_id=review_round_id,
         )
         plate_index = await resolve_plate_index_for_run(
             canonical_repo=getattr(orchestrator, "canonical_repo", None),
