@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from neo4j import ManagedTransaction
+
+from app.domain.models import Document, DocumentVersion, StoredFile
 from app.domain.review_round import ReviewRound
 from app.graph.project_repository import ProjectRepository, ReviewRoundNotFoundError
 
@@ -8,11 +11,9 @@ class ReviewProjectRepository(ProjectRepository):
     """Project repository semantics for ReviewRound execution.
 
     A concrete DocumentVersion id is canonical graph identity. Human stage
-    labels such as ``2차`` are compatibility/display metadata and must never
-    reject an exact id selected by a ReviewRound. Every production ReviewRound
-    owns a complete canonical input set: body + plate/photo book + drawing book.
-    Later rounds may reuse an earlier plate/drawing DocumentVersion, but the
-    graph relationship must still be explicit on that round.
+    labels such as ``2차`` are compatibility/display metadata and never define
+    revision lineage. ReviewRound.sequence and ReviewRound PRECEDES are the
+    only review-order authority.
     """
 
     def resolve_version_input(
@@ -25,6 +26,93 @@ class ReviewProjectRepository(ProjectRepository):
         if version_id:
             stage = None
         return super().resolve_version_input(project_id, kind, stage, version_id)
+
+    @staticmethod
+    def _create_document_and_version(
+        transaction: ManagedTransaction,
+        project_id: str,
+        doc_id: str,
+        ver_id: str,
+        analysis_run_id: str,
+        stored: StoredFile,
+        stage: str,
+        kind: str,
+        title: str,
+    ) -> dict | None:
+        """Create an ingestable DocumentVersion without stage-derived PRECEDES.
+
+        `stage` is retained only as compatibility metadata for older clients.
+        A document may be reused in any later ReviewRound, so a stage label can
+        never safely imply graph lineage.
+        """
+        result = transaction.run(
+            """
+            MATCH (project:Project {id: $project_id})
+            MERGE (document:Document {projectId: $project_id, kind: $kind})
+            ON CREATE SET document.id = $doc_id,
+                          document.title = $title,
+                          document.name = $title,
+                          document.createdAt = datetime()
+            MERGE (project)-[:HAS_DOCUMENT]->(document)
+            WITH project, document
+            CREATE (document_version:DocumentVersion {
+                id: $ver_id,
+                uri: $uri,
+                sha256: $sha256,
+                sizeBytes: $size_bytes,
+                mimeType: $mime_type,
+                originalName: $original_name,
+                stage: $stage,
+                createdAt: datetime()
+            })
+            CREATE (run:AnalysisRun {
+                id: $analysis_run_id,
+                status: 'queued',
+                step: 'ingest',
+                createdAt: datetime()
+            })
+            CREATE (document)-[:HAS_VERSION]->(document_version)
+            CREATE (run)-[:ANALYZES]->(document_version)
+            RETURN document.id AS document_id,
+                   document.kind AS kind,
+                   coalesce(document.title, document.name, '') AS title,
+                   document_version.id AS version_id
+            """,
+            project_id=project_id,
+            doc_id=doc_id,
+            ver_id=ver_id,
+            analysis_run_id=analysis_run_id,
+            uri=stored.uri,
+            sha256=stored.sha256,
+            size_bytes=stored.size_bytes,
+            mime_type=stored.mime_type,
+            original_name=stored.original_name,
+            stage=stage,
+            kind=kind,
+            title=title,
+        )
+        record = result.single()
+        if record is None:
+            return None
+        return {
+            "document": Document(
+                id=record["document_id"],
+                project_id=project_id,
+                kind=record["kind"],
+                title=record["title"],
+            ),
+            "version": DocumentVersion(
+                id=record["version_id"],
+                document_id=record["document_id"],
+                analysis_run_id=analysis_run_id,
+                uri=stored.uri,
+                sha256=stored.sha256,
+                size_bytes=stored.size_bytes,
+                mime_type=stored.mime_type,
+                original_name=stored.original_name,
+                stage=stage,
+            ),
+        }
 
     def create_review_round(
         self,
