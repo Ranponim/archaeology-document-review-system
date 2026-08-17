@@ -272,9 +272,12 @@ class VisualAssetService:
             physical_page = page.get("physical_page")
             if not page_id or physical_page is None:
                 continue
-            render_path = self._resolve_page_render(
-                version.get("uri"), version.get("id"), physical_page
-            )
+            try:
+                render_path = self._resolve_page_render(
+                    version.get("uri"), version.get("id"), physical_page
+                )
+            except VisualAssetIncompleteError:
+                render_path = None
             bundle["source"] = self._build_metadata(
                 "page",
                 page_id,
@@ -301,17 +304,20 @@ class VisualAssetService:
                 continue
             render_path = None
             content_type = "image/png"
-            if asset_type in _CROP_ASSET_TYPES:
-                render_path = self._resolve_render_path(props.get("render_uri"))
-                content_type = "image/jpeg"
-            else:
-                render_path = self._resolve_asset_page_render(
-                    asset_id,
-                    props.get("physical_page"),
-                    entry.get("version") or {},
-                    entry.get("children") or [],
-                    "render_uri",
-                )
+            try:
+                if asset_type in _CROP_ASSET_TYPES:
+                    render_path = self._resolve_render_path(props.get("render_uri"))
+                    content_type = "image/jpeg"
+                else:
+                    render_path = self._resolve_asset_page_render(
+                        asset_id,
+                        props.get("physical_page"),
+                        entry.get("version") or {},
+                        entry.get("children") or [],
+                        "render_uri",
+                    )
+            except VisualAssetIncompleteError:
+                render_path = None
             bundle["canonical"] = self._build_metadata(
                 asset_type,
                 asset_id,
@@ -378,13 +384,13 @@ class VisualAssetService:
 
     def _resolve_page_render(self, version_uri, version_id, physical_page: int) -> Path:
         """Render a body page on demand from the version PDF and cache it."""
-        pdf_path = self._resolve_pdf_path(version_uri)
-        if pdf_path is None:
-            raise VisualAssetIncompleteError(f"page {physical_page} of version {version_id}")
         cache_dir = self._render_dir / str(version_id)
         cache_path = cache_dir / f"p{int(physical_page):03d}.png"
         if cache_path.is_file() and cache_path.stat().st_size > 0:
             return cache_path
+        pdf_path = self._resolve_pdf_path(version_uri)
+        if pdf_path is None:
+            raise VisualAssetIncompleteError(f"page {physical_page} of version {version_id}")
         cache_dir.mkdir(parents=True, exist_ok=True)
         rendered = render_page_png(pdf_path, int(physical_page))
         if not rendered:

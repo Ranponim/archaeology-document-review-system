@@ -161,22 +161,28 @@ class AssetRepository:
             OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
             OPTIONAL MATCH (ev)-[:EXTRACTED_FROM]->(page:Page)
             OPTIONAL MATCH (ev)-[:FROM_VERSION]->(version:DocumentVersion)
+            WITH cand,
+                 collect(DISTINCT {
+                     evidence: properties(ev),
+                     page: properties(page),
+                     version: properties(version)
+                 }) AS evidence_chain
             OPTIONAL MATCH (cand)-[:ABOUT]->(obj:ArchaeologyObject)
             OPTIONAL MATCH (asset)-[:DEPICTS]->(obj)
             OPTIONAL MATCH (parent)-[:HAS_PANEL|HAS_REGION]->(asset)
             OPTIONAL MATCH (asset)-[:HAS_PANEL|HAS_REGION]->(child)
+            WITH cand, evidence_chain, asset, parent,
+                 collect(DISTINCT properties(child)) AS child_props
+            WITH cand, evidence_chain,
+                 collect(DISTINCT {
+                     label: head(labels(asset)),
+                     props: properties(asset),
+                     parent: properties(parent),
+                     children: [c IN child_props WHERE c IS NOT NULL]
+                 }) AS canonical_assets
             RETURN properties(cand) AS candidate,
-                   collect(DISTINCT {
-                       evidence: properties(ev),
-                       page: properties(page),
-                       version: properties(version)
-                   }) AS evidence_chain,
-                   collect(DISTINCT {
-                       label: head(labels(asset)),
-                       props: properties(asset),
-                       parent: properties(parent),
-                       children: [c IN collect(DISTINCT child) WHERE c IS NOT NULL | properties(c)]
-                   }) AS canonical_assets
+                   evidence_chain,
+                   canonical_assets
             """,
             candidate_id=candidate_id,
             **self._query_config(),
@@ -196,3 +202,4 @@ class AssetRepository:
                 dict(item) for item in (row.get("canonical_assets") or []) if item
             ],
         }
+
