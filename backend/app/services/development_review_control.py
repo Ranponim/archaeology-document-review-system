@@ -11,12 +11,7 @@ from app.services.review_budget import (
 
 
 class DevelopmentReviewBudget:
-    """Shared coordinator for cheap-rule scanning and expensive AI/VLM work.
-
-    RuleEngine still scans the complete graph. After rule scanning has recorded
-    its findings, the coordinator freezes a deterministic representative sample
-    and allows at most `max_expensive_operations` VLM/LLM calls in total.
-    """
+    """Shared coordinator for cheap-rule scanning and expensive AI/VLM work."""
 
     def __init__(self, max_expensive_operations: int = 10) -> None:
         self.max_expensive_operations = max(1, int(max_expensive_operations))
@@ -56,11 +51,10 @@ class DevelopmentReviewBudget:
         return True
 
     def allow_visual(self, ref_type: str | None) -> bool:
-        """Allow representative visual review while preserving plate/drawing paths.
+        """Reserve at most one representative plate and drawing VLM review.
 
-        At most one plate and one drawing observation are guaranteed first.
-        Additional visual calls are intentionally denied in development mode so
-        the remaining budget can exercise graph-guided LLM review.
+        BudgetedAssetReviewPipeline narrows each accepted reference to one
+        panel/region, so one reservation corresponds to at most one VLM call.
         """
         self._freeze()
         kind = str(ref_type or "").lower()
@@ -139,6 +133,21 @@ class BudgetedAssetReviewPipeline:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._delegate, name)
 
+    @staticmethod
+    def _single_visual_target(resolution):
+        if resolution is None or getattr(resolution, "target", None) is None:
+            return resolution
+        target = resolution.target
+        panels = getattr(target, "panels", None)
+        if isinstance(panels, list) and len(panels) > 1:
+            target = replace(target, panels=panels[:1])
+            return replace(resolution, target=target)
+        regions = getattr(target, "regions", None)
+        if isinstance(regions, list) and len(regions) > 1:
+            target = replace(target, regions=regions[:1])
+            return replace(resolution, target=target)
+        return resolution
+
     async def review_canonical_reference(self, *args, **kwargs):
         reference = kwargs.get("reference")
         if reference is None and args:
@@ -146,6 +155,15 @@ class BudgetedAssetReviewPipeline:
         ref_type = getattr(reference, "ref_type", None)
         if not self._budget.allow_visual(ref_type):
             return []
+
+        if "resolution" in kwargs:
+            kwargs["resolution"] = self._single_visual_target(kwargs["resolution"])
+            return await self._delegate.review_canonical_reference(*args, **kwargs)
+
+        if len(args) >= 2:
+            mutable = list(args)
+            mutable[1] = self._single_visual_target(mutable[1])
+            return await self._delegate.review_canonical_reference(*mutable, **kwargs)
         return await self._delegate.review_canonical_reference(*args, **kwargs)
 
 
@@ -175,8 +193,6 @@ class BudgetedAIReviewService:
 
 
 class BudgetedProofreadingOrchestratorMixin:
-    """Mixin used by the production subclass to publish budget diagnostics."""
-
     development_budget: DevelopmentReviewBudget
 
     async def run_proofreading(self, *args, **kwargs):  # type: ignore[override]
