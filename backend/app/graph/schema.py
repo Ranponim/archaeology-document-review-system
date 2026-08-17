@@ -31,6 +31,9 @@ INDEXES = (
     ("archaeology_object_canonical_name", "ArchaeologyObject", ("canonical_name",)),
     ("reference_type_number", "Reference", ("ref_type", "number")),
     ("evidence_kind", "Evidence", ("kind",)),
+    ("original_asset_project", "OriginalAsset", ("projectId",)),
+    ("original_asset_project_relative", "OriginalAsset", ("projectId", "relativePath")),
+    ("original_asset_sha256", "OriginalAsset", ("sha256",)),
 )
 
 
