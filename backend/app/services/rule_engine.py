@@ -106,7 +106,74 @@ DIMENSION_TYPE_CANONICAL: dict[str, str] = {
 }
 
 
+SEVERITY_ORDER: dict[str, int] = {
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 3,
+}
+
+
+def classify_severity_from_category(category: str) -> str:
+    if category in ("numeric_value", "feature_or_artifact_id", "figure_plate_table_photo_ref"):
+        return "high"
+    if category in ("direction_period_term", "site_or_area_name"):
+        return "medium"
+    return "low"
+
+
+def prioritize_and_cap_candidates(
+    candidates: list[CorrectionCandidateData],
+    max_candidates: int | None = None,
+) -> list[CorrectionCandidateData]:
+    """Deterministically prioritize candidates: critical -> high -> medium -> low,
+
+    tie-broken by confidence desc, preserving highest-severity errors while
+    capping to at most max_candidates.
+    """
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda c: (
+            SEVERITY_ORDER.get(getattr(c, "severity", "medium").lower(), 2),
+            -float(getattr(c, "confidence", 1.0)),
+            c.candidate_id,
+        ),
+    )
+    if max_candidates is not None and max_candidates > 0:
+        return sorted_candidates[:max_candidates]
+    return sorted_candidates
+
+
 class RuleEngine:
+    COMPATIBLE_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset({
+        frozenset({"수혈주거지", "주거지"}),
+        frozenset({"수혈건물지", "건물지"}),
+        frozenset({"수혈유구", "수혈"}),
+        frozenset({"원형수혈유구", "수혈유구"}),
+        frozenset({"원형수혈유구", "수혈"}),
+        frozenset({"방형수혈유구", "수혈유구"}),
+        frozenset({"방형수혈유구", "수혈"}),
+        frozenset({"수혈목관묘", "목관묘"}),
+        frozenset({"수혈목관묘", "토광묘"}),
+        frozenset({"목관묘", "토광묘"}),
+    })
+
+    GENERIC_TYPES: frozenset[str] = frozenset({"유구", "유물"})
+
+    @classmethod
+    def are_types_compatible(cls, t1: str, t2: str) -> bool:
+        norm1 = ObjectResolver.normalize_type(t1)
+        norm2 = ObjectResolver.normalize_type(t2)
+        if not norm1 or not norm2:
+            return True
+        if norm1 == norm2:
+            return True
+        if norm1 in cls.GENERIC_TYPES or norm2 in cls.GENERIC_TYPES:
+            return True
+        if frozenset({norm1, norm2}) in cls.COMPATIBLE_TYPE_PAIRS:
+            return True
+        return False
+
     DEFAULT_HEADER_PATTERNS: list[str] = [
         r"^(?:\d+\s*\|\s*(?:백제문화유산연구원|문화유적\s*보고서)|(?:백제문화유산연구원|문화유적\s*보고서)\s*\|\s*\d+)$",
         r"^(?:\d+\s*\|\s*.*(?:연구원|보고서|학술조사|문화재|문화유산|발굴조사|지표조사|시굴조사).*|.*(?:연구원|보고서|학술조사|문화재|문화유산|발굴조사|지표조사|시굴조사).*\s*\|\s*\d+)$",
@@ -223,6 +290,7 @@ class RuleEngine:
 
             category = self._classify_rule_category(old_str, new_str)
             status: ReviewStatus = "pending_review"
+            severity = classify_severity_from_category(category)
 
             evidence = EvidenceData(
                 version_from=stage_from,
@@ -244,6 +312,7 @@ class RuleEngine:
                 proposed_text=new_str,
                 evidence=evidence,
                 evidence_list=[evidence],
+                severity=severity,
             )
             candidates.append(cand)
             cand_idx += 1
@@ -520,22 +589,52 @@ class RuleEngine:
                     periods.append(norm)
         return periods
 
-    def extract_types_from_evidence(self, ev: EvidenceData) -> list[str]:
+    def extract_types_from_evidence(
+        self, ev: EvidenceData, target_object: ArchaeologyObjectData | None = None
+    ) -> list[str]:
         texts: list[str] = []
         if isinstance(ev.value, dict):
             t = ev.value.get("type")
             if t:
-                texts.append(str(t))
+                return [self.normalize_type(str(t))]
         if isinstance(ev.value, str):
             texts.append(ev.value)
         if ev.rationale:
             texts.append(ev.rationale)
 
+        target_num = target_object.number if target_object else None
         types: list[str] = []
+
         for txt in texts:
+            # 1. Try extracting full entity mentions first
+            mentions = self._resolver.extract_mentions_from_text(txt)
+            if mentions:
+                for m in mentions:
+                    if m.type:
+                        if target_num:
+                            if m.number == target_num:
+                                if m.type not in types:
+                                    types.append(m.type)
+                        else:
+                            if m.type not in types:
+                                types.append(m.type)
+                if types:
+                    continue
+
+            # 2. Direct longest type matches with boundary protection
+            found_spans: list[tuple[int, int]] = []
             for ftype in ARCHAEOLOGICAL_TYPES:
-                if ftype in txt:
+                for m in re.finditer(re.escape(ftype), txt):
+                    s, e = m.span()
+                    if any(not (e <= os or s >= oe) for os, oe in found_spans):
+                        continue
+                    found_spans.append((s, e))
                     norm = self.normalize_type(ftype)
+                    num_match = re.search(
+                        r"(\d+)호", txt[max(0, s - 10) : min(len(txt), e + 10)]
+                    )
+                    if target_num and num_match and f"{num_match.group(1)}호" != target_num:
+                        continue
                     if norm and norm not in types:
                         types.append(norm)
         return types
@@ -596,6 +695,7 @@ class RuleEngine:
         drawing_index: Any | None = None,
         plates: list[PlateData] | None = None,
         drawings: list[DrawingData] | None = None,
+        max_candidates: int | None = None,
     ) -> list[CorrectionCandidateData]:
         """Evaluates semantic and factual consistency across Evidence collections
 
@@ -633,6 +733,7 @@ class RuleEngine:
                         evidence_list=[ev],
                         archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                         confidence=0.95,
+                        severity="high",
                     )
                     candidates.append(cand)
                     cand_idx += 1
@@ -672,19 +773,21 @@ class RuleEngine:
                                         evidence_list=[ev_i, ev_j],
                                         archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                                         confidence=0.95,
+                                        severity="high",
                                     )
                                     candidates.append(cand)
                                     cand_idx += 1
 
-        # 3. Feature type conflict detection
+        # 3. Feature type conflict detection with morphology vocabulary guard
         ev_types: list[tuple[EvidenceData, list[str]]] = [
-            (ev, self.extract_types_from_evidence(ev)) for ev in ev_list
+            (ev, self.extract_types_from_evidence(ev, target_object=archaeology_object))
+            for ev in ev_list
         ]
         if archaeology_object and archaeology_object.type:
             obj_type = self.normalize_type(archaeology_object.type)
             for ev, types in ev_types:
                 for t in types:
-                    if t != obj_type:
+                    if not self.are_types_compatible(obj_type, t):
                         cand = CorrectionCandidateData(
                             candidate_id=f"cand_type_mismatch_{obj_id}_{cand_idx}",
                             rule_category="feature_or_artifact_id",
@@ -696,6 +799,7 @@ class RuleEngine:
                             evidence_list=[ev],
                             archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                             confidence=0.95,
+                            severity="high",
                         )
                         candidates.append(cand)
                         cand_idx += 1
@@ -706,7 +810,7 @@ class RuleEngine:
                 ev_j, types_j = ev_types[j]
                 for t1 in types_i:
                     for t2 in types_j:
-                        if t1 != t2:
+                        if not self.are_types_compatible(t1, t2):
                             cand = CorrectionCandidateData(
                                 candidate_id=f"cand_type_inconsistency_{obj_id}_{cand_idx}",
                                 rule_category="feature_or_artifact_id",
@@ -718,6 +822,7 @@ class RuleEngine:
                                 evidence_list=[ev_i, ev_j],
                                 archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                                 confidence=0.95,
+                                severity="high",
                             )
                             candidates.append(cand)
                             cand_idx += 1
@@ -742,6 +847,7 @@ class RuleEngine:
                             evidence_list=[ev],
                             archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                             confidence=0.95,
+                            severity="medium",
                         )
                         candidates.append(cand)
                         cand_idx += 1
@@ -764,6 +870,7 @@ class RuleEngine:
                                 evidence_list=[ev_i, ev_j],
                                 archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                                 confidence=0.95,
+                                severity="medium",
                             )
                             candidates.append(cand)
                             cand_idx += 1
@@ -790,11 +897,12 @@ class RuleEngine:
                                 evidence_list=[ev_i, ev_j],
                                 archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                                 confidence=0.95,
+                                severity="medium",
                             )
                             candidates.append(cand)
                             cand_idx += 1
 
-        # 6. Reference resolution mismatch
+        # 6. Reference resolution mismatch (with morphology / general drawing protection)
         if plate_index is not None or plates is not None or drawings is not None or drawing_index is not None:
             for ev in ev_list:
                 refs = self.extract_references_from_evidence(ev)
@@ -844,10 +952,9 @@ class RuleEngine:
                         target_title = ev.value.get("target_title") or ev.value.get("title")
 
                     if target_title and archaeology_object:
-                        # Extract number and types from target_title
                         plate_mentions = self._resolver.extract_mentions_from_text(target_title)
                         extracted_num = ""
-                        extracted_types = []
+                        extracted_types: list[str] = []
 
                         if plate_mentions:
                             first_m = plate_mentions[0]
@@ -855,19 +962,20 @@ class RuleEngine:
                             if first_m.type:
                                 extracted_types.append(first_m.type)
                         else:
-                            # Direct regex extraction
                             num_match = re.search(r"(\d+)호", target_title)
                             if num_match:
                                 extracted_num = f"{num_match.group(1)}호"
                             for ftype in ARCHAEOLOGICAL_TYPES:
                                 if ftype in target_title:
                                     extracted_types.append(self.normalize_type(ftype))
+                                    break
 
                         mismatch = False
                         if archaeology_object.number and extracted_num and extracted_num != archaeology_object.number:
                             mismatch = True
-                        if archaeology_object.type and extracted_types and all(t != archaeology_object.type for t in extracted_types):
-                            mismatch = True
+                        elif extracted_num and extracted_num == archaeology_object.number and archaeology_object.type and extracted_types:
+                            if not any(self.are_types_compatible(archaeology_object.type, t) for t in extracted_types):
+                                mismatch = True
 
                         if mismatch:
                             cand = CorrectionCandidateData(
@@ -888,6 +996,7 @@ class RuleEngine:
                                 evidence_list=[ev],
                                 archaeology_object_id=obj_id if obj_id != "unspecified" else None,
                                 confidence=0.90,
+                                severity="high",
                             )
                             candidates.append(cand)
                             cand_idx += 1
@@ -908,10 +1017,11 @@ class RuleEngine:
                     archaeology_object_id=cand.archaeology_object_id,
                     confidence=cand.confidence,
                     analysis_run_id=cand.analysis_run_id,
+                    severity=cand.severity,
                 )
             validated_candidates.append(cand)
 
-        return validated_candidates
+        return prioritize_and_cap_candidates(validated_candidates, max_candidates=max_candidates)
 
     def check_objects_consistency(
         self,
@@ -920,6 +1030,7 @@ class RuleEngine:
         drawing_index: Any | None = None,
         plates: list[PlateData] | None = None,
         drawings: list[DrawingData] | None = None,
+        max_candidates: int | None = None,
     ) -> list[CorrectionCandidateData]:
         all_candidates: list[CorrectionCandidateData] = []
         for obj, evidences in objects_with_evidences:
@@ -932,7 +1043,7 @@ class RuleEngine:
                 drawings=drawings,
             )
             all_candidates.extend(cands)
-        return all_candidates
+        return prioritize_and_cap_candidates(all_candidates, max_candidates=max_candidates)
 
     def check_object_bundle_consistency(
         self,
@@ -942,6 +1053,7 @@ class RuleEngine:
         plates: list[PlateData] | None = None,
         drawings: list[DrawingData] | None = None,
         archaeology_object: ArchaeologyObjectData | None = None,
+        max_candidates: int | None = None,
     ) -> list[CorrectionCandidateData]:
         """Run the consistency checks on evidence gathered by graph traversal.
 
@@ -963,4 +1075,5 @@ class RuleEngine:
             drawing_index=drawing_index,
             plates=plates,
             drawings=drawings,
+            max_candidates=max_candidates,
         )

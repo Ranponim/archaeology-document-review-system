@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 import uuid
@@ -37,7 +38,7 @@ from app.services.object_resolver import ObjectResolver
 from app.services.page_aligner import PageAligner
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateIndex, PlateParser
-from app.services.rule_engine import RuleEngine
+from app.services.rule_engine import RuleEngine, prioritize_and_cap_candidates
 from app.services.vlm_review_service import VLMReviewService
 
 
@@ -137,6 +138,7 @@ class ProofreadingOrchestrator:
         vlm_service: VLMReviewService | None = None,
         project_repo: Any | None = None,
         allow_degraded_mode: bool | None = None,
+        max_candidates: int | None = None,
     ) -> None:
         self.pdf_parser = pdf_parser or PDFParser()
         self.plate_parser = plate_parser or PlateParser()
@@ -155,6 +157,7 @@ class ProofreadingOrchestrator:
 
             allow_degraded_mode = get_allow_degraded_mode()
         self.allow_degraded_mode = allow_degraded_mode
+        self.max_candidates = max_candidates
 
     @staticmethod
     def _compute_sha256(path: Path | str) -> str:
@@ -191,6 +194,7 @@ class ProofreadingOrchestrator:
         version_pages: dict[str, list[ParsedPage]] | None = None,
         version_ids: dict[str, str] | None = None,
         allow_degraded_mode: bool | None = None,
+        max_candidates: int | None = None,
     ) -> OrchestratorResult:
         run_id = analysis_run_id or f"run_{uuid.uuid4().hex[:12]}"
         errors: list[str] = []
@@ -1053,7 +1057,7 @@ class ProofreadingOrchestrator:
                 except Exception as e:
                     errors.append(f"AI review error for object {obj.canonical_name}: {e}")
 
-        # 9. Deduplicate Candidates & Persist to Graph
+        # 9. Deduplicate Candidates, Prioritize & Cap Budget, and Persist to Graph
         deduped_candidates: list[CorrectionCandidateData] = []
         seen_cand_keys: set[str] = set()
 
@@ -1063,11 +1067,28 @@ class ProofreadingOrchestrator:
                 seen_cand_keys.add(key)
                 deduped_candidates.append(c)
 
+        effective_max = (
+            max_candidates if max_candidates is not None else self.max_candidates
+        )
+        if effective_max is None:
+            env_val = os.environ.get("DEVELOPMENT_CANDIDATE_BUDGET") or os.environ.get(
+                "CANDIDATE_BUDGET"
+            )
+            if env_val:
+                try:
+                    effective_max = int(env_val)
+                except ValueError:
+                    pass
+
+        capped_candidates = prioritize_and_cap_candidates(
+            deduped_candidates, max_candidates=effective_max
+        )
+
         if self.review_repo is not None:
-            if deduped_candidates:
+            if capped_candidates:
                 self.review_repo.save_candidates(
                     project_id=project_id,
-                    candidates=deduped_candidates,
+                    candidates=capped_candidates,
                     analysis_run_id=run_id,
                 )
             self.review_repo.save_analysis_run(
@@ -1079,10 +1100,10 @@ class ProofreadingOrchestrator:
 
         # 10. Summary Metrics
         summary: dict[str, Any] = {
-            "total_candidates": len(deduped_candidates),
+            "total_candidates": len(capped_candidates),
             "by_category": {},
             "by_change_type": {},
-            "by_status": {"pending_review": len(deduped_candidates)},
+            "by_status": {"pending_review": len(capped_candidates)},
             "total_evidences": len(all_evidences),
             "total_objects": len(all_objects),
             "total_references": len(all_references),
@@ -1090,7 +1111,7 @@ class ProofreadingOrchestrator:
             "unresolved_objects": len(unresolved),
         }
 
-        for c in deduped_candidates:
+        for c in capped_candidates:
             cat = str(c.rule_category)
             ch = str(c.change_type)
             summary["by_category"][cat] = summary["by_category"].get(cat, 0) + 1
@@ -1103,7 +1124,7 @@ class ProofreadingOrchestrator:
             pages_parsed=len(parsed_body_pages),
             objects_resolved=len(all_objects),
             references_resolved=resolved_refs_count,
-            candidates=deduped_candidates,
+            candidates=capped_candidates,
             evidences=all_evidences,
             objects=all_objects,
             plates=all_plates,

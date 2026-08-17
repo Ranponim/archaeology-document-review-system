@@ -98,6 +98,7 @@ class CorrectionCandidateData:
     archaeology_object_id: str | None = None
     confidence: float = 1.0
     analysis_run_id: str | None = None
+    severity: str = "medium"
 
     @property
     def evidences(self) -> list[EvidenceData]:
