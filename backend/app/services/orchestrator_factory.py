@@ -1,7 +1,7 @@
 """Production orchestrator assembly (plan Task 11 / anti-pattern #14)."""
 from app.graph.canonical_repository import CanonicalRepository
 from app.graph.project_repository import ProjectRepository
-from app.graph.review_repository import ReviewRepository
+from app.graph.strict_review_repository import StrictReviewRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.drawing_parser import DrawingParser
 from app.services.object_resolver import ObjectResolver
@@ -22,7 +22,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
     return ProofreadingOrchestrator(
         project_repo=ProjectRepository(driver),
         canonical_repo=CanonicalRepository(driver),
-        review_repo=ReviewRepository(driver),
+        review_repo=StrictReviewRepository(driver),
         pdf_parser=PDFParser(),
         plate_parser=PlateParser(),
         drawing_parser=DrawingParser(),
