@@ -86,7 +86,7 @@ describe('SplitViewInspector real visual split view', () => {
     expect(sourceBbox.style.getPropertyValue('--bbox-height-px')).toBe('168.6px');
   });
 
-  it('renders the canonical drawing in the drawing section when the canonical asset is a drawing', async () => {
+  it('renders the canonical drawing in the drawing comparison when the canonical asset is a drawing', async () => {
     apiMocks.fetchVisualBundle.mockResolvedValue({
       candidateId: 'cand_1',
       source: bundle.source,
@@ -111,21 +111,27 @@ describe('SplitViewInspector real visual split view', () => {
     );
   });
 
-  it('renders informative fallback when visual bundle assets are unavailable', async () => {
+  it('treats missing canonical targets as text evidence instead of a fake empty plate pane', async () => {
     apiMocks.fetchVisualBundle.mockResolvedValue({
       candidateId: 'cand_1',
+      comparisonType: 'text_evidence',
       source: null,
+      comparison: null,
       canonical: null,
-    });
+      reference: null,
+      renderStatus: 'not_applicable',
+      unresolvedReason: 'requested_reference_not_resolved',
+    } as unknown as CandidateVisualBundle);
     render(<SplitViewInspector projectId="proj_1" candidate={candidate} />);
 
     const sourceFallback = await screen.findByTestId('source-fallback');
     expect(sourceFallback).toBeInTheDocument();
     expect(screen.getByText(/본문 시각 에셋 렌더링 준비 중/)).toBeInTheDocument();
 
-    const canonicalFallback = await screen.findByTestId('canonical-fallback');
-    expect(canonicalFallback).toBeInTheDocument();
-    expect(screen.getByText(/해당 에셋 렌더 없음/)).toBeInTheDocument();
+    expect(screen.getByTestId('text-evidence-comparison')).toBeInTheDocument();
+    expect(screen.queryByTestId('canonical-fallback')).not.toBeInTheDocument();
+    expect(screen.queryByText(/해당 에셋 렌더 없음/)).not.toBeInTheDocument();
+    expect(screen.getByText(/requested_reference_not_resolved/)).toBeInTheDocument();
   });
 
   it('supports zoom controls on rendered visual assets', async () => {
@@ -137,4 +143,3 @@ describe('SplitViewInspector real visual split view', () => {
     expect(zoomButtons.length).toBeGreaterThan(0);
   });
 });
-
