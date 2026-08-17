@@ -1,0 +1,24 @@
+# Disposable test infrastructure for the real-Neo4j integration suite.
+#
+# Extends compose.yml with a throwaway Neo4j instance (neo4j-test) and reuses
+# the existing redis service. Test-only service names and a separate volume so
+# nothing in the production compose stack is touched.
+#
+#   docker compose -f compose.yml -f compose.test.yml up -d neo4j-test redis
+#
+# The integration fixture (backend/tests/integration/conftest.py) reads
+# NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD from the environment and defaults to
+# the local instance. NEO4J_PASSWORD here defaults to the same value the test
+# fixture expects so a plain `up` yields a usable test database.
+services:
+  neo4j-test:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-testpass-2026}
+    ports:
+      - "${NEO4J_TEST_PORT:-7688}:7687"
+    volumes:
+      - neo4j_test_data:/data
+
+volumes:
+  neo4j_test_data:
