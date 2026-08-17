@@ -49,3 +49,7 @@ class VersionInput:
     sha256: str
     mime_type: str = "application/pdf"
 
+
+from app.domain.review_round import ReviewRound  # noqa: E402
+
+

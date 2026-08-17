@@ -9,6 +9,7 @@ from app.domain.models import (
     StoredFile,
     VersionInput,
 )
+from app.domain.review_round import ReviewRound
 
 
 class ProjectNotFoundError(LookupError):
@@ -21,6 +22,11 @@ class AnalysisRunNotFoundError(LookupError):
 
 class DocumentVersionNotFoundError(LookupError):
     pass
+
+
+class ReviewRoundNotFoundError(LookupError):
+    pass
+
 
 
 _STAGE_RANK = {"1차": 0, "2차": 1, "3차": 2, "final": 3}
@@ -753,3 +759,206 @@ class ProjectRepository:
         if not records:
             raise AnalysisRunNotFoundError(analysis_run_id)
         return records[0]["status"]
+
+    def create_review_round(
+        self,
+        project_id: str,
+        body_version_id: str | None = None,
+        plate_version_id: str | None = None,
+        drawing_version_id: str | None = None,
+        notes: str | None = None,
+    ) -> ReviewRound:
+        round_id = str(uuid4())
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})
+            OPTIONAL MATCH (project)-[:HAS_REVIEW_ROUND]->(existing:ReviewRound)
+            WITH project, coalesce(max(existing.sequence), 0) + 1 AS next_seq
+            CREATE (round:ReviewRound {
+                id: $round_id,
+                projectId: $project_id,
+                sequence: next_seq,
+                status: 'reviewing',
+                notes: $notes,
+                createdAt: datetime(),
+                approvedAt: null
+            })
+            CREATE (project)-[:HAS_REVIEW_ROUND]->(round)
+            WITH project, round, next_seq
+            OPTIONAL MATCH (project)-[:HAS_REVIEW_ROUND]->(prev:ReviewRound {sequence: next_seq - 1})
+            FOREACH (_ IN CASE WHEN prev IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (prev)-[:PRECEDES]->(round)
+            )
+            WITH round
+            OPTIONAL MATCH (body:DocumentVersion {id: $body_version_id})
+            FOREACH (_ IN CASE WHEN body IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (round)-[:USES_BODY_VERSION]->(body)
+            )
+            WITH round
+            OPTIONAL MATCH (plate:DocumentVersion {id: $plate_version_id})
+            FOREACH (_ IN CASE WHEN plate IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (round)-[:USES_PLATE_VERSION]->(plate)
+            )
+            WITH round
+            OPTIONAL MATCH (drawing:DocumentVersion {id: $drawing_version_id})
+            FOREACH (_ IN CASE WHEN drawing IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (round)-[:USES_DRAWING_VERSION]->(drawing)
+            )
+            RETURN round.id AS id,
+                   round.projectId AS project_id,
+                   round.sequence AS sequence,
+                   round.status AS status,
+                   round.notes AS notes,
+                   round.createdAt AS created_at,
+                   round.approvedAt AS approved_at,
+                   $body_version_id AS body_version_id,
+                   $plate_version_id AS plate_version_id,
+                   $drawing_version_id AS drawing_version_id
+            """,
+            project_id=project_id,
+            round_id=round_id,
+            body_version_id=body_version_id,
+            plate_version_id=plate_version_id,
+            drawing_version_id=drawing_version_id,
+            notes=notes,
+            **self._query_config,
+        )
+        if not records:
+            raise ProjectNotFoundError(project_id)
+        record = records[0]
+        return ReviewRound(
+            id=record["id"],
+            project_id=record["project_id"],
+            sequence=record["sequence"],
+            status=record["status"],
+            body_version_id=record.get("body_version_id"),
+            plate_version_id=record.get("plate_version_id"),
+            drawing_version_id=record.get("drawing_version_id"),
+            created_at=record.get("created_at"),
+            approved_at=record.get("approved_at"),
+            notes=record.get("notes"),
+        )
+
+    def list_review_rounds(self, project_id: str) -> list[ReviewRound]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_REVIEW_ROUND]->(round:ReviewRound)
+            OPTIONAL MATCH (round)-[:USES_BODY_VERSION]->(body:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_PLATE_VERSION]->(plate:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_DRAWING_VERSION]->(drawing:DocumentVersion)
+            RETURN round.id AS id,
+                   round.projectId AS project_id,
+                   round.sequence AS sequence,
+                   round.status AS status,
+                   round.notes AS notes,
+                   round.createdAt AS created_at,
+                   round.approvedAt AS approved_at,
+                   body.id AS body_version_id,
+                   plate.id AS plate_version_id,
+                   drawing.id AS drawing_version_id
+            ORDER BY round.sequence ASC
+            """,
+            project_id=project_id,
+            **self._query_config,
+        )
+        return [
+            ReviewRound(
+                id=record["id"],
+                project_id=record["project_id"],
+                sequence=record["sequence"],
+                status=record["status"],
+                body_version_id=record.get("body_version_id"),
+                plate_version_id=record.get("plate_version_id"),
+                drawing_version_id=record.get("drawing_version_id"),
+                created_at=record.get("created_at"),
+                approved_at=record.get("approved_at"),
+                notes=record.get("notes"),
+            )
+            for record in records
+        ]
+
+    def get_review_round(
+        self, project_id: str, round_id: str
+    ) -> ReviewRound | None:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_REVIEW_ROUND]->(round:ReviewRound {id: $round_id})
+            OPTIONAL MATCH (round)-[:USES_BODY_VERSION]->(body:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_PLATE_VERSION]->(plate:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_DRAWING_VERSION]->(drawing:DocumentVersion)
+            RETURN round.id AS id,
+                   round.projectId AS project_id,
+                   round.sequence AS sequence,
+                   round.status AS status,
+                   round.notes AS notes,
+                   round.createdAt AS created_at,
+                   round.approvedAt AS approved_at,
+                   body.id AS body_version_id,
+                   plate.id AS plate_version_id,
+                   drawing.id AS drawing_version_id
+            """,
+            project_id=project_id,
+            round_id=round_id,
+            **self._query_config,
+        )
+        if not records:
+            return None
+        record = records[0]
+        return ReviewRound(
+            id=record["id"],
+            project_id=record["project_id"],
+            sequence=record["sequence"],
+            status=record["status"],
+            body_version_id=record.get("body_version_id"),
+            plate_version_id=record.get("plate_version_id"),
+            drawing_version_id=record.get("drawing_version_id"),
+            created_at=record.get("created_at"),
+            approved_at=record.get("approved_at"),
+            notes=record.get("notes"),
+        )
+
+    def approve_review_round(
+        self, project_id: str, round_id: str
+    ) -> ReviewRound:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (project:Project {id: $project_id})-[:HAS_REVIEW_ROUND]->(round:ReviewRound {id: $round_id})
+            SET round.status = 'approved',
+                round.approvedAt = datetime()
+            WITH round
+            OPTIONAL MATCH (round)-[:USES_BODY_VERSION]->(body:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_PLATE_VERSION]->(plate:DocumentVersion)
+            OPTIONAL MATCH (round)-[:USES_DRAWING_VERSION]->(drawing:DocumentVersion)
+            RETURN round.id AS id,
+                   round.projectId AS project_id,
+                   round.sequence AS sequence,
+                   round.status AS status,
+                   round.notes AS notes,
+                   round.createdAt AS created_at,
+                   round.approvedAt AS approved_at,
+                   body.id AS body_version_id,
+                   plate.id AS plate_version_id,
+                   drawing.id AS drawing_version_id
+            """,
+            project_id=project_id,
+            round_id=round_id,
+            **self._query_config,
+        )
+        if not records:
+            raise ReviewRoundNotFoundError(
+                f"Review round {round_id} not found in project {project_id}"
+            )
+        record = records[0]
+        return ReviewRound(
+            id=record["id"],
+            project_id=record["project_id"],
+            sequence=record["sequence"],
+            status=record["status"],
+            body_version_id=record.get("body_version_id"),
+            plate_version_id=record.get("plate_version_id"),
+            drawing_version_id=record.get("drawing_version_id"),
+            created_at=record.get("created_at"),
+            approved_at=record.get("approved_at"),
+            notes=record.get("notes"),
+        )
+

@@ -18,7 +18,9 @@ CONSTRAINTS = (
     ("archaeology_object_id_unique", "ArchaeologyObject"),
     ("original_asset_id_unique", "OriginalAsset"),
     ("review_decision_id_unique", "ReviewDecision"),
+    ("review_round_id_unique", "ReviewRound"),
 )
+
 
 INDEXES = (
     ("document_version_sha256", "DocumentVersion", ("sha256",)),
