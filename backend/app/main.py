@@ -21,8 +21,7 @@ from app.graph.project_repository import (
     ProjectRepository,
     ReviewRoundNotFoundError,
 )
-
-from app.graph.review_repository import ReviewRepository
+from app.graph.strict_review_repository import StrictReviewRepository
 from app.graph.schema import ensure_schema
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.file_store import FileStore
@@ -77,7 +76,7 @@ def create_app(
         if getattr(app.state, "review_repository", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
-                app.state.review_repository = ReviewRepository(driver)
+                app.state.review_repository = StrictReviewRepository(driver)
         if getattr(app.state, "orchestrator", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
