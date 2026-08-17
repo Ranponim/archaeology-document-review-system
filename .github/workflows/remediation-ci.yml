@@ -5,6 +5,7 @@ on:
     branches:
       - review-remediation-20260817
       - review-remediation-20260818-strict-run-contract
+      - feature/source-provenance-remediation-20260818
       - windows-docker-foundation
   workflow_dispatch:
 
