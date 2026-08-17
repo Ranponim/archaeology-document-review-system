@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, status
 from starlette.concurrency import run_in_threadpool
 
 from app.api.projects import ProjectRepositoryPort, _run_repository, get_project_repository
-from app.api.reviews import CandidateNotFoundError
+from app.graph.project_repository import AnalysisRunNotFoundError
 
 
 router = APIRouter(prefix="/api/v1/projects", tags=["runs"])
@@ -26,12 +26,12 @@ async def get_analysis_run_detail(
 ) -> dict[str, Any]:
     await _run_repository(project_repository.get_project, project_id)
     if review_repository is None or not hasattr(review_repository, "get_analysis_run"):
-        raise CandidateNotFoundError(run_id)
+        raise AnalysisRunNotFoundError(run_id)
     run = await run_in_threadpool(
         review_repository.get_analysis_run,
         project_id,
         run_id,
     )
     if not run:
-        raise CandidateNotFoundError(run_id)
+        raise AnalysisRunNotFoundError(run_id)
     return run
