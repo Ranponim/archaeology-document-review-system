@@ -118,7 +118,18 @@ class FakeProjectRepository:
                 sha256=v.sha256,
                 mime_type=v.mime_type,
             )
-        return None
+    def get_review_round(self, project_id: str, round_id: str):
+        if project_id != "p1" or round_id != "round_1":
+            return None
+        from app.domain.review_round import ReviewRound
+        return ReviewRound(
+            id="round_1",
+            project_id="p1",
+            sequence=1,
+            body_version_id="ver_1cha",
+            plate_version_id=None,
+            drawing_version_id=None,
+        )
 
 
 def _body_version(version_id: str, stage: str, pdf_path: Path) -> DocumentVersion:
@@ -515,7 +526,7 @@ def test_run_trigger_response_preserves_warnings_field_when_run_is_queued():
 
     resp = client.post(
         "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_1cha", "versionStage": "1차"},
+        json={"reviewRoundId": "round_1"},
     )
 
     assert resp.status_code == 202
