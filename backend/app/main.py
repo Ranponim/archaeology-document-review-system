@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -8,14 +7,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.assets import router as assets_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
-from app.api.assets import router as assets_router
+from app.api.repository_compat import adapt_project_repository, adapt_review_repository
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
-from app.graph.audited_review_repository import AuditedReviewRepository
 from app.graph.client import create_driver
+from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
     DocumentVersionNotFoundError,
@@ -77,7 +77,7 @@ def create_app(
         if getattr(app.state, "review_repository", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
-                app.state.review_repository = AuditedReviewRepository(driver)
+                app.state.review_repository = ProductionReviewRepository(driver)
         if getattr(app.state, "orchestrator", None) is None:
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
@@ -89,8 +89,8 @@ def create_app(
 
     application = FastAPI(lifespan=lifespan)
     application.state.file_store = file_store if file_store is not None else FileStore()
-    application.state.project_repository = project_repository
-    application.state.review_repository = review_repository
+    application.state.project_repository = adapt_project_repository(project_repository)
+    application.state.review_repository = adapt_review_repository(review_repository)
     application.state.orchestrator = orchestrator
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
     application.state.run_enqueuer = run_enqueuer or enqueue_proofreading
