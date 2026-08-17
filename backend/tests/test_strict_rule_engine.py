@@ -27,6 +27,7 @@ def test_target_number_filters_multi_object_text_to_target_mention():
     )
     target = ArchaeologyObjectData(
         object_id="obj2",
+        site="산노리",
         number="2호",
         type="수혈유구",
         canonical_name="2호 수혈유구",
