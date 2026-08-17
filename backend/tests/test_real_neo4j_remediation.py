@@ -120,7 +120,6 @@ def test_real_neo4j_round_run_candidate_and_visual_path(driver, tmp_path):
     _seed_project_graph(driver, tmp_path)
     projects = ReviewProjectRepository(driver)
 
-    # Real ReviewRound Cypher must create the canonical three-version set.
     round2 = projects.create_review_round(
         "p1",
         body_version_id="body_v2",
@@ -128,7 +127,7 @@ def test_real_neo4j_round_run_candidate_and_visual_path(driver, tmp_path):
         drawing_version_id="draw_v1",
         notes="real neo4j round",
     )
-    assert round2.sequence == 1  # first round node in this isolated graph
+    assert round2.sequence == 1
     resolved = resolve_review_round_inputs(projects, "p1", round2.id)
     assert resolved.body.version_id == "body_v2"
     assert resolved.plate.version_id == "plate_v1"
@@ -189,12 +188,9 @@ def test_real_neo4j_round_run_candidate_and_visual_path(driver, tmp_path):
     assert record["fingerprint"]
     assert record["evidence_run"] == "run_real_1"
 
-    # Candidate access is project scoped.
     assert reviews.get_candidate("p1", candidate_id) is not None
     assert reviews.get_candidate("p2", candidate_id) is None
 
-    # Execute the real strict visual Cypher, including explicit
-    # Reference->RESOLVES_TO and owning DocumentVersion traversal.
     assets = StrictAssetRepository(driver)
     raw_bundle = assets.get_candidate_visual_bundle(candidate_id, "p1")
     assert raw_bundle is not None
@@ -205,7 +201,6 @@ def test_real_neo4j_round_run_candidate_and_visual_path(driver, tmp_path):
     assert canonical["document_version"]["id"] == "plate_v1"
     assert assets.get_candidate_visual_bundle(candidate_id, "p2") is None
 
-    # Render from the owning PDF resolved through the graph.
     visual_service = StrictVisualAssetService(asset_repo=assets, data_root=tmp_path)
     bundle = visual_service.get_candidate_visual_bundle(candidate_id, "p1")
     assert bundle is not None
@@ -219,3 +214,79 @@ def test_real_neo4j_round_run_candidate_and_visual_path(driver, tmp_path):
     plate_render = visual_service.get_plate_render("plate_45")
     assert page_render["bytes"].startswith(b"\x89PNG")
     assert plate_render["bytes"].startswith(b"\x89PNG")
+
+
+def test_real_neo4j_predecessor_uses_round_lineage_when_all_stages_are_source(driver, tmp_path):
+    import fitz
+
+    def make_pdf(name: str, text: str) -> str:
+        path = tmp_path / name
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((50, 50), text)
+        doc.save(path)
+        doc.close()
+        return str(path)
+
+    body_uris = {
+        version_id: make_pdf(f"{version_id}.pdf", version_id)
+        for version_id in ("body_v1", "body_v2", "body_v3", "body_v4")
+    }
+    plate_uri = make_pdf("plate_v1.pdf", "plate")
+    drawing_uri = make_pdf("drawing_v1.pdf", "drawing")
+
+    with driver.session() as session:
+        session.run(
+            """
+            CREATE (p:Project {id:'round_project', name:'Round Project'})
+            CREATE (bodyDoc:Document {id:'round_body_doc', projectId:'round_project', kind:'report_body'})
+            CREATE (plateDoc:Document {id:'round_plate_doc', projectId:'round_project', kind:'plate_book'})
+            CREATE (drawDoc:Document {id:'round_draw_doc', projectId:'round_project', kind:'drawing_book'})
+            CREATE (p)-[:HAS_DOCUMENT]->(bodyDoc)
+            CREATE (p)-[:HAS_DOCUMENT]->(plateDoc)
+            CREATE (p)-[:HAS_DOCUMENT]->(drawDoc)
+            CREATE (v1:DocumentVersion {id:'body_v1', stage:'source', uri:$v1, sha256:'sha1'})
+            CREATE (v2:DocumentVersion {id:'body_v2', stage:'source', uri:$v2, sha256:'sha2'})
+            CREATE (v3:DocumentVersion {id:'body_v3', stage:'source', uri:$v3, sha256:'sha3'})
+            CREATE (v4:DocumentVersion {id:'body_v4', stage:'source', uri:$v4, sha256:'sha4'})
+            CREATE (pv:DocumentVersion {id:'round_plate_v1', stage:'source', uri:$plate, sha256:'psha'})
+            CREATE (dv:DocumentVersion {id:'round_draw_v1', stage:'source', uri:$drawing, sha256:'dsha'})
+            CREATE (bodyDoc)-[:HAS_VERSION]->(v1)
+            CREATE (bodyDoc)-[:HAS_VERSION]->(v2)
+            CREATE (bodyDoc)-[:HAS_VERSION]->(v3)
+            CREATE (bodyDoc)-[:HAS_VERSION]->(v4)
+            CREATE (plateDoc)-[:HAS_VERSION]->(pv)
+            CREATE (drawDoc)-[:HAS_VERSION]->(dv)
+            """,
+            v1=body_uris["body_v1"],
+            v2=body_uris["body_v2"],
+            v3=body_uris["body_v3"],
+            v4=body_uris["body_v4"],
+            plate=plate_uri,
+            drawing=drawing_uri,
+        ).consume()
+
+    repo = ReviewProjectRepository(driver)
+    rounds = [
+        repo.create_review_round("round_project", "body_v1", "round_plate_v1", "round_draw_v1"),
+        repo.create_review_round("round_project", "body_v2", "round_plate_v1", "round_draw_v1"),
+        repo.create_review_round("round_project", "body_v2", "round_plate_v1", "round_draw_v1"),
+        repo.create_review_round("round_project", "body_v3", "round_plate_v1", "round_draw_v1"),
+        repo.create_review_round("round_project", "body_v4", "round_plate_v1", "round_draw_v1"),
+    ]
+
+    assert [round_.sequence for round_ in rounds] == [1, 2, 3, 4, 5]
+    previous4 = repo.get_previous_review_round("round_project", rounds[3].id)
+    previous5 = repo.get_previous_review_round("round_project", rounds[4].id)
+    assert previous4 is not None
+    assert previous4.id == rounds[2].id
+    assert previous4.body_version_id == "body_v2"
+    assert previous5 is not None
+    assert previous5.id == rounds[3].id
+    assert previous5.body_version_id == "body_v3"
+
+    with driver.session() as session:
+        stages = session.run(
+            "MATCH (:Document {id:'round_body_doc'})-[:HAS_VERSION]->(v) RETURN collect(DISTINCT v.stage) AS stages"
+        ).single()["stages"]
+    assert stages == ["source"]
