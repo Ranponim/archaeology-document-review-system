@@ -18,7 +18,6 @@ export type DocumentVersion = {
   mimeType: string;
   sizeBytes: number;
   stage: string;
-  /** report_body | plate_book | drawing_book; tracked locally because the API omits it. */
   kind?: string;
 };
 
@@ -27,6 +26,7 @@ export type AnalysisRun = {
   status: string;
   step: string;
   documentVersionId: string;
+  reviewRoundId?: string | null;
   errorCode: string | null;
   retryable: boolean;
   progressStage?: string | null;
@@ -178,6 +178,7 @@ export type CorrectionCandidate = {
   archaeology_object_id?: string | null;
   confidence?: number;
   severity?: 'low' | 'medium' | 'high' | string;
+  findingFingerprint?: string | null;
   decisions?: ReviewDecision[];
   latestDecision?: ReviewDecision | null;
   latest_decision?: ReviewDecision | null;
@@ -197,13 +198,6 @@ export type CandidateListResponse = {
   candidates: CorrectionCandidate[];
 };
 
-/**
- * One edge of the canonical identity path (review §11) returned by the
- * backend `get_candidate_traceability`. Only edges the backend actually
- * traversed in Neo4j are present — the frontend never invents relationships
- * (anti-pattern #7/#10). `source`/`target` carry the node properties of the
- * from/to nodes so the graph can render them without synthesizing data.
- */
 export type CanonicalPathEdge = {
   from: string;
   from_label?: string;
@@ -246,6 +240,8 @@ export type TraceabilityResponse = {
 };
 
 export type RunTriggerPayload = {
+  reviewRoundId?: string | null;
+  review_round_id?: string | null;
   bodyVersionId?: string | null;
   body_version_id?: string | null;
   plateVersionId?: string | null;
@@ -265,6 +261,8 @@ export type RunTriggerResponse = {
   run_id?: string;
   projectId?: string;
   project_id?: string;
+  reviewRoundId?: string | null;
+  review_round_id?: string | null;
   status: string;
   pagesParsed?: number;
   pages_parsed?: number;
@@ -279,6 +277,22 @@ export type RunTriggerResponse = {
   warnings?: string[];
 };
 
+export type AnalysisRunDiagnostics = {
+  id?: string;
+  status?: string;
+  step?: string;
+  reviewRoundId?: string | null;
+  bodyVersionId?: string | null;
+  plateVersionId?: string | null;
+  drawingVersionId?: string | null;
+  rawFindings?: number;
+  dedupedFindings?: number;
+  selectedCandidates?: number;
+  expensiveOperations?: number;
+  selectionMode?: string | null;
+  summary?: Record<string, unknown>;
+};
+
 export type ReviewDecisionPayload = {
   decision: ReviewDecisionValue;
   reviewer: string;
@@ -288,15 +302,6 @@ export type ReviewDecisionPayload = {
   modified_text?: string | null;
 };
 
-/**
- * Visual asset metadata contract (review §10 / P0-D backend).
- *
- * `imageUrl` is a relative API path to the render route — never a server
- * filesystem path (anti-pattern #15). `bbox` is normalized (0..1, PDF
- * top-left origin) for plate panels / drawing regions; the frontend overlays
- * the highlight as `left = bbox[0]*renderWidth`, `top = bbox[1]*renderHeight`,
- * etc. `renderWidth`/`renderHeight` are the full page render dimensions.
- */
 export type VisualAssetMetadata = {
   assetType: string;
   imageUrl: string;
@@ -312,11 +317,11 @@ export type VisualAssetMetadata = {
   contentType?: string;
 };
 
-/** Mandatory Test D: one candidate's source body page + canonical visual asset. */
 export type CandidateVisualBundle = {
   candidateId: string;
   source?: VisualAssetMetadata | null;
   canonical?: VisualAssetMetadata | null;
+  unresolvedReason?: string | null;
 };
 
 export type RetryAnalysisRunResponse = {
@@ -401,12 +406,22 @@ export async function createProject(name: string): Promise<Project> {
   return decode<Project>(response);
 }
 
+export async function fetchReviewRounds(projectId: string): Promise<ReviewRound[]> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/rounds`);
+  const data = await decode<{ items?: ReviewRound[] } | ReviewRound[]>(response);
+  if (Array.isArray(data)) return data;
+  return data.items ?? [];
+}
+
 export async function uploadDocument(
   projectId: string,
   file: File,
   kind: string,
-  stage: string,
+  _legacyStage?: string,
 ): Promise<UploadAccepted> {
+  const rounds = await fetchReviewRounds(projectId).catch(() => [] as ReviewRound[]);
+  const nextSequence = rounds.length > 0 ? Math.max(...rounds.map((r) => r.sequence)) + 1 : 1;
+  const stage = `${nextSequence}차`;
   const body = new FormData();
   body.append('file', file);
   const params = new URLSearchParams({ kind, stage });
@@ -428,22 +443,40 @@ export async function triggerProofreadingRun(
   projectId: string,
   payload: Partial<RunTriggerPayload> = {},
 ): Promise<RunTriggerResponse> {
+  let reviewRoundId = payload.review_round_id ?? payload.reviewRoundId ?? null;
+  if (!reviewRoundId) {
+    const rounds = await fetchReviewRounds(projectId);
+    const runnable = rounds.filter((round) => round.status !== 'approved');
+    const source = runnable.length > 0 ? runnable : rounds;
+    reviewRoundId = source.length > 0 ? source[source.length - 1].id : null;
+  }
+  if (!reviewRoundId) {
+    throw new ApiError('review_round_required');
+  }
+
   const response = await fetch(
     `/api/v1/projects/${encodeURIComponent(projectId)}/runs`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        body_version_id: payload.body_version_id ?? payload.bodyVersionId ?? null,
-        plate_version_id: payload.plate_version_id ?? payload.plateVersionId ?? null,
-        drawing_version_id: payload.drawing_version_id ?? payload.drawingVersionId ?? null,
+        review_round_id: reviewRoundId,
         enable_vlm: payload.enable_vlm ?? payload.enableVlm ?? true,
         enable_ai_review: payload.enable_ai_review ?? payload.enableAiReview ?? true,
-        version_stage: payload.version_stage ?? payload.versionStage ?? '1차',
       }),
     },
   );
   return decode<RunTriggerResponse>(response);
+}
+
+export async function fetchAnalysisRun(
+  projectId: string,
+  runId: string,
+): Promise<AnalysisRunDiagnostics> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`,
+  );
+  return decode<AnalysisRunDiagnostics>(response);
 }
 
 export async function fetchCandidates(
@@ -470,7 +503,7 @@ export async function submitReviewDecision(
   payload: ReviewDecisionPayload,
 ): Promise<ReviewDecision> {
   const response = await fetch(
-    `/api/v1/projects/${encodeURIComponent(projectId)}/candidates/${encodeURIComponent(candidateId)}/decision`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/candidates/${encodeURIComponent(candidateId)}/decisions`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -524,13 +557,6 @@ export async function retryAnalysisRun(
   return decode<RetryAnalysisRunResponse>(response);
 }
 
-export async function fetchReviewRounds(projectId: string): Promise<ReviewRound[]> {
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/rounds`);
-  const data = await decode<{ items?: ReviewRound[] } | ReviewRound[]>(response);
-  if (Array.isArray(data)) return data;
-  return data.items ?? [];
-}
-
 export async function fetchReviewRound(
   projectId: string,
   roundId: string,
@@ -545,11 +571,13 @@ export async function createReviewRound(
   projectId: string,
   payload: CreateReviewRoundPayload,
 ): Promise<ReviewRound> {
+  const bodyVersionId = payload.body_version_id ?? payload.bodyVersionId ?? null;
+  if (!bodyVersionId) throw new ApiError('body_version_required');
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/rounds`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      body_version_id: payload.body_version_id ?? payload.bodyVersionId ?? null,
+      body_version_id: bodyVersionId,
       plate_version_id: payload.plate_version_id ?? payload.plateVersionId ?? null,
       drawing_version_id: payload.drawing_version_id ?? payload.drawingVersionId ?? null,
       notes: payload.notes ?? null,
@@ -571,4 +599,3 @@ export async function approveReviewRound(
   );
   return decode<ReviewRound>(response);
 }
-
