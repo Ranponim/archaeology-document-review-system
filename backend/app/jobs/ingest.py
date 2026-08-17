@@ -249,7 +249,7 @@ def run_ingest_job(
 
             _update_progress("유물 개체 저장", f"{len(all_objects)}개 고고학 개체 노드를 지식그래프에 반영 중...")
             if canonical_repo is not None and all_objects:
-                canonical_repo.save_archaeology_objects(all_objects)
+                canonical_repo.save_archaeology_objects(all_objects, project_id=project_id)
 
             _update_progress("완료", "본문 인제스트 완료", len(pages), len(pages))
             return IngestResult(

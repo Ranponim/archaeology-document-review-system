@@ -280,8 +280,10 @@ class ObjectResolver:
         return " ".join(parts)
 
     @staticmethod
-    def generate_object_id(site: str, canonical_name: str) -> str:
-        key = f"{site}:{canonical_name}".strip(":")
+    def generate_object_id(
+        project_id: str = "", site: str = "", canonical_name: str = ""
+    ) -> str:
+        key = f"{project_id}:{site}:{canonical_name}".strip(":")
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
         return f"obj_{digest}"
 
@@ -358,11 +360,22 @@ class ObjectResolver:
         captions: list[CaptionData] | None = None,
         project_id: str = "",
         site: str = "",
+        text: str | None = None,
     ) -> list[ObjectResolutionResult]:
         """Resolves mentions from text blocks and captions into canonical
 
         ArchaeologyObjectData records with ambiguity safety.
         """
+        if text and not blocks:
+            blocks = [
+                TextBlockData(
+                    block_id="text_1",
+                    text=text,
+                    normalized_text=text,
+                    order=1,
+                )
+            ]
+
         all_mentions: list[ExtractedMention] = []
 
         if blocks:
@@ -450,7 +463,9 @@ class ObjectResolver:
                 confidence = 1.0
                 method = "deterministic_rule"
 
-            object_id = self.generate_object_id(obj_site, canonical_name)
+            object_id = self.generate_object_id(
+                project_id=project_id, site=obj_site, canonical_name=canonical_name
+            )
 
             obj_data = ArchaeologyObjectData(
                 object_id=object_id,
@@ -462,6 +477,7 @@ class ObjectResolver:
                 canonical_name=canonical_name,
                 source_block_ids=source_ids,
                 source_sha256=source_sha,
+                project_id=project_id or None,
             )
 
             res = ObjectResolutionResult(

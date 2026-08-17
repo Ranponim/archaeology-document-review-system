@@ -232,6 +232,7 @@ class CanonicalRepository:
             "canonical_name": obj.canonical_name,
             "source_block_ids": obj.source_block_ids,
             "source_sha256": obj.source_sha256,
+            "project_id": obj.project_id,
         }
 
     def save_references(self, references: list[ReferenceData]) -> None:
@@ -414,7 +415,9 @@ class CanonicalRepository:
         )
 
     def save_archaeology_objects(
-        self, objects: list[ArchaeologyObjectData]
+        self,
+        objects: list[ArchaeologyObjectData],
+        project_id: str | None = None,
     ) -> None:
         if self._driver is None or not objects:
             return
@@ -430,7 +433,13 @@ class CanonicalRepository:
             obj.number = o.number,
             obj.canonical_name = o.canonical_name,
             obj.source_sha256 = o.source_sha256,
-            obj.source_block_ids = o.source_block_ids
+            obj.source_block_ids = o.source_block_ids,
+            obj.projectId = coalesce($project_id, o.project_id, obj.projectId)
+        WITH obj, o
+        FOREACH (_ IN CASE WHEN coalesce($project_id, o.project_id) IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (proj:Project {id: coalesce($project_id, o.project_id)})
+            MERGE (proj)-[:HAS_OBJECT]->(obj)
+        )
         WITH obj, o
         UNWIND o.source_block_ids AS block_id
         OPTIONAL MATCH (b:TextBlock {id: block_id})
@@ -445,6 +454,7 @@ class CanonicalRepository:
         self._driver.execute_query(
             cypher,
             objects=obj_params,
+            project_id=project_id,
             **self._query_config(),
         )
 
@@ -688,7 +698,10 @@ class CanonicalRepository:
         }
 
     def get_object_evidence_bundle(
-        self, object_id: str, analysis_run_id: str | None = None
+        self,
+        object_id: str,
+        analysis_run_id: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> ObjectEvidenceBundle:
         """Gather the evidence bundle for one ArchaeologyObject by graph traversal.
 
@@ -726,15 +739,24 @@ class CanonicalRepository:
         canonical_name = str(obj_props.get("canonical_name") or "")
 
         text_claims: list[EvidenceData] = self._query_text_claims(
-            object_id, analysis_run_id=analysis_run_id
+            object_id,
+            analysis_run_id=analysis_run_id,
+            document_version_ids=document_version_ids,
         )
         references: list[EvidenceData] = self._query_reference_evidences(
-            object_id, analysis_run_id=analysis_run_id
+            object_id,
+            analysis_run_id=analysis_run_id,
+            document_version_ids=document_version_ids,
         )
         plate_claims, drawing_claims = self._query_visual_claims(
-            object_id, analysis_run_id=analysis_run_id
+            object_id,
+            analysis_run_id=analysis_run_id,
+            document_version_ids=document_version_ids,
         )
-        visual_observations, version_claims = self._query_candidate_evidences(object_id)
+        visual_observations, version_claims = self._query_candidate_evidences(
+            object_id,
+            document_version_ids=document_version_ids,
+        )
 
         return ObjectEvidenceBundle(
             object_id=object_id,
@@ -748,19 +770,26 @@ class CanonicalRepository:
         )
 
     def _query_text_claims(
-        self, object_id: str, analysis_run_id: str | None = None
+        self,
+        object_id: str,
+        analysis_run_id: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> list[EvidenceData]:
         cypher = """
         MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
         OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
         OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
+        WHERE $document_version_ids IS NULL OR version.id IN $document_version_ids
         RETURN properties(source) AS source,
                properties(page) AS page,
                properties(version) AS version
         """
         claims: list[EvidenceData] = []
         records, _, _ = self._driver.execute_query(
-            cypher, object_id=object_id, **self._query_config()
+            cypher,
+            object_id=object_id,
+            document_version_ids=document_version_ids,
+            **self._query_config(),
         )
         for row in records:
             source = dict(row["source"]) if row.get("source") else {}
@@ -768,6 +797,8 @@ class CanonicalRepository:
                 continue
             page = dict(row["page"]) if row.get("page") else {}
             version = dict(row["version"]) if row.get("version") else {}
+            if document_version_ids is not None and version.get("id") not in document_version_ids:
+                continue
             text = source.get("text") or source.get("raw_text") or ""
             claims.append(
                 EvidenceData(
@@ -794,13 +825,17 @@ class CanonicalRepository:
         return claims
 
     def _query_reference_evidences(
-        self, object_id: str, analysis_run_id: str | None = None
+        self,
+        object_id: str,
+        analysis_run_id: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> list[EvidenceData]:
         cypher = """
         MATCH (source)-[:MENTIONS]->(obj:ArchaeologyObject {id: $object_id})
         OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
         OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
         MATCH (source)-[:REFERENCES]->(ref:Reference)
+        WHERE $document_version_ids IS NULL OR version.id IN $document_version_ids
         RETURN properties(source) AS source,
                properties(ref) AS ref,
                properties(page) AS page,
@@ -808,7 +843,10 @@ class CanonicalRepository:
         """
         evidences: list[EvidenceData] = []
         records, _, _ = self._driver.execute_query(
-            cypher, object_id=object_id, **self._query_config()
+            cypher,
+            object_id=object_id,
+            document_version_ids=document_version_ids,
+            **self._query_config(),
         )
         for row in records:
             ref = dict(row["ref"]) if row.get("ref") else {}
@@ -817,6 +855,8 @@ class CanonicalRepository:
             source = dict(row["source"]) if row.get("source") else {}
             page = dict(row["page"]) if row.get("page") else {}
             version = dict(row["version"]) if row.get("version") else {}
+            if document_version_ids is not None and version.get("id") not in document_version_ids:
+                continue
             evidences.append(
                 EvidenceData(
                     id=f"ev_ref_{object_id}_{ref.get('ref_type')}_{ref.get('number')}",
@@ -844,7 +884,10 @@ class CanonicalRepository:
         return evidences
 
     def _query_visual_claims(
-        self, object_id: str, analysis_run_id: str | None = None
+        self,
+        object_id: str,
+        analysis_run_id: str | None = None,
+        document_version_ids: list[str] | None = None,
     ) -> tuple[list[EvidenceData], list[EvidenceData]]:
         cypher = """
         MATCH (asset)-[:DEPICTS]->(obj:ArchaeologyObject {id: $object_id})
@@ -852,6 +895,11 @@ class CanonicalRepository:
         OPTIONAL MATCH (ref)<-[:REFERENCES]-(source)
         OPTIONAL MATCH (page:Page)-[:HAS_BLOCK|HAS_CAPTION]->(source)
         OPTIONAL MATCH (version:DocumentVersion)-[:HAS_PAGE]->(page)
+        OPTIONAL MATCH (doc_version:DocumentVersion)-[:HAS_PLATE|HAS_DRAWING]->(asset)
+        WHERE $document_version_ids IS NULL
+           OR asset.document_version_id IN $document_version_ids
+           OR version.id IN $document_version_ids
+           OR doc_version.id IN $document_version_ids
         RETURN head(labels(asset)) AS asset_label,
                properties(asset) AS asset,
                properties(ref) AS ref,
@@ -861,7 +909,10 @@ class CanonicalRepository:
         plate_claims: list[EvidenceData] = []
         drawing_claims: list[EvidenceData] = []
         records, _, _ = self._driver.execute_query(
-            cypher, object_id=object_id, **self._query_config()
+            cypher,
+            object_id=object_id,
+            document_version_ids=document_version_ids,
+            **self._query_config(),
         )
         for row in records:
             asset = dict(row["asset"]) if row.get("asset") else {}
@@ -876,6 +927,8 @@ class CanonicalRepository:
                 continue
             version = dict(row["version"]) if row.get("version") else {}
             document_version_id = asset.get("document_version_id") or version.get("id")
+            if document_version_ids is not None and document_version_id not in document_version_ids:
+                continue
             physical_page = asset.get("physical_page")
             page_id = (
                 f"{document_version_id}_p{physical_page}"
@@ -886,7 +939,7 @@ class CanonicalRepository:
             ev = EvidenceData(
                 id=f"{prefix}_{object_id}_{asset['id']}",
                 kind=kind,
-                source_sha256=asset.get("source_sha256"),
+                source_sha256=asset.get("source_sha256") or version.get("sha256"),
                 document_version_id=document_version_id,
                 page_id=page_id,
                 region_id=asset["id"],
@@ -913,13 +966,18 @@ class CanonicalRepository:
         return plate_claims, drawing_claims
 
     def _query_candidate_evidences(
-        self, object_id: str
+        self,
+        object_id: str,
+        document_version_ids: list[str] | None = None,
     ) -> tuple[list[EvidenceData], list[EvidenceData]]:
         cypher = """
         MATCH (cand:CorrectionCandidate)-[:ABOUT]->(obj:ArchaeologyObject {id: $object_id})
         OPTIONAL MATCH (cand)-[:SUPPORTED_BY]->(ev:Evidence)
         OPTIONAL MATCH (ev)-[:EXTRACTED_FROM]->(page:Page)
         OPTIONAL MATCH (ev)-[:FROM_VERSION]->(version:DocumentVersion)
+        WHERE $document_version_ids IS NULL
+           OR version.id IN $document_version_ids
+           OR ev.document_version_id IN $document_version_ids
         RETURN properties(cand) AS cand,
                properties(ev) AS ev,
                properties(page) AS page,
@@ -928,13 +986,18 @@ class CanonicalRepository:
         visual_observations: list[EvidenceData] = []
         version_claims: list[EvidenceData] = []
         records, _, _ = self._driver.execute_query(
-            cypher, object_id=object_id, **self._query_config()
+            cypher,
+            object_id=object_id,
+            document_version_ids=document_version_ids,
+            **self._query_config(),
         )
         for row in records:
             ev_props = row.get("ev")
             if not ev_props:
                 continue
             ev = evidence_from_row_props(dict(ev_props))
+            if document_version_ids is not None and ev.document_version_id not in document_version_ids:
+                continue
             if ev.kind == "vlm_observation":
                 visual_observations.append(ev)
             elif ev.kind == "version_change":

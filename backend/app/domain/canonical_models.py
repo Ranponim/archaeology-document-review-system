@@ -100,6 +100,7 @@ class ArchaeologyObjectData:
     canonical_name: str = ""
     source_block_ids: list[str] = field(default_factory=list)
     source_sha256: str | None = None
+    project_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -476,7 +476,9 @@ class ProofreadingOrchestrator:
         all_objects = [r.object_data for r in obj_resolution_results]
 
         if self.canonical_repo is not None and all_objects:
-            self.canonical_repo.save_archaeology_objects(objects=all_objects)
+            self.canonical_repo.save_archaeology_objects(
+                objects=all_objects, project_id=project_id
+            )
 
         # 5b. Persist DEPICTS links from visual assets to ArchaeologyObjects.
         # Plates/drawings (steps 3-4) and objects (step 5) are already saved,
@@ -703,10 +705,19 @@ class ProofreadingOrchestrator:
                     "(GRAPH_EVIDENCE_UNAVAILABLE)"
                 )
         else:
+            active_version_ids = [
+                v for v in [body_version_id, plate_version_id, drawing_version_id] if v
+            ]
+            if version_ids:
+                active_version_ids.extend(version_ids.values())
+            scoped_version_ids = list(dict.fromkeys(active_version_ids)) if active_version_ids else None
+
             for obj in all_objects:
                 try:
                     bundle = self.canonical_repo.get_object_evidence_bundle(
-                        obj.object_id, analysis_run_id=run_id
+                        obj.object_id,
+                        analysis_run_id=run_id,
+                        document_version_ids=scoped_version_ids,
                     )
                 except Exception as exc:  # noqa: BLE001 - fail closed in production
                     if allow_degraded_mode:
@@ -949,7 +960,9 @@ class ProofreadingOrchestrator:
                         continue
                     try:
                         refreshed = self.canonical_repo.get_object_evidence_bundle(
-                            obj.object_id, analysis_run_id=run_id
+                            obj.object_id,
+                            analysis_run_id=run_id,
+                            document_version_ids=scoped_version_ids,
                         )
                     except Exception as exc:  # noqa: BLE001 - fail closed in production
                         if allow_degraded_mode:
