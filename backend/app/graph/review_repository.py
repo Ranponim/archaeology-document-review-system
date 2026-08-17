@@ -626,6 +626,33 @@ class ReviewRepository:
             **self._query_config(),
         )
 
+    def update_run_progress(
+        self,
+        run_id: str,
+        progress_stage: str,
+        progress_message: str,
+        current_page: int | None = None,
+        total_pages: int | None = None,
+    ) -> None:
+        if self._driver is None:
+            return
+        self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $run_id})
+            SET run.progressStage = $progress_stage,
+                run.progressMessage = $progress_message,
+                run.currentPage = $current_page,
+                run.totalPages = $total_pages,
+                run.updatedAt = datetime()
+            """,
+            run_id=run_id,
+            progress_stage=progress_stage,
+            progress_message=progress_message,
+            current_page=current_page,
+            total_pages=total_pages,
+            **self._query_config(),
+        )
+
     def save_review_decision(
         self,
         decision_id: str,

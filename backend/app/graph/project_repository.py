@@ -46,7 +46,8 @@ class ProjectRepository:
             CREATE (project:Project {
                 id: $id,
                 name: $name,
-                internalCode: $internal_code
+                internalCode: $internal_code,
+                createdAt: datetime()
             })
             """,
             id=project.id,
@@ -55,6 +56,24 @@ class ProjectRepository:
             **self._query_config,
         )
         return project
+
+    def list_projects(self) -> list[Project]:
+        result = self._driver.execute_query(
+            """
+            MATCH (project:Project)
+            RETURN project.id AS id, project.name AS name, project.internalCode AS internalCode
+            ORDER BY project.createdAt DESC, project.name ASC
+            """,
+            **self._query_config,
+        )
+        return [
+            Project(
+                id=record["id"],
+                name=record["name"],
+                internal_code=record["internalCode"],
+            )
+            for record in result.records
+        ]
 
     def add_document_version(
         self,
@@ -287,7 +306,11 @@ class ProjectRepository:
                        step: run.step,
                        errorCode: run.errorCode,
                        retryable: coalesce(run.retryable, false),
-                       documentVersionId: version.id
+                       documentVersionId: version.id,
+                       progressStage: run.progressStage,
+                       progressMessage: run.progressMessage,
+                       currentPage: run.currentPage,
+                       totalPages: run.totalPages
                    }) AS analysisRuns
             """,
             project_id=project_id,
@@ -338,6 +361,10 @@ class ProjectRepository:
                 "document_version_id": value["documentVersionId"],
                 "error_code": value.get("errorCode"),
                 "retryable": value.get("retryable", False),
+                "progress_stage": value.get("progressStage"),
+                "progress_message": value.get("progressMessage"),
+                "current_page": value.get("currentPage"),
+                "total_pages": value.get("totalPages"),
             }
             for value in record["analysisRuns"]
             if value["id"] is not None
@@ -604,6 +631,31 @@ class ProjectRepository:
             **self._query_config,
         )
         return bool(records)
+
+    def update_run_progress(
+        self,
+        analysis_run_id: str,
+        progress_stage: str,
+        progress_message: str,
+        current_page: int | None = None,
+        total_pages: int | None = None,
+    ) -> None:
+        self._driver.execute_query(
+            """
+            MATCH (run:AnalysisRun {id: $analysis_run_id})
+            SET run.progressStage = $progress_stage,
+                run.progressMessage = $progress_message,
+                run.currentPage = $current_page,
+                run.totalPages = $total_pages,
+                run.updatedAt = datetime()
+            """,
+            analysis_run_id=analysis_run_id,
+            progress_stage=progress_stage,
+            progress_message=progress_message,
+            current_page=current_page,
+            total_pages=total_pages,
+            **self._query_config,
+        )
 
     def prepare_ingest_retry(self, project_id: str, analysis_run_id: str) -> str:
         records, _, _ = self._driver.execute_query(

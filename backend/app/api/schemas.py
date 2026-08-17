@@ -70,6 +70,10 @@ class AnalysisRunResponse(ApiModel):
     document_version_id: str = Field(alias="documentVersionId")
     error_code: str | None = Field(default=None, alias="errorCode")
     retryable: bool = False
+    progress_stage: str | None = Field(default=None, alias="progressStage")
+    progress_message: str | None = Field(default=None, alias="progressMessage")
+    current_page: int | None = Field(default=None, alias="currentPage")
+    total_pages: int | None = Field(default=None, alias="totalPages")
 
 
 class ProjectDetailResponse(ProjectResponse):

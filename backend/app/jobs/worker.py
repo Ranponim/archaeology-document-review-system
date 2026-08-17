@@ -84,13 +84,14 @@ class LocalMetadataExtractor:
                 render_dir=render_dir,
             )
         except Exception as error:
-            logger.warning(
+            logger.error(
                 "Canonical graph ingestion failed for document %s: %s",
                 context.document_version_id,
                 error,
             )
-            if isinstance(error, (ConversionError, FileNotFoundError)):
-                raise
+            raise ConversionError(
+                f"Canonical graph ingestion failed: {error}"
+            ) from error
 
         return ExtractionMetadata(
             mime_type=context.mime_type,

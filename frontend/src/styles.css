@@ -193,10 +193,77 @@ button:disabled,
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-left: 4px solid #b66b37;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 6px 6px 0;
   background: #f1ede3;
+  transition: all 0.2s ease;
+}
+
+.run-card.is-running {
+  border-left-color: #2b7a59;
+  background: #f4f8f5;
+  box-shadow: 0 2px 8px rgba(43, 122, 89, 0.08);
+}
+
+.run-progress-box {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid rgba(43, 122, 89, 0.2);
+  border-radius: 4px;
+}
+
+.run-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+}
+
+.run-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: #1e5c41;
+}
+
+.run-stage-badge::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2b7a59;
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
+.run-progress-msg {
+  font-size: 0.82rem;
+  color: #3b4840;
+  margin: 2px 0 0;
+}
+
+.run-mini-progress-bar {
+  height: 5px;
+  width: 100%;
+  background: #e2ede6;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.run-mini-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2b7a59, #48a87d);
+  transition: width 0.3s ease;
 }
 
 .run-card div:first-child,

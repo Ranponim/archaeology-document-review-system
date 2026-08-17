@@ -5,7 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
     environment:
-      DATA_ROOT: ${DATA_ROOT}
+      DATA_ROOT: /data
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
@@ -25,7 +25,7 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      DATA_ROOT: ${DATA_ROOT}
+      DATA_ROOT: /data
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}

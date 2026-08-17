@@ -22,6 +22,10 @@ export type AnalysisRun = {
   documentVersionId: string;
   errorCode: string | null;
   retryable: boolean;
+  progressStage?: string | null;
+  progressMessage?: string | null;
+  currentPage?: number | null;
+  totalPages?: number | null;
 };
 
 export type ProjectDetail = Project & {
@@ -290,6 +294,11 @@ async function decode<T>(response: Response): Promise<T> {
   throw new ApiError(code);
 }
 
+export async function fetchProjects(): Promise<Project[]> {
+  const response = await fetch('/api/projects');
+  return decode<Project[]>(response);
+}
+
 export async function createProject(name: string): Promise<Project> {
   const response = await fetch('/api/projects', {
     method: 'POST',
@@ -316,9 +325,11 @@ export async function uploadDocument(
 }
 
 export async function getProject(projectId: string): Promise<ProjectDetail> {
-  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+  const response = await fetch(`/api/projects/${projectId}`);
   return decode<ProjectDetail>(response);
 }
+
+export const fetchProject = getProject;
 
 export async function triggerProofreadingRun(
   projectId: string,

@@ -2,7 +2,7 @@ import os
 import warnings
 from pathlib import Path
 
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data"))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", "").strip() or "/data")
 
 OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY"
 LEGACY_AI_API_KEY_ENV = "AI_API_KEY"

@@ -288,21 +288,26 @@ class PlateParser:
         pdf_path: str | Path,
         document_version_id: str | None = None,
         render_dir: str | Path | None = None,
+        on_progress: Any | None = None,
     ) -> PlateIndex:
-        """Parse an entire PDF plate book into a PlateIndex."""
+        """Parse plate document and return searchable PlateIndex."""
         plates = self.parse_plates(
             pdf_path,
             document_version_id=document_version_id,
             render_dir=render_dir,
+            on_progress=on_progress,
         )
-        plates_by_number = {p.number: p for p in plates}
-        return PlateIndex(plates_by_number=plates_by_number, plates=plates)
+        return PlateIndex(
+            plates_by_number={p.number: p for p in plates},
+            plates=plates,
+        )
 
     def parse_plates(
         self,
         pdf_path: str | Path,
         document_version_id: str | None = None,
         render_dir: str | Path | None = None,
+        on_progress: Any | None = None,
     ) -> list[PlateData]:
         """Parse all plates from a PDF file."""
         path = Path(pdf_path)
@@ -314,6 +319,7 @@ class PlateParser:
                 sha256=sha256,
                 document_version_id=document_version_id,
                 render_dir=render_dir,
+                on_progress=on_progress,
             )
         return self._parse_with_pypdf(
             path,
@@ -360,6 +366,7 @@ class PlateParser:
         sha256: str | None = None,
         document_version_id: str | None = None,
         render_dir: str | Path | None = None,
+        on_progress: Any | None = None,
     ) -> list[PlateData]:
         doc = pymupdf.open(str(pdf_path))
         total_pages = len(doc)
@@ -371,6 +378,16 @@ class PlateParser:
 
         for pno in range(s_page - 1, e_page):
             physical_page = pno + 1
+            if on_progress is not None and (physical_page % 5 == 1 or physical_page == e_page):
+                try:
+                    on_progress(
+                        physical_page,
+                        total_pages,
+                        f"도판 {physical_page}/{total_pages}쪽 고해상도 렌더링 및 패널 추출 중",
+                    )
+                except Exception:
+                    pass
+
             page = doc[pno]
             blocks = page.get_text("blocks")
             words = page.get_text("words")
@@ -494,7 +511,8 @@ class PlateParser:
         )
         render_path = render_root / file_name
         render_path.parent.mkdir(parents=True, exist_ok=True)
-        render_path.write_bytes(cls._render_page_png(page))
+        if not render_path.exists() or render_path.stat().st_size == 0:
+            render_path.write_bytes(cls._render_page_png(page))
         return str(render_path)
 
     def _parse_with_pypdf(

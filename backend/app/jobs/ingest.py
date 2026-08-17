@@ -172,12 +172,27 @@ def run_ingest_job(
     try:
         norm_kind = str(kind).strip().lower()
 
+        def _update_progress(stage: str, msg: str, cur_p: int | None = None, tot_p: int | None = None):
+            if review_repo is not None and analysis_run_id is not None:
+                try:
+                    review_repo.update_run_progress(
+                        run_id=analysis_run_id,
+                        progress_stage=stage,
+                        progress_message=msg,
+                        current_page=cur_p,
+                        total_pages=tot_p,
+                    )
+                except Exception:
+                    pass
+
         if norm_kind in ("report_body", "report", "body"):
             from app.services.object_resolver import ObjectResolver
             from app.services.pdf_parser import PDFParser
 
             parser = pdf_parser or PDFParser()
             resolver = object_resolver or ObjectResolver()
+
+            _update_progress("구조 파싱", "본문 텍스트 블록 및 캡션 파싱 중...")
 
             if page_range:
                 pages: list[ParsedPage] = parser.parse_page_range(
@@ -204,6 +219,7 @@ def run_ingest_job(
                     f"Body document '{version_id}' produced zero parsed pages"
                 )
 
+            _update_progress("구조 저장", f"본문 {len(pages)}개 페이지 계층을 그래프에 반영 중...")
             if review_repo is not None and pages:
                 review_repo.save_pages_and_blocks(version_id=version_id, pages=pages)
 
@@ -216,11 +232,14 @@ def run_ingest_job(
                     for ref in c.references:
                         all_references.append(ref)
 
+            _update_progress("참조 저장", f"본문 {len(all_references)}개 도판/도면 참조 추출 및 저장 중...")
             if canonical_repo is not None and all_references:
                 canonical_repo.save_references(all_references)
 
             all_blocks: list[TextBlockData] = [b for p in pages for b in p.text_blocks]
             all_captions: list[CaptionData] = [c for p in pages for c in p.captions]
+            
+            _update_progress("유물 개체 분석", "고고학 유물 개체 정규화 및 MENTIONS 관계 분석 중...")
             obj_results = resolver.resolve_mentions(
                 blocks=all_blocks,
                 captions=all_captions,
@@ -228,9 +247,11 @@ def run_ingest_job(
             )
             all_objects: list[ArchaeologyObjectData] = [r.object_data for r in obj_results]
 
+            _update_progress("유물 개체 저장", f"{len(all_objects)}개 고고학 개체 노드를 지식그래프에 반영 중...")
             if canonical_repo is not None and all_objects:
                 canonical_repo.save_archaeology_objects(all_objects)
 
+            _update_progress("완료", "본문 인제스트 완료", len(pages), len(pages))
             return IngestResult(
                 project_id=project_id,
                 version_id=version_id,
@@ -245,6 +266,10 @@ def run_ingest_job(
             from app.services.plate_parser import PlateIndex, PlateParser
 
             parser = plate_parser or PlateParser()
+            
+            def _on_plate_progress(cur: int, tot: int, msg: str):
+                _update_progress("도판 패널 렌더링", msg, cur, tot)
+
             if page_range:
                 plates_list = parser.parse_page_range(
                     path,
@@ -262,13 +287,16 @@ def run_ingest_job(
                     path,
                     document_version_id=version_id,
                     render_dir=render_dir,
+                    on_progress=_on_plate_progress,
                 )
 
             all_plates: list[PlateData] = list(pl_index.plates)
+            total_panels = sum(len(p.panels) for p in all_plates)
+            _update_progress("도판 노드 저장", f"{len(all_plates)}개 도판({total_panels}개 패널)을 그래프에 저장 중...")
             if canonical_repo is not None and all_plates:
                 canonical_repo.save_plates(plates=all_plates)
 
-            total_panels = sum(len(p.panels) for p in all_plates)
+            _update_progress("완료", f"도판 인제스트 완료 ({len(all_plates)}개 도판)")
             return IngestResult(
                 project_id=project_id,
                 version_id=version_id,

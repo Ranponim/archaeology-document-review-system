@@ -184,7 +184,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
       } catch {
         setErrorCode('server_error');
       }
-    }, 2000);
+    }, 1200);
   }, [project.id, loadReviewData]);
 
   const bodyVersions = detail.documentVersions.filter(
@@ -568,16 +568,60 @@ export function ProjectDetailPage({ project, onBack }: Props) {
               const run = detail.analysisRuns.find(
                 (candidate) => candidate.documentVersionId === version.id,
               );
+              const isRunning = run?.status === 'running';
+              const isQueued = run?.status === 'queued';
+              const curPage = run?.currentPage;
+              const totPage = run?.totalPages;
+              const hasPageProgress = curPage !== undefined && curPage !== null && totPage && totPage > 0;
+              const progressPct = hasPageProgress ? Math.min(100, Math.round((curPage / totPage) * 100)) : 0;
+
               return (
-                <article className="run-card" key={version.id}>
-                  <div>
-                    <strong>{version.originalName}</strong>
-                    <span className="version-kind-label">{versionLabel(version)}</span>
-                    <span>{Math.max(1, Math.ceil(version.sizeBytes / 1024))} KB</span>
+                <article className={`run-card ${isRunning ? 'is-running' : ''}`} key={version.id}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong>{version.originalName}</strong>
+                      <span className="version-kind-label">{versionLabel(version)}</span>
+                      <span>{Math.max(1, Math.ceil(version.sizeBytes / 1024))} KB</span>
+                    </div>
+
+                    {/* Real-time Ingest / Analysis Progress */}
+                    {isRunning && (
+                      <div className="run-progress-box">
+                        <div className="run-progress-header">
+                          <span className="run-stage-badge">
+                            {run.progressStage || '작업 진행 중'}
+                          </span>
+                          {hasPageProgress && (
+                            <span style={{ fontSize: '0.78rem', color: '#1e5c41', fontWeight: 600 }}>
+                              {curPage} / {totPage} 페이지 ({progressPct}%)
+                            </span>
+                          )}
+                        </div>
+                        {run.progressMessage && (
+                          <p className="run-progress-msg">{run.progressMessage}</p>
+                        )}
+                        {hasPageProgress && (
+                          <div className="run-mini-progress-bar">
+                            <div
+                              className="run-mini-progress-fill"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isQueued && (
+                      <div className="run-progress-box" style={{ background: '#fdfaf5', borderColor: '#e0d6c4' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#886d38', fontWeight: 600 }}>
+                          ⏳ 대기열에서 작업 순서를 기다리는 중입니다…
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="status-column">
                     <span className={`status status-${run?.status ?? 'unknown'}`}>
-                      {run?.status ?? 'unknown'}
+                      {run?.status === 'running' ? '실행 중' : run?.status === 'queued' ? '대기 중' : run?.status === 'completed' ? '완료' : run?.status === 'failed' ? '실패' : run?.status ?? 'unknown'}
                     </span>
                     {run?.errorCode && <code>{run.errorCode}</code>}
                   </div>

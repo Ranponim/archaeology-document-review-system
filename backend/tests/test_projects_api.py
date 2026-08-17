@@ -25,6 +25,9 @@ class FakeProjectRepository:
         self.versions[project.id] = []
         return project
 
+    def list_projects(self) -> list[Project]:
+        return list(self.projects.values())
+
     def get_project(self, project_id: str):
         project = self.projects.get(project_id)
         if project is None:
@@ -204,6 +207,21 @@ def test_create_project_returns_public_project_fields(client):
         "name": "산노리",
         "internalCode": "NONSAN-001",
     }
+
+
+def test_list_projects_returns_all_created_projects(client):
+    res1 = client.post("/api/projects", json={"name": "프로젝트 1"})
+    res2 = client.post("/api/projects", json={"name": "프로젝트 2"})
+    assert res1.status_code == 201
+    assert res2.status_code == 201
+
+    list_res = client.get("/api/projects")
+    assert list_res.status_code == 200
+    projects = list_res.json()
+    assert len(projects) >= 2
+    names = [p["name"] for p in projects]
+    assert "프로젝트 1" in names
+    assert "프로젝트 2" in names
 
 
 def test_health_endpoint_reports_only_a_fixed_ready_status(client):
@@ -560,6 +578,10 @@ def test_project_repository_reads_project_versions_and_queued_runs():
             "document_version_id": "version-1",
             "error_code": None,
             "retryable": False,
+            "progress_stage": None,
+            "progress_message": None,
+            "current_page": None,
+            "total_pages": None,
         }
     ]
 

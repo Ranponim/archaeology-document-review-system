@@ -33,7 +33,13 @@ def enqueue_ingest(
     job_id = f"ingest-{analysis_run_id}"
     existing = target_queue.fetch_job(job_id)
     if existing is not None:
-        return existing.id
+        # If the job is active (queued or started), reuse it; otherwise delete old finished/failed record
+        if not (getattr(existing, "is_finished", False) or getattr(existing, "is_failed", False) or getattr(existing, "is_canceled", False)):
+            return existing.id
+        try:
+            existing.delete()
+        except Exception:
+            pass
 
     try:
         job = target_queue.enqueue(
@@ -41,6 +47,7 @@ def enqueue_ingest(
             analysis_run_id,
             job_id=job_id,
             unique=True,
+            job_timeout=int(os.environ.get("RQ_JOB_TIMEOUT", "3600")),
             retry=Retry(max=3, interval=[10, 30, 60]),
             result_ttl=86_400,
             failure_ttl=604_800,
@@ -65,7 +72,12 @@ def enqueue_proofreading(
     job_id = f"proofreading-{analysis_run_id}"
     existing = target_queue.fetch_job(job_id)
     if existing is not None:
-        return existing.id
+        if not (getattr(existing, "is_finished", False) or getattr(existing, "is_failed", False) or getattr(existing, "is_canceled", False)):
+            return existing.id
+        try:
+            existing.delete()
+        except Exception:
+            pass
 
     try:
         job = target_queue.enqueue(
@@ -73,6 +85,7 @@ def enqueue_proofreading(
             analysis_run_id,
             job_id=job_id,
             unique=True,
+            job_timeout=int(os.environ.get("RQ_JOB_TIMEOUT", "3600")),
             retry=Retry(max=3, interval=[10, 30, 60]),
             result_ttl=86_400,
             failure_ttl=604_800,

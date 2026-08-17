@@ -41,6 +41,8 @@ class AnalysisRunRetryConflict(RuntimeError):
 class ProjectRepositoryPort(Protocol):
     def create_project(self, name: str, internal_code: str | None) -> Project: ...
 
+    def list_projects(self) -> list[Project]: ...
+
     def get_project(self, project_id: str) -> dict: ...
 
     def get_project_documents(self, project_id: str) -> list[Document]: ...
@@ -105,6 +107,21 @@ async def _run_repository(operation, *args):
         raise
     except Exception:  # noqa: BLE001 - sanitize adapter failures at the API boundary
         raise ServerOperationError from None
+
+
+@router.get("", response_model=list[ProjectResponse])
+async def list_projects(
+    repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+) -> list[ProjectResponse]:
+    projects = await _run_repository(repository.list_projects)
+    return [
+        ProjectResponse(
+            id=project.id,
+            name=project.name,
+            internal_code=project.internal_code,
+        )
+        for project in projects
+    ]
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
