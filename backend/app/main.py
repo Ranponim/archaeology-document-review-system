@@ -10,7 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from app.api.assets import router as assets_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
-from app.api.repository_compat import adapt_project_repository, adapt_review_repository
+from app.api.repository_compat import (
+    VisualBundleReviewCompatibilityRepository,
+    adapt_project_repository,
+    adapt_review_repository,
+    adapt_visual_asset_service,
+)
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
@@ -90,12 +95,18 @@ def create_app(
     application = FastAPI(lifespan=lifespan)
     application.state.file_store = file_store if file_store is not None else FileStore()
     application.state.project_repository = adapt_project_repository(project_repository)
-    application.state.review_repository = adapt_review_repository(review_repository)
+    injected_visual_service = adapt_visual_asset_service(visual_asset_service)
+    adapted_review_repository = adapt_review_repository(review_repository)
+    if adapted_review_repository is None and injected_visual_service is not None:
+        adapted_review_repository = VisualBundleReviewCompatibilityRepository(
+            injected_visual_service
+        )
+    application.state.review_repository = adapted_review_repository
     application.state.orchestrator = orchestrator
     application.state.ingest_enqueuer = ingest_enqueuer or enqueue_ingest
     application.state.run_enqueuer = run_enqueuer or enqueue_proofreading
     application.state.asset_repository = asset_repository
-    application.state.visual_asset_service = visual_asset_service
+    application.state.visual_asset_service = injected_visual_service
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -113,9 +124,7 @@ def create_app(
         return _error_response(request, 404)
 
     @application.exception_handler(DocumentVersionNotFoundError)
-    async def missing_document_version(
-        request: Request, _error: DocumentVersionNotFoundError
-    ):
+    async def missing_document_version(request: Request, _error: DocumentVersionNotFoundError):
         return _error_response(request, 404)
 
     @application.exception_handler(CandidateNotFoundError)
@@ -123,9 +132,7 @@ def create_app(
         return _error_response(request, 404)
 
     @application.exception_handler(ReviewRoundNotFoundError)
-    async def missing_review_round(
-        request: Request, _error: ReviewRoundNotFoundError
-    ):
+    async def missing_review_round(request: Request, _error: ReviewRoundNotFoundError):
         return _error_response(request, 404)
 
     @application.exception_handler(AnalysisRunNotFoundError)
@@ -141,9 +148,7 @@ def create_app(
         return _error_response(request, 404)
 
     @application.exception_handler(VisualAssetIncompleteError)
-    async def incomplete_visual_asset(
-        request: Request, _error: VisualAssetIncompleteError
-    ):
+    async def incomplete_visual_asset(request: Request, _error: VisualAssetIncompleteError):
         return JSONResponse(
             status_code=404,
             content={"code": "evidence_incomplete", "request_id": _request_id(request)},
@@ -168,11 +173,7 @@ def create_app(
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
     if frontend_dir.is_dir():
-        application.mount(
-            "/",
-            StaticFiles(directory=frontend_dir, html=True),
-            name="frontend",
-        )
+        application.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
     return application
 
 
