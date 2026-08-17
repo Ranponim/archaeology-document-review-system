@@ -201,7 +201,7 @@ class RuleEngine:
     )
 
     BLANK_REF_PATTERN = re.compile(
-        r"(?:\(\s*(?:도면|도판|사진|표)\s*:\s*(?:,\s*(?:도면|도판|사진|표)\s*:\s*)?\)|(?:도면|도판|사진|표)\s*:\s*(?=[,\s\)]|$))"
+        r"(?:\(\s*(?:도면|도판|사진|표)\s*:\s*(?:,\s*(?:도면|도판|사진|표)\s*:\s*)?\)|(?:도면|도판|사진|표)\s*:\s*(?=[,\)]|$))"
     )
 
     REF_PATTERN = re.compile(
@@ -490,6 +490,8 @@ class RuleEngine:
 
         dims: list[NormalizedDimension] = []
         if isinstance(text_or_data, dict):
+            if "ref_type" in text_or_data or "plate_number" in text_or_data or "drawing_number" in text_or_data:
+                return []
             for k, v in text_or_data.items():
                 k_clean = str(k).strip()
                 k_canon = DIMENSION_TYPE_CANONICAL.get(k_clean.lower(), k_clean)

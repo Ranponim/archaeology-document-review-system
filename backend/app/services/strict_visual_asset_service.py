@@ -85,14 +85,19 @@ class StrictVisualAssetService(VisualAssetService):
         if not entries:
             return None, "requested_reference_not_resolved"
 
-        matches = [
-            entry
-            for entry in entries
-            if cls._entry_reference_key(entry) in requested
-        ]
-        if len(matches) == 1:
-            return matches[0], None
-        if len(matches) > 1:
+        unique_matches: dict[str, dict[str, Any]] = {}
+        for entry in entries:
+            ref_key = cls._entry_reference_key(entry)
+            if ref_key in requested:
+                target_id = (entry.get("props") or {}).get("id") or str(ref_key)
+                if target_id not in unique_matches:
+                    unique_matches[target_id] = entry
+                elif unique_matches[target_id].get("parent") is None and entry.get("parent") is not None:
+                    unique_matches[target_id] = entry
+
+        if len(unique_matches) == 1:
+            return next(iter(unique_matches.values())), None
+        if len(unique_matches) > 1:
             return None, "ambiguous_canonical_target"
         return None, "requested_reference_not_resolved"
 

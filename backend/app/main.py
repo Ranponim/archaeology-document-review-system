@@ -181,9 +181,7 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    _hide_legacy_run_route_from_schema()
     application.include_router(projects_router)
-    application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
     application.include_router(run_diagnostics_router)
     application.include_router(assets_router)

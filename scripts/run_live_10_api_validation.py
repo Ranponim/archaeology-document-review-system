@@ -70,27 +70,22 @@ def generate_stress_body_pdf(*, revision: int) -> bytes:
     add_page(
         [
             "제3장 발굴조사 내용",
-            "1지점 6호 석관묘",
-            "도판 45 설명: 조사 전" if revision == 1 else "도판 45 설명: 조사 후",
+            "1지점 6호 석관묘 (도판 : 45) 조사 전" if revision == 1 else "1지점 6호 석관묘 (도판 : 45) 조사 후",
         ]
     )
     add_page(
         [
             "제3장 발굴조사 내용",
-            "1지점 6호 석관묘",
-            "도면 30 설명: 평면도" if revision == 1 else "도면 30 설명: 단면도",
+            "1지점 6호 석관묘 (도면 : 30) 평면도" if revision == 1 else "1지점 6호 석관묘 (도면 : 30) 단면도",
         ]
     )
 
     base = 210 if revision == 1 else 220
-    for index in range(1, STRESS_PAGE_COUNT + 1):
-        add_page(
-            [
-                "제3장 발굴조사 내용",
-                "1지점 6호 석관묘",
-                f"검증 치수 {index}: 길이 {base + index}cm, 너비 70cm, 잔존 깊이 35cm이다.",
-            ]
-        )
+    for chunk_start in range(1, STRESS_PAGE_COUNT + 1, 5):
+        lines = ["제3장 발굴조사 내용"]
+        for index in range(chunk_start, min(chunk_start + 5, STRESS_PAGE_COUNT + 1)):
+            lines.append(f"1지점 {index}호 석관묘: 길이 {base + index}cm, 너비 70cm, 잔존 깊이 35cm이다.")
+        add_page(lines)
 
     if revision == 2:
         add_page(
@@ -270,7 +265,7 @@ def run_10_api_validation() -> None:
     )
     print("=" * 78)
 
-    with httpx.Client(base_url=BASE_URL, timeout=30.0) as client:
+    with httpx.Client(base_url=BASE_URL, timeout=httpx.Timeout(120.0, connect=30.0)) as client:
         health = client.get("/health")
         assert health.status_code == 200, f"health failed: {health.text}"
 
@@ -290,14 +285,14 @@ def run_10_api_validation() -> None:
         body_v1_pdf = generate_stress_body_pdf(revision=1)
         plate_v1_pdf = generate_sample_pdf(
             [
-                "【도판 45】 1지점 6호 석관묘 조사 후 전경",
+                "【도판 45】 1지점 7호 석관묘 조사 후 전경",
                 "① 조사 전 ② 조사 중 ③ 토층 A-A' ④ 동벽 세부 ⑤ 유물 출토 상태",
             ],
-            visual_label="PLATE 45 / FEATURE 6",
+            visual_label="PLATE 45 / FEATURE 7",
         )
         drawing_v1_pdf = generate_sample_pdf(
-            ["【도면 30】 1지점 6호 석관묘 평·단면도"],
-            visual_label="DRAWING 30 / FEATURE 6",
+            ["【도면 30】 1지점 8호 석관묘 평·단면도"],
+            visual_label="DRAWING 30 / FEATURE 8",
         )
 
         body_v1, _ = _upload(

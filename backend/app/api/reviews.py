@@ -74,9 +74,10 @@ async def _resolve_version_for_kind(
     kind: str,
     version_id: str | None,
     *,
+    stage: str | None = None,
     required: bool,
 ):
-    if not version_id:
+    if not version_id and not stage:
         if required:
             raise DocumentVersionNotFoundError(
                 f"Review input requires a '{kind}' DocumentVersion"
@@ -86,12 +87,12 @@ async def _resolve_version_for_kind(
         project_repository.resolve_version_input,
         project_id,
         kind,
-        None,
+        stage,
         version_id,
     )
     if resolved is None:
         raise DocumentVersionNotFoundError(
-            f"DocumentVersion '{version_id}' is not a '{kind}' version owned by "
+            f"DocumentVersion '{version_id or stage}' is not a '{kind}' version owned by "
             f"project '{project_id}'"
         )
     return resolved
@@ -146,6 +147,7 @@ async def trigger_proofreading_run(
             project_id,
             "report_body",
             payload.body_version_id,
+            stage=payload.version_stage,
             required=True,
         )
         plate_version = await _resolve_version_for_kind(
@@ -163,9 +165,6 @@ async def trigger_proofreading_run(
             required=False,
         )
         version_stage = payload.version_stage
-        warnings.append(
-            "legacy direct-version run path used; create/select a ReviewRound for canonical execution"
-        )
 
     if review_repository is None:
         raise ServerOperationError("Review repository not configured")
