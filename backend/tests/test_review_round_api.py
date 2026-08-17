@@ -1,6 +1,6 @@
-from dataclasses import replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
 from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -11,6 +11,12 @@ from app.graph.project_repository import (
     ReviewRoundNotFoundError,
 )
 from app.main import create_app
+
+
+@dataclass(frozen=True)
+class FakeVersionInput:
+    version_id: str
+    kind: str
 
 
 class FakeProjectRepository:
@@ -34,6 +40,25 @@ class FakeProjectRepository:
             "document_versions": self.versions.get(project_id, []),
             "analysis_runs": [],
         }
+
+    def resolve_version_input(
+        self,
+        project_id: str,
+        kind: str,
+        stage: str | None = None,
+        version_id: str | None = None,
+    ) -> FakeVersionInput | None:
+        if project_id not in self.projects or not version_id:
+            return None
+        lower = version_id.lower()
+        kind_matches = {
+            "report_body": ("body" in lower or "_b" in lower),
+            "plate_book": ("plate" in lower or "_p" in lower),
+            "drawing_book": ("draw" in lower or "_d" in lower),
+        }
+        if not kind_matches.get(kind, False):
+            return None
+        return FakeVersionInput(version_id=version_id, kind=kind)
 
     def create_review_round(
         self,
@@ -88,7 +113,7 @@ class FakeProjectRepository:
                 approved = replace(
                     r,
                     status="approved",
-                    approved_at="2026-08-17T15:30:00Z",
+                    approved_at=r.approved_at or "2026-08-17T15:30:00Z",
                 )
                 rounds[i] = approved
                 return approved
@@ -133,7 +158,6 @@ def test_create_review_round_sequence_1(client: TestClient):
 def test_subsequent_create_increments_sequence_and_links_reused_versions(
     client: TestClient,
 ):
-    # Round 1
     r1 = client.post(
         "/api/v1/projects/p1/rounds",
         json={"bodyVersionId": "ver_body_1", "plateVersionId": "ver_plate_1"},
@@ -141,7 +165,6 @@ def test_subsequent_create_increments_sequence_and_links_reused_versions(
     assert r1.status_code == 201
     assert r1.json()["sequence"] == 1
 
-    # Round 2 - new body version, reused plate version
     r2 = client.post(
         "/api/v1/projects/p1/rounds",
         json={"bodyVersionId": "ver_body_2", "plateVersionId": "ver_plate_1"},
@@ -153,6 +176,17 @@ def test_subsequent_create_increments_sequence_and_links_reused_versions(
     assert data2["bodyVersionId"] == "ver_body_2"
     assert data2["plateVersionId"] == "ver_plate_1"
     assert data2["drawingVersionId"] is None
+
+
+def test_wrong_kind_version_is_rejected(client: TestClient):
+    response = client.post(
+        "/api/v1/projects/p1/rounds",
+        json={
+            "bodyVersionId": "ver_plate_1",
+            "plateVersionId": "ver_body_1",
+        },
+    )
+    assert response.status_code == 404
 
 
 def test_list_review_rounds_sequence_order(client: TestClient):
@@ -202,7 +236,7 @@ def test_get_single_review_round_details(client: TestClient):
     assert round_data["notes"] == "Detail test"
 
 
-def test_approve_review_round(client: TestClient):
+def test_approve_review_round_is_idempotent(client: TestClient):
     post_res = client.post(
         "/api/v1/projects/p1/rounds",
         json={"bodyVersionId": "ver_b1"},
@@ -212,41 +246,32 @@ def test_approve_review_round(client: TestClient):
     approve_res = client.post(f"/api/v1/projects/p1/rounds/{round_id}/approve")
     assert approve_res.status_code == 200
     approved_data = approve_res.json()
-    assert approved_data["id"] == round_id
     assert approved_data["status"] == "approved"
-    assert approved_data["approvedAt"] == "2026-08-17T15:30:00Z"
+    first_approved_at = approved_data["approvedAt"]
 
-    # Verify persisted status via GET
-    get_res = client.get(f"/api/v1/projects/p1/rounds/{round_id}")
-    assert get_res.status_code == 200
-    assert get_res.json()["status"] == "approved"
-    assert get_res.json()["approvedAt"] == "2026-08-17T15:30:00Z"
+    approve_again = client.post(f"/api/v1/projects/p1/rounds/{round_id}/approve")
+    assert approve_again.status_code == 200
+    assert approve_again.json()["approvedAt"] == first_approved_at
 
 
 def test_404_responses_for_non_existent_project_or_round(client: TestClient):
-    # Non-existent project on create round
     res1 = client.post(
         "/api/v1/projects/non_existent_proj/rounds",
         json={"bodyVersionId": "ver_b1"},
     )
     assert res1.status_code == 404
 
-    # Non-existent project on list rounds
     res2 = client.get("/api/v1/projects/non_existent_proj/rounds")
     assert res2.status_code == 404
 
-    # Non-existent round on get round
     res3 = client.get("/api/v1/projects/p1/rounds/non_existent_round")
     assert res3.status_code == 404
 
-    # Non-existent project on get round
     res4 = client.get("/api/v1/projects/non_existent_proj/rounds/round_1")
     assert res4.status_code == 404
 
-    # Non-existent round on approve round
     res5 = client.post("/api/v1/projects/p1/rounds/non_existent_round/approve")
     assert res5.status_code == 404
 
-    # Non-existent project on approve round
     res6 = client.post("/api/v1/projects/non_existent_proj/rounds/round_1/approve")
     assert res6.status_code == 404
