@@ -12,7 +12,7 @@ _TARGET_PATHS = {
     "PlatePanel": "(v)-[:HAS_PLATE]->(:Plate)-[:HAS_PANEL]->(target:PlatePanel)",
     "Drawing": "(v)-[:HAS_DRAWING]->(target:Drawing)",
     "DrawingRegion": "(v)-[:HAS_DRAWING]->(:Drawing)-[:HAS_REGION]->(target:DrawingRegion)",
-    "DocumentVersion": "(v)",
+    "DocumentVersion": None,
 }
 
 
@@ -81,15 +81,23 @@ class SourceAssetRepository:
         node_id: str | None = None,
         publication_identifier: str | None = None,
     ) -> dict[str, str] | None:
-        path = _TARGET_PATHS.get(node_type)
-        if path is None:
+        if node_type not in _TARGET_PATHS:
             raise ValueError("Unsupported provenance target type")
         if not node_id and not publication_identifier:
             raise ValueError("A target nodeId or publication identifier is required")
-        predicate = "target.id = $node_id" if node_id else "(toString(target.number) = $publication_identifier OR target.raw_identifier = $publication_identifier)"
+        predicate = (
+            "target.id = $node_id"
+            if node_id
+            else "(toString(target.number) = $publication_identifier OR target.raw_identifier = $publication_identifier)"
+        )
+        target_clause = (
+            "WITH v AS target"
+            if node_type == "DocumentVersion"
+            else f"MATCH {_TARGET_PATHS[node_type]}"
+        )
         cypher = f"""
         MATCH (p:Project {{id: $project_id}})-[:HAS_DOCUMENT]->(:Document)-[:HAS_VERSION]->(v:DocumentVersion {{id: $document_version_id}})
-        MATCH {path}
+        {target_clause}
         WHERE {predicate}
         RETURN target.id AS id, labels(target)[0] AS label
         LIMIT 2
@@ -119,14 +127,18 @@ class SourceAssetRepository:
     ) -> None:
         if method != "manifest_mapping":
             raise ValueError("Automated provenance requires manifest_mapping")
-        path = _TARGET_PATHS.get(target_label)
-        if path is None:
+        if target_label not in _TARGET_PATHS:
             raise ValueError("Unsupported provenance target type")
+        target_clause = (
+            "WITH p, asset, v AS target"
+            if target_label == "DocumentVersion"
+            else f"MATCH {_TARGET_PATHS[target_label]}"
+        )
         cypher = f"""
         MATCH (p:Project {{id: $project_id}})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset {{id: $asset_id}})
         WHERE asset.projectId = $project_id
         MATCH (p)-[:HAS_DOCUMENT]->(:Document)-[:HAS_VERSION]->(v:DocumentVersion)
-        MATCH {path}
+        {target_clause}
         WHERE target.id = $target_id
         MERGE (target)-[rel:DERIVED_FROM]->(asset)
         SET rel.method = $method,
