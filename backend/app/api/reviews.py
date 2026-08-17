@@ -31,6 +31,7 @@ from app.graph.project_repository import (
 )
 from app.graph.review_repository import ReviewRepository
 from app.services.orchestrator_factory import build_proofreading_orchestrator
+from app.services.review_round_execution import resolve_review_round_inputs
 from app.services.visual_asset_service import VisualAssetService
 
 
@@ -67,10 +68,38 @@ def get_orchestrator(request: Request) -> Any:
     return orch
 
 
+async def _resolve_version_for_kind(
+    project_repository: ProjectRepositoryPort,
+    project_id: str,
+    kind: str,
+    version_id: str | None,
+    *,
+    required: bool,
+):
+    if not version_id:
+        if required:
+            raise DocumentVersionNotFoundError(
+                f"Review input requires a '{kind}' DocumentVersion"
+            )
+        return None
+    resolved = await _run_repository(
+        project_repository.resolve_version_input,
+        project_id,
+        kind,
+        None,
+        version_id,
+    )
+    if resolved is None:
+        raise DocumentVersionNotFoundError(
+            f"DocumentVersion '{version_id}' is not a '{kind}' version owned by "
+            f"project '{project_id}'"
+        )
+    return resolved
+
+
 # =============================================================================
 # 1. POST /api/v1/projects/{project_id}/runs
 # =============================================================================
-
 
 
 @router.post(
@@ -87,53 +116,56 @@ async def trigger_proofreading_run(
 ) -> RunTriggerResponse:
     """Create a queued AnalysisRun and enqueue the canonical proofreading job.
 
-    The route only validates graph-resident inputs (fail closed on 404) and
-    persists the run with its resolved version inputs; the RQ worker claims and
-    executes the graph-first proofreading asynchronously so large PDF/VLM work
-    never runs inside the HTTP request (plan Task 12).
+    When `reviewRoundId` is supplied, the ReviewRound graph node is the sole
+    authority for body/plate/drawing inputs. Direct version ids remain only as
+    a compatibility path for old clients.
     """
     await _run_repository(project_repository.get_project, project_id)
 
-    # Authoritatively resolve body DocumentVersion input
-    body_version = await _run_repository(
-        project_repository.resolve_version_input,
-        project_id,
-        "report_body",
-        payload.version_stage,
-        payload.body_version_id,
-    )
-    if body_version is None:
-        if payload.body_version_id:
-            raise DocumentVersionNotFoundError(
-                f"DocumentVersion '{payload.body_version_id}' not found for project '{project_id}'"
-            )
-        raise DocumentVersionNotFoundError(
-            f"No 'report_body' DocumentVersion found for project '{project_id}'"
-        )
+    warnings: list[str] = []
+    review_round_id = payload.review_round_id
 
-    # Validate plate_version_id if specified
-    plate_version_id = payload.plate_version_id
-    if plate_version_id:
-        plate_version = await _run_repository(
-            project_repository.get_document_version_by_id,
-            plate_version_id,
+    if review_round_id:
+        resolved = await _run_repository(
+            resolve_review_round_inputs,
+            project_repository,
+            project_id,
+            review_round_id,
         )
-        if plate_version is None:
-            raise DocumentVersionNotFoundError(
-                f"DocumentVersion '{plate_version_id}' not found for project '{project_id}'"
+        body_version = resolved.body
+        plate_version = resolved.plate
+        drawing_version = resolved.drawing
+        version_stage = resolved.compatibility_stage
+        if payload.body_version_id or payload.plate_version_id or payload.drawing_version_id:
+            warnings.append(
+                "reviewRoundId is authoritative; direct body/plate/drawing version ids were ignored"
             )
-
-    # Validate drawing_version_id if specified
-    drawing_version_id = payload.drawing_version_id
-    if drawing_version_id:
-        drawing_version = await _run_repository(
-            project_repository.get_document_version_by_id,
-            drawing_version_id,
+    else:
+        body_version = await _resolve_version_for_kind(
+            project_repository,
+            project_id,
+            "report_body",
+            payload.body_version_id,
+            required=True,
         )
-        if drawing_version is None:
-            raise DocumentVersionNotFoundError(
-                f"DocumentVersion '{drawing_version_id}' not found for project '{project_id}'"
-            )
+        plate_version = await _resolve_version_for_kind(
+            project_repository,
+            project_id,
+            "plate_book",
+            payload.plate_version_id,
+            required=False,
+        )
+        drawing_version = await _resolve_version_for_kind(
+            project_repository,
+            project_id,
+            "drawing_book",
+            payload.drawing_version_id,
+            required=False,
+        )
+        version_stage = payload.version_stage
+        warnings.append(
+            "legacy direct-version run path used; create/select a ReviewRound for canonical execution"
+        )
 
     if review_repository is None:
         raise ServerOperationError("Review repository not configured")
@@ -143,15 +175,16 @@ async def trigger_proofreading_run(
         review_repository.create_analysis_run,
         project_id=project_id,
         run_id=run_id,
+        review_round_id=review_round_id,
         body_version_id=body_version.version_id,
-        plate_version_id=plate_version_id,
-        drawing_version_id=drawing_version_id,
+        plate_version_id=(plate_version.version_id if plate_version is not None else None),
+        drawing_version_id=(drawing_version.version_id if drawing_version is not None else None),
         body_pdf_path=payload.body_pdf_path,
         plate_pdf_path=payload.plate_pdf_path,
         drawing_pdf_path=payload.drawing_pdf_path,
         enable_vlm=payload.enable_vlm,
         enable_ai_review=payload.enable_ai_review,
-        version_stage=payload.version_stage,
+        version_stage=version_stage,
     )
     try:
         await run_in_threadpool(run_enqueuer, run_id)
@@ -176,14 +209,15 @@ async def trigger_proofreading_run(
         run_id=run_id,
         project_id=project_id,
         status="queued",
-        warnings=[],
+        review_round_id=review_round_id,
+        warnings=warnings,
     )
-
 
 
 # =============================================================================
 # 2. GET /api/v1/projects/{project_id}/candidates
 # =============================================================================
+
 
 @router.get(
     "/{project_id}/candidates",
@@ -221,9 +255,15 @@ async def list_candidates(
 
 
 # =============================================================================
-# 3. POST /api/v1/projects/{project_id}/candidates/{candidate_id}/decision
+# 3. POST /api/v1/projects/{project_id}/candidates/{candidate_id}/decision(s)
 # =============================================================================
 
+
+@router.post(
+    "/{project_id}/candidates/{candidate_id}/decisions",
+    response_model=ReviewDecisionResponse,
+    status_code=status.HTTP_200_OK,
+)
 @router.post(
     "/{project_id}/candidates/{candidate_id}/decision",
     response_model=ReviewDecisionResponse,
@@ -241,7 +281,9 @@ async def record_candidate_decision(
     if review_repository is None:
         raise ServerOperationError("Review repository not configured")
 
-    candidate = await run_in_threadpool(review_repository.get_candidate, candidate_id)
+    candidate = await run_in_threadpool(
+        review_repository.get_candidate, project_id, candidate_id
+    )
     if not candidate:
         raise CandidateNotFoundError(candidate_id)
 
@@ -250,6 +292,7 @@ async def record_candidate_decision(
 
     await run_in_threadpool(
         review_repository.save_review_decision,
+        project_id=project_id,
         decision_id=decision_id,
         candidate_id=candidate_id,
         decision_status=payload.decision,
@@ -258,7 +301,10 @@ async def record_candidate_decision(
         modified_text=payload.modified_text,
     )
 
-    updated_cand = await run_in_threadpool(review_repository.get_candidate, candidate_id)
+    updated_cand = await run_in_threadpool(
+        review_repository.get_candidate, project_id, candidate_id
+    )
+    prev_id = None
     if updated_cand and updated_cand.get("decisions"):
         for d in updated_cand["decisions"]:
             if d.get("id") == decision_id:
@@ -287,6 +333,7 @@ async def record_candidate_decision(
 # 4. GET /api/v1/projects/{project_id}/candidates/{candidate_id}/traceability
 # =============================================================================
 
+
 @router.get(
     "/{project_id}/candidates/{candidate_id}/traceability",
     response_model=TraceabilityResponse,
@@ -304,7 +351,7 @@ async def get_candidate_traceability(
         raise CandidateNotFoundError(candidate_id)
 
     trace_data = await run_in_threadpool(
-        review_repository.get_candidate_traceability, candidate_id
+        review_repository.get_candidate_traceability, project_id, candidate_id
     )
     if not trace_data or not trace_data.get("candidate"):
         raise CandidateNotFoundError(candidate_id)
@@ -316,6 +363,7 @@ async def get_candidate_traceability(
 # 5. GET /api/v1/projects/{project_id}/candidates/{candidate_id}/visual-bundle
 # =============================================================================
 
+
 @router.get(
     "/{project_id}/candidates/{candidate_id}/visual-bundle",
     response_model=CandidateVisualBundle,
@@ -325,15 +373,24 @@ async def get_candidate_visual_bundle(
     project_id: str,
     candidate_id: str,
     project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
+    review_repository: Annotated[Any, Depends(get_review_repository)],
     visual_asset_service: Annotated[VisualAssetService, Depends(get_visual_asset_service)],
 ) -> CandidateVisualBundle:
-    """Mandatory Test D: return the source body page + canonical visual asset
-    (with bbox + sha256) for one candidate so the frontend can render both
-    images and highlight both bboxes."""
+    """Return one candidate's source page and exact/fail-closed canonical asset."""
     await _run_repository(project_repository.get_project, project_id)
 
+    if review_repository is None:
+        raise CandidateNotFoundError(candidate_id)
+    candidate = await run_in_threadpool(
+        review_repository.get_candidate, project_id, candidate_id
+    )
+    if not candidate:
+        raise CandidateNotFoundError(candidate_id)
+
     bundle = await run_in_threadpool(
-        visual_asset_service.get_candidate_visual_bundle, candidate_id
+        visual_asset_service.get_candidate_visual_bundle,
+        candidate_id,
+        project_id,
     )
     if not bundle:
         raise CandidateNotFoundError(candidate_id)
@@ -343,6 +400,7 @@ async def get_candidate_visual_bundle(
 # =============================================================================
 # 6. GET /api/v1/projects/{project_id}/metrics
 # =============================================================================
+
 
 @router.get(
     "/{project_id}/metrics",
@@ -381,12 +439,35 @@ async def create_review_round(
     project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
 ) -> ReviewRoundResponse:
     await _run_repository(project_repository.get_project, project_id)
+
+    body = await _resolve_version_for_kind(
+        project_repository,
+        project_id,
+        "report_body",
+        payload.body_version_id,
+        required=True,
+    )
+    plate = await _resolve_version_for_kind(
+        project_repository,
+        project_id,
+        "plate_book",
+        payload.plate_version_id,
+        required=False,
+    )
+    drawing = await _resolve_version_for_kind(
+        project_repository,
+        project_id,
+        "drawing_book",
+        payload.drawing_version_id,
+        required=False,
+    )
+
     round_obj = await _run_repository(
         project_repository.create_review_round,
         project_id,
-        payload.body_version_id,
-        payload.plate_version_id,
-        payload.drawing_version_id,
+        body.version_id,
+        plate.version_id if plate is not None else None,
+        drawing.version_id if drawing is not None else None,
         payload.notes,
     )
     return ReviewRoundResponse(
@@ -476,9 +557,19 @@ async def approve_review_round(
     project_repository: Annotated[ProjectRepositoryPort, Depends(get_project_repository)],
 ) -> ReviewRoundResponse:
     await _run_repository(project_repository.get_project, project_id)
-    round_obj = await _run_repository(
-        project_repository.approve_review_round, project_id, round_id
+    current = await _run_repository(
+        project_repository.get_review_round, project_id, round_id
     )
+    if current is None:
+        raise ReviewRoundNotFoundError(
+            f"Review round {round_id} not found in project {project_id}"
+        )
+    if current.status == "approved" and current.approved_at is not None:
+        round_obj = current
+    else:
+        round_obj = await _run_repository(
+            project_repository.approve_review_round, project_id, round_id
+        )
     return ReviewRoundResponse(
         id=round_obj.id,
         project_id=round_obj.project_id,
@@ -491,4 +582,3 @@ async def approve_review_round(
         approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
         notes=round_obj.notes,
     )
-
