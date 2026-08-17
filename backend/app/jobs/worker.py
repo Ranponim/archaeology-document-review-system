@@ -174,6 +174,8 @@ def _record_analysis_failure(
     analysis_run_id: str,
     error: Exception,
 ) -> dict:
+    import logging
+    logging.getLogger("app.jobs.worker").exception("Analysis run %s failed with exception: %s", analysis_run_id, error)
     code, retryable = _normalize_analysis_failure(error)
     try:
         current = review_repo.analysis_status(analysis_run_id)
@@ -325,6 +327,8 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             drawing_index=drawing_index,
         )
     except Exception as error:  # noqa: BLE001 - job boundary; normalize
+        import traceback
+        print(f"!!! ANALYSIS WORKER ERROR on {analysis_run_id}: {error}\n{traceback.format_exc()}", flush=True)
         return _record_analysis_failure(review_repo, project_id, analysis_run_id, error)
 
     return {

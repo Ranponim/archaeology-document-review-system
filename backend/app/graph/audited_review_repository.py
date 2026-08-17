@@ -154,12 +154,26 @@ class AuditedReviewRepository(StrictReviewRepository):
         if not records:
             return None
         props = dict(records[0].get("run") or {})
-        raw_summary = props.get("reviewSummary")
+        normalized: dict[str, Any] = {}
+        for k, v in props.items():
+            if hasattr(v, "iso_format"):
+                normalized[k] = v.iso_format()
+            elif hasattr(v, "isoformat"):
+                normalized[k] = v.isoformat()
+            elif hasattr(v, "to_native"):
+                native = v.to_native()
+                normalized[k] = native.isoformat() if hasattr(native, "isoformat") else str(native)
+            elif type(v).__name__ in ("DateTime", "Date", "Time", "Duration"):
+                normalized[k] = str(v)
+            else:
+                normalized[k] = v
+
+        raw_summary = normalized.get("reviewSummary")
         if isinstance(raw_summary, str) and raw_summary:
             try:
-                props["summary"] = json.loads(raw_summary)
+                normalized["summary"] = json.loads(raw_summary)
             except json.JSONDecodeError:
-                props["summary"] = {}
+                normalized["summary"] = {}
         else:
-            props["summary"] = {}
-        return props
+            normalized["summary"] = {}
+        return normalized

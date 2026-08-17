@@ -33,7 +33,7 @@ def generate_sample_pdf(text_lines: list[str], *, visual_label: str | None = Non
     page = doc.new_page(width=595, height=842)
     y = 50
     for line in text_lines:
-        page.insert_text((50, y), line, fontsize=11)
+        page.insert_text((50, y), line, fontname="korea", fontsize=11)
         y += 25
     if visual_label:
         page.insert_image(

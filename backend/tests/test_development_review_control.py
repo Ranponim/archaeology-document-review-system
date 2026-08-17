@@ -65,7 +65,7 @@ def test_summary_keeps_raw_deduped_selected_counts_separate():
     assert stats["development_budget"] == 10
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_visual_pipeline_limits_one_reference_to_one_panel():
     class Delegate:
         def __init__(self):
