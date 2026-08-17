@@ -466,133 +466,37 @@ def api_client():
 
 
 # =============================================================================
-# 1. POST /api/v1/projects/{project_id}/runs
+# 1. POST /api/v1/projects/{project_id}/runs — strict ReviewRound contract
 # =============================================================================
 
-def test_trigger_proofreading_run_creates_queued_run_and_enqueues_immediately(api_client):
-    """Task 12: POST /runs validates inputs, persists the AnalysisRun in
-    queued state with the resolved version ids, enqueues the RQ job with the
-    run id, and returns promptly — no proofreading in the request."""
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"bodyVersionId": "ver_body_01"},
+        {"plateVersionId": "ver_plate_01"},
+        {"versionStage": "1차"},
+        {"bodyPdfPath": "/tmp/body.pdf"},
+        {"reviewRoundId": "round-1", "bodyVersionId": "ver_body_01"},
+        {"reviewRoundId": "round-1", "versionStage": "1차"},
+    ],
+)
+def test_trigger_proofreading_run_rejects_missing_round_or_legacy_fields(api_client, payload):
     client, rev_repo = api_client
-    payload = {
-        "bodyVersionId": "ver_body_01",
-        "plateVersionId": "ver_plate_01",
-        "enableVlm": True,
-        "enableAiReview": True,
-        "versionStage": "1차",
-    }
     resp = client.post("/api/v1/projects/p1/runs", json=payload)
-    assert resp.status_code == 202
-    data = resp.json()
-    assert data["projectId"] == "p1"
-    assert data["status"] == "queued"
-    assert data["warnings"] == []
-    run_id = data["runId"]
-    assert run_id.startswith("run_")
-
-    run = rev_repo.runs[run_id]
-    assert run["status"] == "queued"
-    assert run["step"] == "queued"
-    assert run["body_version_id"] == "ver_body_01"
-    assert run["plate_version_id"] == "ver_plate_01"
-
-    assert client.app.state._enqueued == [run_id]
-
-
-def test_trigger_proofreading_run_does_not_execute_proofreading_in_request(api_client):
-    """The probe orchestrator must never run synchronously in the request: no
-    PDF parsing, no VLM, no proofreading — only validation + enqueue."""
-    client, rev_repo = api_client
-    probe = client.app.state.orchestrator
-    assert probe.calls == []
-
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_body_01", "versionStage": "1차"},
-    )
-
-    assert resp.status_code == 202
-    assert probe.calls == [], "run_proofreading must not be called in-request"
-    assert rev_repo.runs[resp.json()["runId"]]["status"] == "queued"
-
-
-def test_trigger_proofreading_run_records_stored_inputs_on_the_run(api_client):
-    """The worker needs the request-time inputs; the route persists them as
-    properties on the AnalysisRun node instead of in a vanished HTTP request."""
-    client, rev_repo = api_client
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={
-            "bodyVersionId": "ver_body_01",
-            "plateVersionId": "ver_plate_01",
-            "enableVlm": False,
-            "enableAiReview": False,
-            "versionStage": "1차",
-        },
-    )
-    assert resp.status_code == 202
-    run = rev_repo.runs[resp.json()["runId"]]
-    assert run["enable_vlm"] is False
-    assert run["enable_ai_review"] is False
-    assert run["version_stage"] == "1차"
-
-
-def test_trigger_proofreading_run_missing_project_returns_404(api_client):
-    client, _ = api_client
-    resp = client.post("/api/v1/projects/nonexistent/runs", json={"bodyVersionId": "v1"})
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "input_error"
-
-
-def test_trigger_proofreading_run_missing_body_version_returns_404(api_client):
-    client, _ = api_client
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_nonexistent", "versionStage": "1차"},
-    )
-    assert resp.status_code == 404
+    assert resp.status_code == 422
     assert resp.json()["code"] == "input_error"
     assert client.app.state._enqueued == []
+    assert rev_repo.runs == {}
 
 
-def test_trigger_proofreading_run_missing_plate_version_returns_404(api_client):
+def test_trigger_proofreading_run_rejects_legacy_payload_before_project_lookup(api_client):
     client, _ = api_client
     resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_body_01", "plateVersionId": "ver_missing"},
+        "/api/v1/projects/nonexistent/runs",
+        json={"bodyVersionId": "legacy-direct-version"},
     )
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "input_error"
-    assert client.app.state._enqueued == []
-
-
-def test_trigger_proofreading_run_uses_selected_body_stage(api_client):
-    """6.1: the run trigger resolves the body version by the actual selected
-    stage — a 3차 body version selected with version_stage=3차 is persisted with
-    the same id+stage, never coerced to 1차."""
-    client, rev_repo = api_client
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={
-            "bodyVersionId": "ver_body_03",
-            "versionStage": "3차",
-        },
-    )
-    assert resp.status_code == 202
-    run = rev_repo.runs[resp.json()["runId"]]
-    assert run["body_version_id"] == "ver_body_03"
-    assert run["version_stage"] == "3차"
-
-
-def test_trigger_proofreading_run_rejects_stage_mismatch(api_client):
-    """6.1: selecting a 3차 body version while sending version_stage=1차 must
-    not silently resolve the wrong version — it fails closed with 404."""
-    client, _ = api_client
-    resp = client.post(
-        "/api/v1/projects/p1/runs",
-        json={"bodyVersionId": "ver_body_03", "versionStage": "1차"},
-    )
-    assert resp.status_code == 404
+    assert resp.status_code == 422
     assert resp.json()["code"] == "input_error"
     assert client.app.state._enqueued == []
 
