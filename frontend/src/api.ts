@@ -2,6 +2,8 @@ export type Project = {
   id: string;
   name: string;
   internalCode: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 export type Document = {

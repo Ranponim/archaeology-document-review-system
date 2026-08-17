@@ -56,33 +56,36 @@ class ProjectRepository:
         return {"database_": self._database}
 
     def create_project(self, name: str, internal_code: str | None) -> Project:
-        project = Project(
-            id=str(uuid4()),
-            name=name,
-            internal_code=internal_code,
-        )
-        self._driver.execute_query(
+        project_id = str(uuid4())
+        result = self._driver.execute_query(
             """
             CREATE (project:Project {
-                id: $id,
-                name: $name,
-                internalCode: $internal_code,
-                createdAt: datetime()
+                id: $id, name: $name, internalCode: $internal_code,
+                createdAt: datetime(), updatedAt: datetime()
             })
+            RETURN toString(project.createdAt) AS createdAt,
+                   toString(project.updatedAt) AS updatedAt
             """,
-            id=project.id,
-            name=project.name,
-            internal_code=project.internal_code,
-            **self._query_config,
+            id=project_id, name=name, internal_code=internal_code, **self._query_config,
         )
-        return project
+        records = getattr(result, "records", None)
+        if records is None and isinstance(result, tuple) and result:
+            records = result[0]
+        record = records[0] if records else None
+        return Project(
+            id=project_id, name=name, internal_code=internal_code,
+            created_at=(record.get("createdAt") if record is not None else None),
+            updated_at=(record.get("updatedAt") if record is not None else None),
+        )
 
     def list_projects(self) -> list[Project]:
         result = self._driver.execute_query(
             """
             MATCH (project:Project)
-            RETURN project.id AS id, project.name AS name, project.internalCode AS internalCode
-            ORDER BY project.createdAt DESC, project.name ASC
+            RETURN project.id AS id, project.name AS name, project.internalCode AS internalCode,
+                   toString(project.createdAt) AS createdAt, toString(project.updatedAt) AS updatedAt
+            ORDER BY CASE WHEN project.createdAt IS NULL THEN 1 ELSE 0 END ASC,
+                     project.createdAt DESC, project.name ASC, project.id ASC
             """,
             **self._query_config,
         )
@@ -91,6 +94,7 @@ class ProjectRepository:
                 id=record["id"],
                 name=record["name"],
                 internal_code=record["internalCode"],
+                created_at=record.get("createdAt"), updated_at=record.get("updatedAt"),
             )
             for record in result.records
         ]
@@ -355,9 +359,9 @@ class ProjectRepository:
         record = records[0]
         project_node = record["project"]
         project = Project(
-            id=project_node["id"],
-            name=project_node["name"],
-            internal_code=project_node.get("internalCode"),
+            id=project_node["id"], name=project_node["name"], internal_code=project_node.get("internalCode"),
+            created_at=(str(project_node.get("createdAt")) if project_node.get("createdAt") is not None else None),
+            updated_at=(str(project_node.get("updatedAt")) if project_node.get("updatedAt") is not None else None),
         )
         documents = [
             Document(
@@ -448,6 +452,7 @@ class ProjectRepository:
         result = transaction.run(
             """
             MATCH (project:Project {id: $project_id})
+            SET project.updatedAt = datetime()
             MERGE (document:Document {projectId: $project_id, kind: $kind})
             ON CREATE SET document.id = $doc_id,
                           document.title = $title,
@@ -772,6 +777,7 @@ class ProjectRepository:
         records, _, _ = self._driver.execute_query(
             """
             MATCH (project:Project {id: $project_id})
+            SET project.updatedAt = datetime()
             OPTIONAL MATCH (project)-[:HAS_REVIEW_ROUND]->(existing:ReviewRound)
             WITH project, coalesce(max(existing.sequence), 0) + 1 AS next_seq
             CREATE (round:ReviewRound {
@@ -923,7 +929,8 @@ class ProjectRepository:
         records, _, _ = self._driver.execute_query(
             """
             MATCH (project:Project {id: $project_id})-[:HAS_REVIEW_ROUND]->(round:ReviewRound {id: $round_id})
-            SET round.status = 'approved',
+            SET project.updatedAt = datetime(),
+                round.status = 'approved',
                 round.approvedAt = datetime()
             WITH round
             OPTIONAL MATCH (round)-[:USES_BODY_VERSION]->(body:DocumentVersion)

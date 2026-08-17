@@ -7,6 +7,13 @@ type Props = {
   onSelect?: (project: Project) => void;
 };
 
+function formatProjectCreatedAt(value?: string | null): string {
+  if (!value) return '생성일 기록 없음';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '생성일 기록 없음';
+  return `생성일 ${new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed)}`;
+}
+
 export function ProjectsPage({ onCreated, onSelect }: Props) {
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -105,6 +112,9 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
                   <p style={{ margin: 0, fontSize: '0.78rem', color: '#88928a', fontFamily: 'monospace' }}>
                     ID: {p.id}
                     {p.internalCode ? ` · 코드: ${p.internalCode}` : ''}
+                  </p>
+                  <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.78rem' }}>
+                    {formatProjectCreatedAt(p.createdAt)}
                   </p>
                 </div>
                 <button

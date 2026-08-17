@@ -35,6 +35,8 @@ class ProjectResponse(ApiModel):
     id: str
     name: str
     internal_code: str | None = Field(alias="internalCode")
+    created_at: str | None = Field(default=None, alias="createdAt")
+    updated_at: str | None = Field(default=None, alias="updatedAt")
 
 
 class UploadResponse(ApiModel):

@@ -206,6 +206,8 @@ def test_create_project_returns_public_project_fields(client):
         "id": response.json()["id"],
         "name": "산노리",
         "internalCode": "NONSAN-001",
+        "createdAt": None,
+        "updatedAt": None,
     }
 
 

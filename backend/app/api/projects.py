@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Protocol
 from uuid import UUID
 
@@ -142,6 +143,8 @@ async def list_projects(
             id=project.id,
             name=project.name,
             internal_code=project.internal_code,
+            created_at=project.created_at,
+            updated_at=project.updated_at,
         )
         for project in projects
     ]
@@ -161,6 +164,8 @@ async def create_project(
         id=project.id,
         name=project.name,
         internal_code=project.internal_code,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
     )
 
 
@@ -179,6 +184,8 @@ async def upload_document(
     kind: Annotated[str, Query()] = "report_body",
 ) -> UploadResponse:
     normalized_project_id = str(project_id)
+    if Path(file.filename or "").suffix.lower() != ".pdf":
+        raise ValueError("Publication document uploads must be PDF")
     # Validate project existence before accepting original bytes. The write
     # transaction repeats the MATCH so a concurrent deletion still fails closed.
     await _run_repository(repository.get_project, normalized_project_id)
@@ -269,6 +276,8 @@ async def get_project(
         id=project.id,
         name=project.name,
         internal_code=project.internal_code,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
         documents=[
             DocumentResponse(
                 id=doc.id,
