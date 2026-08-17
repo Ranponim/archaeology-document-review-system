@@ -1,7 +1,7 @@
 # SDD Progress Ledger: Archaeology Document Review System — Neo4j-Centric Remediation
 
 **Plan:** `docs/superpowers/plans/2026-08-17-archaeology-neo4j-core-remediation.md`
-**Status:** In Progress
+**Status:** Complete — all 15 tasks + integration tests + Gates A-G verified (see `final-gate-verification.md`)
 **Started:** 2026-08-17
 
 ## Preflight Interface Scan
@@ -45,5 +45,5 @@ Task 12: complete (commit 9964963, async run creation + RQ worker executes canon
 | Task 13 | Frontend upload UX and real DocumentVersion selection | Complete | `f0c8bd7` — see task-13-report.md (upload form with kind 본문/도판/도면 + stage 1차/2차/3차/최종; run form selects real uploaded DocumentVersions by kind, no path input; async queued→poll→completed/failed feedback + warnings; version list shows kind·stage labels; vitest component tests added) |
 | Task 14 | True expert decision semantics & audit tracking | Complete | `acd57de` — see task-14-report.md (Gate F: candidate.status generation-only `pending_review`; append-only ReviewDecision with exactly accepted/rejected/modified/deferred; candidate never mutated by decisions; latest_decision derived + metrics from latest; layout_noise rule-classification-only; API 4-value enforcement; frontend sends decision records only) |
 | Task 15 | Traceability UI rendering real graph paths | Complete | `b5240aa` — see task-15-report.md (EvidenceGraphExplorer renders only API-returned nodes/edges: candidate→ABOUT→object, SUPPORTED_BY→evidence→EXTRACTED_FROM→page→FROM_VERSION→version, HAS_DECISION→decision; bbox/source_sha256 as property chips, no HAS_BBOX/VERIFIED_HASH/RESOLVES_TO/DEPICTS fabricated edges — anti-pattern #10; vitest 12/12 + build OK) |
-| Verification | Real Neo4j Integration Tests & 7 Gates (A-G) | Complete | `26b3eb7` — see `integration-test-report.md` (compose.test.yml + `tests/integration/` suite: Gate A canonical graph, Gate C Case 6, Gate D graph-driven consistency, Gate E traceability, §6 Test 5 version graph; real driver only, scoped `it_<uuid8>_` ids + finally cleanup, skip-when-unreachable fixture; 6/6 passed against local Neo4j, 0 leftover scoped nodes; unit suite 481/8 unchanged) |
+| Verification | Real Neo4j Integration Tests & 7 Gates (A-G) | Complete | `26b3eb7` — see `integration-test-report.md` + `final-gate-verification.md` (compose.test.yml + `tests/integration/` suite: Gate A canonical graph, Gate C Case 6, Gate D graph-driven consistency, Gate E traceability, §6 Test 5 version graph; real driver only, scoped `it_<uuid8>_` ids + finally cleanup, skip-when-unreachable fixture; 6/6 passed against local Neo4j, 0 leftover scoped nodes; unit suite 481/8 unchanged; Gates B/F/G verified in code + unit + integration; all 16 anti-patterns closed; handoff checklist §12 ticked) |
 
