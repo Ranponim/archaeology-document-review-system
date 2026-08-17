@@ -16,7 +16,7 @@ class FakeDriver:
         return [FakeRecord(row) for row in rows], None, None
 
 
-def test_exact_version_resolution_ignores_legacy_stage_filter():
+def test_review_round_exact_version_resolution_uses_no_stage_filter():
     driver = FakeDriver(responses=[[{
         "version_id": "body_4",
         "document_id": "doc_body",
@@ -28,10 +28,18 @@ def test_exact_version_resolution_ignores_legacy_stage_filter():
         "mime_type": "application/pdf",
     }]])
     repo = ReviewProjectRepository(driver)
-    version = repo.resolve_version_input("p1", "report_body", "1차", "body_4")
+    version = repo.resolve_version_input("p1", "report_body", None, "body_4")
     assert version.version_id == "body_4"
     _, kwargs = driver.queries[0]
     assert kwargs["stage"] is None
+
+
+def test_legacy_direct_resolution_preserves_stage_filter():
+    driver = FakeDriver(responses=[])
+    repo = ReviewProjectRepository(driver)
+    assert repo.resolve_version_input("p1", "report_body", "1차", "body_4") is None
+    _, kwargs = driver.queries[0]
+    assert kwargs["stage"] == "1차"
 
 
 def test_approve_round_preserves_first_approved_timestamp():
