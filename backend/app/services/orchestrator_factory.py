@@ -1,8 +1,8 @@
 """Production orchestrator assembly (plan Task 11 / anti-pattern #14)."""
 import os
 
-from app.graph.audited_review_repository import AuditedReviewRepository
 from app.graph.canonical_repository import CanonicalRepository
+from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.review_project_repository import ReviewProjectRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.asset_review_pipeline import AssetReviewPipeline
@@ -39,15 +39,9 @@ def _development_candidate_budget() -> int | None:
 
 
 def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
-    """Assemble the complete production orchestrator with every collaborator.
-
-    In development mode the complete graph and cheap RuleEngine scan still run,
-    while a shared budget coordinator limits expensive VLM/LLM operations before
-    they execute. Production has no implicit candidate cap.
-    """
     project_repo = ReviewProjectRepository(driver)
     canonical_repo = CanonicalRepository(driver)
-    review_repo = AuditedReviewRepository(driver)
+    review_repo = ProductionReviewRepository(driver)
     vlm_service = VLMReviewService()
     ai_service = AIReviewService()
     rule_engine = StrictRuleEngine()
@@ -65,8 +59,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
             object_resolver=ObjectResolver(),
             rule_engine=BudgetedRuleEngine(rule_engine, budget),
             asset_review_pipeline=BudgetedAssetReviewPipeline(
-                AssetReviewPipeline(vlm_service=vlm_service),
-                budget,
+                AssetReviewPipeline(vlm_service=vlm_service), budget
             ),
             vlm_service=vlm_service,
             ai_review_service=BudgetedAIReviewService(ai_service, budget),
