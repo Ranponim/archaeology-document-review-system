@@ -19,7 +19,7 @@
 }
 
 .run-form::before {
-  content: '선택된 검수 라운드의 본문 · 도판 · 도면 조합으로 실행됩니다.';
+  content: '현재 활성 검수 라운드의 본문 · 도판 · 도면 조합으로 실행됩니다.';
   display: block;
   margin-bottom: 8px;
   font-size: 0.78rem;
