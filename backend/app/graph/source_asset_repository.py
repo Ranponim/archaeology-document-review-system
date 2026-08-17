@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from neo4j import Driver
@@ -40,7 +41,12 @@ class SourceAssetRepository:
             "importBatchId": asset.import_batch_id,
             "parseStatus": asset.parse_status,
             "provenanceStatus": asset.provenance_status,
-            "sourceMetadata": asset.source_metadata or {},
+            "sourceMetadataJson": json.dumps(
+                asset.source_metadata or {},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         }
         cypher = """
         MATCH (p:Project {id: $project_id})
@@ -59,7 +65,7 @@ class SourceAssetRepository:
             asset.importBatchId = $asset.importBatchId,
             asset.parseStatus = $asset.parseStatus,
             asset.provenanceStatus = $asset.provenanceStatus,
-            asset.sourceMetadata = $asset.sourceMetadata,
+            asset.sourceMetadataJson = $asset.sourceMetadataJson,
             asset.createdAt = coalesce(asset.createdAt, datetime())
         MERGE (p)-[:HAS_ORIGINAL_ASSET]->(asset)
         SET p.updatedAt = datetime()
