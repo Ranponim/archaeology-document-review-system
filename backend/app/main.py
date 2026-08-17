@@ -13,6 +13,7 @@ from app.api.projects import router as projects_router
 from app.api.assets import router as assets_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
+from app.api.run_diagnostics import router as run_diagnostics_router
 from app.graph.audited_review_repository import AuditedReviewRepository
 from app.graph.client import create_driver
 from app.graph.project_repository import (
@@ -162,6 +163,7 @@ def create_app(
 
     application.include_router(projects_router)
     application.include_router(reviews_router)
+    application.include_router(run_diagnostics_router)
     application.include_router(assets_router)
 
     frontend_dir = static_dir or Path(__file__).resolve().parents[1] / "static"
