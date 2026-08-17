@@ -1,8 +1,8 @@
 """Shared proofreading job-input resolution.
 
 ReviewRound runs compare the current body with its immediate predecessor and
-support unbounded N차 sequences. Legacy direct-version runs retain the old
-1차/2차/3차/final comparison behavior only for backward compatibility.
+support unbounded N차 sequences. Legacy injected/direct-version workers retain
+the old 1차/2차/3차/final comparison behavior only for backward compatibility.
 """
 from pathlib import Path
 import re
@@ -13,6 +13,7 @@ from app.config import DATA_ROOT
 from app.domain.document_structure import ParsedPage
 from app.domain.models import VersionInput
 from app.graph.project_repository import DocumentVersionNotFoundError
+from app.graph.review_project_repository import ReviewProjectRepository
 from app.services.drawing_parser import DrawingIndex
 from app.services.plate_parser import PlateIndex
 
@@ -102,7 +103,10 @@ async def resolve_body_versions_for_alignment(
     version_pages: dict[str, list[ParsedPage]] = {}
     version_ids: dict[str, str] = {}
     seen_version_ids: set[str] = set()
-    stages = body_stages_for_round(primary_stage) if review_round_id else _LEGACY_BODY_STAGES
+    is_round_aware = review_round_id is not None or isinstance(
+        project_repository, ReviewProjectRepository
+    )
+    stages = body_stages_for_round(primary_stage) if is_round_aware else _LEGACY_BODY_STAGES
 
     for stage in stages:
         if stage == primary_stage:
