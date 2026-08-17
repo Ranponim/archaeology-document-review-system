@@ -443,13 +443,7 @@ export async function triggerProofreadingRun(
   projectId: string,
   payload: Partial<RunTriggerPayload> = {},
 ): Promise<RunTriggerResponse> {
-  let reviewRoundId = payload.review_round_id ?? payload.reviewRoundId ?? null;
-  if (!reviewRoundId) {
-    const rounds = await fetchReviewRounds(projectId);
-    const runnable = rounds.filter((round) => round.status !== 'approved');
-    const source = runnable.length > 0 ? runnable : rounds;
-    reviewRoundId = source.length > 0 ? source[source.length - 1].id : null;
-  }
+  const reviewRoundId = payload.review_round_id ?? payload.reviewRoundId ?? null;
   if (!reviewRoundId) {
     throw new ApiError('review_round_required');
   }
