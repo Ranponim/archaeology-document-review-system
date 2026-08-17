@@ -48,56 +48,16 @@ async def trigger_review_round_run(
 ) -> RunTriggerResponse:
     """Queue one proofreading run from one graph-resident ReviewRound.
 
-    The ReviewRound is the sole authority for the body, plate/photo and drawing
-    DocumentVersions. The public production route deliberately accepts no
-    direct version ids, server file paths or human stage labels.
+    The ReviewRound is the sole authority for body, plate/photo, and drawing
+    DocumentVersions. The public route has no direct-version, file-path, or
+    stage fallback.
     """
-    warnings: list[str] = []
-    review_round_id = payload.review_round_id
-
-    if review_round_id:
-        resolved = await _run_repository(
-            resolve_review_round_inputs,
-            project_repository,
-            project_id,
-            review_round_id,
-        )
-        body_version = resolved.body
-        plate_version = resolved.plate
-        drawing_version = resolved.drawing
-        version_stage = resolved.compatibility_stage
-        if payload.body_version_id or payload.plate_version_id or payload.drawing_version_id:
-            warnings.append(
-                "reviewRoundId is authoritative; direct body/plate/drawing version ids were ignored"
-            )
-    else:
-        from app.api.reviews import _resolve_version_for_kind
-
-        body_version = await _resolve_version_for_kind(
-            project_repository,
-            project_id,
-            "report_body",
-            payload.body_version_id,
-            required=True,
-        )
-        plate_version = await _resolve_version_for_kind(
-            project_repository,
-            project_id,
-            "plate_book",
-            payload.plate_version_id,
-            required=False,
-        )
-        drawing_version = await _resolve_version_for_kind(
-            project_repository,
-            project_id,
-            "drawing_book",
-            payload.drawing_version_id,
-            required=False,
-        )
-        version_stage = payload.version_stage
-        warnings.append(
-            "legacy direct-version run path used; create/select a ReviewRound for canonical execution"
-        )
+    resolved = await _run_repository(
+        resolve_review_round_inputs,
+        project_repository,
+        project_id,
+        payload.review_round_id,
+    )
 
     if review_repository is None:
         raise ServerOperationError("Review repository not configured")
@@ -107,16 +67,16 @@ async def trigger_review_round_run(
         review_repository.create_analysis_run,
         project_id=project_id,
         run_id=run_id,
-        review_round_id=review_round_id,
-        body_version_id=body_version.version_id,
-        plate_version_id=(plate_version.version_id if plate_version is not None else None),
-        drawing_version_id=(drawing_version.version_id if drawing_version is not None else None),
-        body_pdf_path=payload.body_pdf_path,
-        plate_pdf_path=payload.plate_pdf_path,
-        drawing_pdf_path=payload.drawing_pdf_path,
+        review_round_id=resolved.review_round.id,
+        body_version_id=resolved.body.version_id,
+        plate_version_id=(resolved.plate.version_id if resolved.plate is not None else None),
+        drawing_version_id=(resolved.drawing.version_id if resolved.drawing is not None else None),
+        body_pdf_path=None,
+        plate_pdf_path=None,
+        drawing_pdf_path=None,
         enable_vlm=payload.enable_vlm,
         enable_ai_review=payload.enable_ai_review,
-        version_stage=version_stage,
+        version_stage=resolved.compatibility_stage,
     )
 
     try:
@@ -141,7 +101,7 @@ async def trigger_review_round_run(
     return RunTriggerResponse(
         run_id=run_id,
         project_id=project_id,
-        review_round_id=review_round_id,
+        review_round_id=resolved.review_round.id,
         status="queued",
-        warnings=warnings,
+        warnings=[],
     )
