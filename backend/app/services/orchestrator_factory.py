@@ -19,6 +19,7 @@ from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateParser
 from app.services import proofreading_orchestrator as proofreading_orchestrator_module
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
+from app.services.review_budget import select_development_candidates
 from app.services.round_stage_ordering import ordered_round_stage_versions
 from app.services.strict_rule_engine import StrictRuleEngine
 from app.services.vlm_review_service import VLMReviewService
@@ -41,9 +42,8 @@ def _development_candidate_budget() -> int | None:
 
 
 def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
-    # Compatibility seam: the legacy orchestrator calls a module-level stage
-    # ordering helper. Replace it with the ReviewRound-aware unbounded version
-    # before any run is executed.
+    # Compatibility seams for the legacy orchestrator. Production assembly is
+    # ReviewRound-aware even though the base class still exposes old helpers.
     proofreading_orchestrator_module._ordered_stage_versions = ordered_round_stage_versions
 
     project_repo = ReviewProjectRepository(driver)
@@ -55,6 +55,12 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
 
     budget_value = _development_candidate_budget()
     if budget_value is not None:
+        # The final materialized/UI sample must use the same deterministic,
+        # category-balanced strategy as the pre-AI budget rather than a simple
+        # severity sort + slice that can omit plate/drawing paths entirely.
+        proofreading_orchestrator_module.prioritize_and_cap_candidates = (
+            select_development_candidates
+        )
         budget = DevelopmentReviewBudget(max_expensive_operations=budget_value)
         return BudgetedProofreadingOrchestrator(
             project_repo=project_repo,
