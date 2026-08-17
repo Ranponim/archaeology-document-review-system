@@ -292,14 +292,6 @@ class ReviewMetricsResponse(ApiModel):
 
 
 class VisualAssetMetadata(ApiModel):
-    """Metadata contract for one renderable visual asset (review §10).
-
-    `imageUrl` is a relative API path to the render route — never a server
-    filesystem path (anti-pattern #15). `bbox` is normalized (0..1, PDF
-    top-left origin) for plate panels / drawing regions so the frontend can
-    overlay a highlight using renderWidth/renderHeight.
-    """
-
     asset_type: str = Field(alias="assetType")
     image_url: str = Field(alias="imageUrl")
     document_version_id: str | None = Field(default=None, alias="documentVersionId")
@@ -314,14 +306,27 @@ class VisualAssetMetadata(ApiModel):
     content_type: str = Field(default="image/png", alias="contentType")
 
 
+class VisualReferenceMetadata(ApiModel):
+    type: str
+    number: str
+    reference_id: str | None = Field(default=None, alias="referenceId")
+    target_id: str | None = Field(default=None, alias="targetId")
+
+
 class CandidateVisualBundle(ApiModel):
-    """Mandatory Test D: one candidate's source body page + canonical visual
-    asset together, so the frontend can render both images and highlight both
-    bboxes without opening external files."""
+    """Evidence-aware comparison contract for one review candidate."""
 
     candidate_id: str = Field(alias="candidateId")
+    comparison_type: Literal[
+        "version_change", "plate_reference", "drawing_reference", "text_evidence"
+    ] = Field(default="text_evidence", alias="comparisonType")
     source: VisualAssetMetadata | None = None
+    comparison: VisualAssetMetadata | None = None
     canonical: VisualAssetMetadata | None = None
+    reference: VisualReferenceMetadata | None = None
+    render_status: Literal["ready", "missing_render", "not_applicable"] = Field(
+        default="not_applicable", alias="renderStatus"
+    )
     unresolved_reason: str | None = Field(default=None, alias="unresolvedReason")
 
 
