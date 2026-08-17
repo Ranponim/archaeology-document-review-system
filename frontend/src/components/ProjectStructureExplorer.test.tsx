@@ -47,7 +47,9 @@ describe('ProjectStructureExplorer', () => {
     vi.spyOn(api, 'fetchProjectStructureChildren').mockResolvedValue({ items: [], offset: 0, limit: 50, total: 0, hasMore: false } as any);
 
     render(<ProjectStructureExplorer projectId="p1" initialSelection={{ nodeType: 'reference', id: 'ref45' }} />);
-    expect(await screen.findByText('RESOLVES_TO')).toBeInTheDocument();
+    const semanticRelationship = await screen.findByText('인용 대상 연결');
+    expect(semanticRelationship).toBeInTheDocument();
+    expect(semanticRelationship).toHaveAttribute('title', 'RESOLVES_TO');
     expect(screen.getByText('【도판 45】')).toBeInTheDocument();
     expect(screen.queryByText(/삭제|이동|연결 변경|rename/i)).not.toBeInTheDocument();
   });

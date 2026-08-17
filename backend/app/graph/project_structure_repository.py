@@ -86,11 +86,16 @@ class ProjectStructureRepository:
             project_id=project_id,
         )
         counts = count_rows[0] if count_rows else {"review_round_count": 0, "object_count": 0}
+        asset_rows = self._records(
+            "MATCH (:Project {id: $project_id})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset) RETURN count(asset) AS total",
+            project_id=project_id,
+        )
         return {
             **project_rows[0],
             "materials": material_rows,
             "review_round_count": int(counts.get("review_round_count") or 0),
             "object_count": int(counts.get("object_count") or 0),
+            "original_asset_count": int(asset_rows[0].get("total") or 0) if asset_rows else 0,
         }
 
     def list_children(
@@ -140,8 +145,37 @@ class ProjectStructureRepository:
         if node_type == ProjectStructureNodeType.region_group:
             drawing_id = self._derived_parent(node_id, "regions")
             return self._list_regions(project_id, drawing_id, offset, limit)
+        if node_type == ProjectStructureNodeType.source_asset_group:
+            return self._source_kind_groups(project_id)
+        if node_type == ProjectStructureNodeType.source_kind_group:
+            kind = self._derived_parent(node_id, "source-kind")
+            return self._list_original_assets(project_id, kind, offset, limit)
         if node_type == ProjectStructureNodeType.review_round_group:
             return self._list_rounds(project_id, offset, limit)
+        if node_type == ProjectStructureNodeType.original_asset:
+            rows = self._records(
+                """MATCH (p:Project {id: $project_id})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset {id: $node_id})
+                RETURN asset.id AS id, asset.originalName AS original_name, asset.relativePath AS relative_path,
+                       asset.assetKind AS asset_kind, asset.parseStatus AS parse_status, asset.provenanceStatus AS provenance_status,
+                       asset.uri AS uri, asset.sha256 AS sha256, asset.mimeType AS mime_type, asset.sizeBytes AS size_bytes""",
+                project_id=project_id, node_id=node_id,
+            )
+            if not rows: return None
+            rels = self._records(
+                """MATCH (p:Project {id: $project_id})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset {id: $node_id})
+                MATCH (p)-[:HAS_DOCUMENT]->(:Document)-[:HAS_VERSION]->(v:DocumentVersion)
+                OPTIONAL MATCH (v)-[:HAS_PLATE]->(plate:Plate)
+                OPTIONAL MATCH (plate)-[:HAS_PANEL]->(panel:PlatePanel)
+                OPTIONAL MATCH (v)-[:HAS_DRAWING]->(drawing:Drawing)
+                OPTIONAL MATCH (drawing)-[:HAS_REGION]->(region:DrawingRegion)
+                WITH asset, [x IN [plate,panel,drawing,region] WHERE x IS NOT NULL] AS targets
+                UNWIND targets AS target
+                MATCH (target)-[rel:DERIVED_FROM]->(asset)
+                RETURN DISTINCT target.id AS id, labels(target)[0] AS label, rel.method AS method, rel.status AS status""",
+                project_id=project_id, node_id=node_id,
+            )
+            rows[0]['relationships'] = rels
+            return rows[0]
         if node_type == ProjectStructureNodeType.review_round:
             return self._round_version_refs(project_id, node_id)
         if node_type == ProjectStructureNodeType.archaeology_object_group:
@@ -436,6 +470,40 @@ class ProjectStructureRepository:
             project_id=project_id, drawing_id=drawing_id,
         )
         return rows, int(total_rows[0]["total"] if total_rows else 0)
+
+    def _source_kind_groups(self, project_id: str):
+        rows = self._records(
+            """
+            MATCH (:Project {id: $project_id})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset)
+            WITH CASE WHEN asset.assetKind IN ['body_source','drawing_source','layout_source','linked_photo']
+                      THEN asset.assetKind ELSE 'other_source' END AS kind, count(asset) AS child_count
+            RETURN 'source-kind:' + kind AS id, 'source_kind_group' AS node_type, kind AS asset_kind, child_count
+            ORDER BY CASE kind WHEN 'body_source' THEN 1 WHEN 'drawing_source' THEN 2 WHEN 'layout_source' THEN 3 WHEN 'linked_photo' THEN 4 ELSE 5 END
+            """, project_id=project_id,
+        )
+        labels = {'body_source':'본문 원본','drawing_source':'도면 원본','layout_source':'조판 원본','linked_photo':'링크 사진','other_source':'기타'}
+        for row in rows: row['label'] = labels.get(row.get('asset_kind'), '기타')
+        return rows, len(rows)
+
+    def _list_original_assets(self, project_id: str, kind: str, offset: int, limit: int):
+        allowed = {'body_source','drawing_source','layout_source','linked_photo','other_source'}
+        if kind not in allowed: raise ValueError('Unknown source kind group')
+        condition = "asset.assetKind = $kind" if kind != 'other_source' else "NOT asset.assetKind IN ['body_source','drawing_source','layout_source','linked_photo']"
+        rows = self._records(
+            f"""MATCH (:Project {{id: $project_id}})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset)
+            WHERE {condition}
+            RETURN asset.id AS id, 'original_asset' AS node_type, asset.originalName AS original_name,
+                   asset.relativePath AS relative_path, asset.assetKind AS asset_kind, asset.parseStatus AS parse_status,
+                   asset.provenanceStatus AS provenance_status, asset.uri AS uri, asset.sha256 AS sha256,
+                   asset.mimeType AS mime_type, asset.sizeBytes AS size_bytes
+            ORDER BY asset.relativePath, asset.id SKIP $offset LIMIT $limit""",
+            project_id=project_id, kind=kind, offset=offset, limit=limit,
+        )
+        totals = self._records(
+            f"MATCH (:Project {{id: $project_id}})-[:HAS_ORIGINAL_ASSET]->(asset:OriginalAsset) WHERE {condition} RETURN count(asset) AS total",
+            project_id=project_id, kind=kind,
+        )
+        return rows, int(totals[0]['total'] if totals else 0)
 
     def _list_rounds(self, project_id: str, offset: int, limit: int):
         rows = self._records(

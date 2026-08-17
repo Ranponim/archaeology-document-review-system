@@ -20,6 +20,24 @@ KIND_LABELS = {
     "drawing_book": "도면",
 }
 
+SOURCE_KIND_LABELS = {
+    "body_source": "본문 원본",
+    "drawing_source": "도면 원본",
+    "layout_source": "조판 원본",
+    "linked_photo": "원천 사진",
+    "other_source": "기타 원천",
+    "provenance_manifest": "연결 명세",
+}
+
+PROVENANCE_STATUS_LABELS = {
+    "unlinked": "canonical 미연결",
+    "declared": "연결 선언",
+    "verified": "연결 검증",
+    "ambiguous": "연결 모호",
+    "missing_target": "대상 없음",
+    "conflict": "연결 충돌",
+}
+
 
 class StructureNodeNotFoundError(LookupError):
     pass
@@ -59,8 +77,9 @@ class ProjectStructureService:
             subtitle="프로젝트 전체 자료 구조",
             source_system="neo4j",
             expandable=True,
-            child_count=5,
+            child_count=6,
             badges=[
+                f"원천 자료 {summary.get('original_asset_count', 0)}",
                 f"검수 세트 {summary.get('review_round_count', 0)}",
                 f"고고학 객체 {summary.get('object_count', 0)}",
             ],
@@ -100,6 +119,17 @@ class ProjectStructureService:
                     {"kind": kind, "versionCount": versions},
                 )
             )
+        source_count = int(summary.get("original_asset_count") or 0)
+        groups.append(
+            self._group(
+                "source-assets",
+                ProjectStructureNodeType.source_asset_group,
+                "원천 자료",
+                source_count,
+                [f"원천 파일 {source_count}"],
+                {"scope": "project-owned OriginalAsset"},
+            )
+        )
         groups.append(
             self._group(
                 "review-rounds",
@@ -141,6 +171,8 @@ class ProjectStructureService:
         parent_type: ProjectStructureNodeType,
         row: dict[str, Any],
     ) -> ProjectStructureNode:
+        if row.get("node_type") == ProjectStructureNodeType.original_asset.value:
+            return self._original_asset_node(row)
         if row.get("node_type"):
             node_type = ProjectStructureNodeType(row["node_type"])
             return self._group(
@@ -254,6 +286,41 @@ class ProjectStructureService:
             )
         raise ValueError(f"Unsupported structure parent type: {parent_type}")
 
+    def _original_asset_node(self, row: dict[str, Any]) -> ProjectStructureNode:
+        kind = str(row.get("asset_kind") or "other_source")
+        provenance = str(row.get("provenance_status") or "unlinked")
+        parse_status = str(row.get("parse_status") or "stored")
+        original_name = str(row.get("original_name") or "원천 자료")
+        kind_label = SOURCE_KIND_LABELS.get(kind, SOURCE_KIND_LABELS["other_source"])
+        provenance_label = PROVENANCE_STATUS_LABELS.get(provenance, provenance)
+        storage = self.file_store.inspect(str(row.get("uri") or "")) if row.get("uri") else "unknown"
+        storage_label = {"present": "파일 존재", "missing": "파일 누락", "unknown": "파일 상태 미확인"}[storage]
+        return ProjectStructureNode(
+            id=str(row["id"]),
+            node_type=ProjectStructureNodeType.original_asset,
+            label=f"[{kind_label}] {original_name} · {provenance_label}",
+            subtitle="OriginalAsset · 원천 자료",
+            source_system="neo4j",
+            status=provenance,
+            expandable=False,
+            child_count=0,
+            badges=[storage_label, f"parse {parse_status}", provenance_label],
+            details={
+                "neo4jLabel": "OriginalAsset",
+                "storageSystem": "FileStore",
+                "storageStatus": storage,
+                "storageUri": row.get("uri"),
+                "sha256": row.get("sha256"),
+                "mimeType": row.get("mime_type"),
+                "sizeBytes": row.get("size_bytes"),
+                "relativePath": row.get("relative_path"),
+                "assetKind": kind,
+                "parseStatus": parse_status,
+                "provenanceStatus": provenance,
+                "originalName": original_name,
+            },
+        )
+
     def _version_node(self, row: dict[str, Any]) -> ProjectStructureNode:
         storage = self.file_store.inspect(str(row.get("uri") or "")) if row.get("uri") else "unknown"
         ingest = row.get("ingest_status") or "unknown"
@@ -286,6 +353,7 @@ class ProjectStructureService:
     ) -> ProjectStructureNode:
         if node_type in {
             ProjectStructureNodeType.material_group,
+            ProjectStructureNodeType.source_asset_group,
             ProjectStructureNodeType.review_round_group,
             ProjectStructureNodeType.archaeology_object_group,
         }:
@@ -303,12 +371,14 @@ class ProjectStructureService:
             ProjectStructureNodeType.panel_group,
             ProjectStructureNodeType.drawing_group,
             ProjectStructureNodeType.region_group,
+            ProjectStructureNodeType.source_kind_group,
         }:
             # A derived group is authorized by successfully listing its first page.
             _items = self.get_children(project_id, node_type, node_id, 0, 1)
             label = {
                 "page_group": "페이지", "textblock_group": "본문 블록", "caption_group": "캡션", "reference_group": "참조",
                 "plate_group": "표준 도판", "panel_group": "패널", "drawing_group": "표준 도면", "region_group": "영역",
+                "source_kind_group": SOURCE_KIND_LABELS.get(node_id.removeprefix("source-kind:"), "기타 원천"),
             }[node_type.value]
             return self._group(node_id, node_type, label, _items.total, [f"항목 {_items.total}"])
 
@@ -381,6 +451,20 @@ class ProjectStructureService:
                 source_system="neo4j", details={**props, "neo4jLabel": label_name, "documentVersionId": detail.get("document_version_id")},
                 relationships=relationships,
             )
+        if node_type == ProjectStructureNodeType.original_asset:
+            node = self._original_asset_node(detail)
+            relationships: list[ProjectStructureRelationship] = []
+            for relation in detail.get("relationships") or []:
+                if relation and relation.get("id") and relation.get("label"):
+                    relationships.append(ProjectStructureRelationship(
+                        type="DERIVED_FROM", direction="in",
+                        target=ProjectStructureRelationshipTarget(
+                            id=str(relation["id"]),
+                            node_type=self._node_type_for_label(str(relation["label"])),
+                            label=self._canonical_label(str(relation["label"]), relation),
+                        ),
+                    ))
+            return node.model_copy(update={"relationships": relationships})
         if node_type == ProjectStructureNodeType.review_round:
             relationships = []
             if detail.get("previous_round_id"):
