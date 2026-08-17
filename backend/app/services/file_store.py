@@ -26,6 +26,8 @@ MIME_TYPES_BY_SUFFIX = {
             "image/vnd.adobe.illustrator",
         }
     ),
+    ".indd": frozenset({"application/x-indesign"}),
+    ".json": frozenset({"application/json"}),
 }
 
 DEFAULT_MIME_TYPE_BY_SUFFIX = {
@@ -38,6 +40,8 @@ DEFAULT_MIME_TYPE_BY_SUFFIX = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
     ".ai": "application/postscript",
+    ".indd": "application/x-indesign",
+    ".json": "application/json",
 }
 
 WINDOWS_RESERVED_NAMES = frozenset(

@@ -127,6 +127,7 @@ class SourceImportService:
                 project_id,
                 boundary,
                 Path(manifest_path),
+                batch_id,
                 assets_by_relative,
                 imported,
                 errors,
@@ -139,6 +140,7 @@ class SourceImportService:
         project_id: str,
         boundary: Path,
         manifest_path: Path,
+        import_batch_id: str,
         assets: dict[str, OriginalAssetData],
         imported: list[OriginalAssetData],
         errors: list[str],
@@ -152,6 +154,21 @@ class SourceImportService:
             payload = json.loads(raw.decode('utf-8'))
             if payload.get('version') != 1 or not isinstance(payload.get('mappings'), list):
                 raise ValueError('Unsupported provenance manifest')
+            relative_manifest = self._normalized_relative(resolved_manifest.relative_to(boundary))
+            stored_manifest = self.file_store.store_bytes(
+                project_id, resolved_manifest.name, raw, 'application/json'
+            )
+            manifest_asset = OriginalAssetData(
+                id=self._asset_id(project_id, relative_manifest, stored_manifest.sha256),
+                project_id=project_id, uri=stored_manifest.uri, sha256=stored_manifest.sha256,
+                size_bytes=stored_manifest.size_bytes, mime_type=stored_manifest.mime_type,
+                original_name=stored_manifest.original_name, relative_path=relative_manifest,
+                asset_kind='provenance_manifest', source_root_name=boundary.name,
+                import_batch_id=import_batch_id, parse_status='parsed',
+                provenance_status='declared', source_metadata={'manifestVersion': 1},
+            )
+            self.repository.save_original_asset(manifest_asset)
+            imported.append(manifest_asset)
         except Exception as error:
             errors.append(f'manifest: {error}')
             return
