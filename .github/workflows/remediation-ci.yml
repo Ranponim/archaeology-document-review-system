@@ -44,10 +44,21 @@ jobs:
           tests/test_candidate_visual_bundle.py
           tests/test_rule_engine_guards.py
       - name: Full backend suite
+        id: full-backend
+        continue-on-error: true
         working-directory: .
         env:
           PYTHONPATH: backend
-        run: pytest -q backend/tests
+        run: pytest -q backend/tests --junitxml=backend-full-results.xml
+      - name: Upload backend pytest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-full-results
+          path: backend-full-results.xml
+      - name: Enforce full backend result
+        if: steps.full-backend.outcome != 'success'
+        run: exit 1
 
   neo4j-integration:
     runs-on: ubuntu-latest
