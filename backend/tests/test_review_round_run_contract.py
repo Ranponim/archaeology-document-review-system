@@ -1,20 +1,24 @@
 import pytest
 from pydantic import ValidationError
 
-from app.api.schemas import RunTriggerRequest
+from app.api.review_run_contract import ReviewRoundRunTriggerRequest
 
 
 def test_proofreading_run_requires_review_round_id():
     with pytest.raises(ValidationError):
-        RunTriggerRequest.model_validate({
+        ReviewRoundRunTriggerRequest.model_validate({
             "enableVlm": False,
             "enableAiReview": False,
         })
 
 
-def test_direct_version_ids_are_not_part_of_the_production_run_contract():
-    request = RunTriggerRequest.model_validate({
+def test_direct_version_ids_are_not_part_of_the_runtime_run_contract():
+    request = ReviewRoundRunTriggerRequest.model_validate({
         "reviewRoundId": "round_7",
+        "bodyVersionId": "ignored_legacy_body",
+        "plateVersionId": "ignored_legacy_plate",
+        "drawingVersionId": "ignored_legacy_drawing",
+        "versionStage": "99차",
         "enableVlm": False,
         "enableAiReview": True,
     })
