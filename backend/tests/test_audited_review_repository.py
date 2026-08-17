@@ -44,7 +44,12 @@ def test_same_finding_is_materialized_as_distinct_candidate_per_run():
 
 
 def test_run_summary_is_persisted_and_project_scoped_readable():
-    driver = FakeDriver(responses=[[], [{"run": {"id": "run_1", "summary": '{"selected_candidates":10}'}}]])
+    driver = FakeDriver(
+        responses=[
+            [],
+            [{"run": {"id": "run_1", "reviewSummary": '{"selected_candidates":10}'}}],
+        ]
+    )
     repo = AuditedReviewRepository(driver)
     repo.save_run_summary("run_1", {"selected_candidates": 10})
     save_query, _ = driver.queries[0]
