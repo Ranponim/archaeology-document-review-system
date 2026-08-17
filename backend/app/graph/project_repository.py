@@ -778,6 +778,7 @@ class ProjectRepository:
             """
             MATCH (project:Project {id: $project_id})
             SET project.updatedAt = datetime()
+            WITH project
             OPTIONAL MATCH (project)-[:HAS_REVIEW_ROUND]->(existing:ReviewRound)
             WITH project, coalesce(max(existing.sequence), 0) + 1 AS next_seq
             CREATE (round:ReviewRound {
