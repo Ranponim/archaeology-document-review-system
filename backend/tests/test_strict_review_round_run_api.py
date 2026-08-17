@@ -89,7 +89,6 @@ class CapturingReviewRepository:
         self.failed.append(dict(kwargs))
 
 
-
 def strict_client():
     project_repository = StrictProjectRepository()
     review_repository = CapturingReviewRepository()
@@ -161,14 +160,18 @@ def test_run_rejects_review_round_plus_server_pdf_path():
 
 def test_run_route_has_one_strict_runtime_owner():
     client, _, _ = strict_client()
-    run_routes = [
+    openapi = client.app.openapi()
+    assert "/api/v1/projects/{project_id}/runs" in openapi["paths"]
+    assert set(openapi["paths"]["/api/v1/projects/{project_id}/runs"]) == {"post"}
+
+    owners = [
         route
         for route in client.app.routes
-        if getattr(route, "path", None) == "/api/v1/projects/{project_id}/runs"
-        and "POST" in (getattr(route, "methods", None) or set())
+        if getattr(getattr(route, "endpoint", None), "__name__", None)
+        == "trigger_review_round_run"
     ]
-    assert len(run_routes) == 1
-    assert run_routes[0].endpoint.__name__ == "trigger_review_round_run"
+    assert len(owners) == 1
+    assert "POST" in (getattr(owners[0], "methods", None) or set())
 
 
 def test_valid_run_uses_only_versions_owned_by_review_round():
