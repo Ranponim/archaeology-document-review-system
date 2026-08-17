@@ -6,12 +6,7 @@ from typing import Any
 
 
 class ProjectRepositoryCompatibilityAdapter:
-    """Compatibility only for explicitly injected repository implementations.
-
-    Production never uses this adapter: the app lifespan constructs
-    ReviewProjectRepository directly. It exists so older test/plugin repository
-    ports can be exercised while the public API migrates to ReviewRound.
-    """
+    """Compatibility only for explicitly injected repository implementations."""
 
     KIND_ALIASES = {
         "plate_book": ("plate_book", "plate_pdf"),
@@ -66,9 +61,6 @@ class ProjectRepositoryCompatibilityAdapter:
                 mime_type=getattr(version, "mime_type", "application/pdf"),
             )
 
-        # A very old injected repository may only implement ReviewRound CRUD.
-        # It is not used by production. Return the minimal port shape so those
-        # compatibility tests can reach the repository's own round logic.
         if version_id:
             return SimpleNamespace(version_id=version_id, kind=kind, stage=stage)
         return None
@@ -133,6 +125,36 @@ class ReviewRepositoryCompatibilityAdapter:
         return trace
 
 
+class VisualAssetServiceCompatibilityAdapter:
+    """Adapt legacy injected VisualAssetService to the project-scoped bundle call."""
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+    def get_candidate_visual_bundle(self, candidate_id: str, project_id: str | None = None):
+        fn = self._delegate.get_candidate_visual_bundle
+        try:
+            return fn(candidate_id, project_id)
+        except TypeError:
+            return fn(candidate_id)
+
+
+class VisualBundleReviewCompatibilityRepository:
+    """Ownership shim only when tests inject a visual service without a review repo."""
+
+    def __init__(self, visual_service: Any) -> None:
+        self._visual_service = visual_service
+
+    def get_candidate(self, project_id: str, candidate_id: str):
+        bundle = self._visual_service.get_candidate_visual_bundle(candidate_id, project_id)
+        if bundle is None:
+            return None
+        return {"id": candidate_id, "project_id": project_id}
+
+
 def adapt_project_repository(repository: Any | None) -> Any | None:
     if repository is None or isinstance(repository, ProjectRepositoryCompatibilityAdapter):
         return repository
@@ -143,3 +165,9 @@ def adapt_review_repository(repository: Any | None) -> Any | None:
     if repository is None or isinstance(repository, ReviewRepositoryCompatibilityAdapter):
         return repository
     return ReviewRepositoryCompatibilityAdapter(repository)
+
+
+def adapt_visual_asset_service(service: Any | None) -> Any | None:
+    if service is None or isinstance(service, VisualAssetServiceCompatibilityAdapter):
+        return service
+    return VisualAssetServiceCompatibilityAdapter(service)
