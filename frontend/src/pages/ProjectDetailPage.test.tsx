@@ -11,6 +11,8 @@ const apiMocks = vi.hoisted(() => ({
   fetchCandidates: vi.fn(),
   fetchMetrics: vi.fn(),
   fetchTraceability: vi.fn(),
+  fetchVisualBundle: vi.fn(),
+  retryAnalysisRun: vi.fn(),
 }));
 
 vi.mock('../api', async (importOriginal) => {
@@ -70,6 +72,7 @@ beforeEach(() => {
   apiMocks.fetchCandidates.mockResolvedValue({ total: 0, candidates: [] });
   apiMocks.fetchMetrics.mockResolvedValue({});
   apiMocks.fetchTraceability.mockResolvedValue({});
+  apiMocks.fetchVisualBundle.mockResolvedValue({ candidateId: 'x' });
   apiMocks.getProject.mockResolvedValue(makeDetail());
 });
 
@@ -315,5 +318,46 @@ describe('ProjectDetailPage document kind after reload', () => {
         }),
       );
     });
+  });
+});
+
+describe('ProjectDetailPage retry + severity honesty', () => {
+  it('shows a retry button for a retryable failed run and calls the retry endpoint', async () => {
+    const user = userEvent.setup();
+    apiMocks.getProject.mockResolvedValue(
+      makeDetail({
+        analysisRuns: [
+          {
+            id: 'run_fail',
+            status: 'failed',
+            step: 'ingest',
+            documentVersionId: 'ver_body_1',
+            errorCode: 'conversion_error',
+            retryable: true,
+          },
+        ],
+      }),
+    );
+    apiMocks.retryAnalysisRun.mockResolvedValue({
+      analysis_run_id: 'run_fail',
+      status: 'queued',
+    });
+    render(<ProjectDetailPage project={project} />);
+
+    const retryBtn = await screen.findByRole('button', { name: '재시도' });
+    await user.click(retryBtn);
+
+    await waitFor(() => {
+      expect(apiMocks.retryAnalysisRun).toHaveBeenCalledWith('proj_1', 'run_fail');
+    });
+  });
+
+  it('does not present a silent severity filter (removed because the backend ignores it)', async () => {
+    render(<ProjectDetailPage project={project} />);
+    await screen.findByLabelText('본문 버전');
+
+    expect(screen.queryByLabelText('중요도:')).toBeNull();
+    expect(screen.queryByLabelText('중요도')).toBeNull();
+    expect(screen.queryByRole('option', { name: '높음 (High)' })).toBeNull();
   });
 });

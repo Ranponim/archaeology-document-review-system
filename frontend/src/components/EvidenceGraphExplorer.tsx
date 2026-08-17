@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   type ArchaeologyObject,
+  type CandidateVisualBundle,
   type CorrectionCandidate,
   type Evidence,
   type ReviewDecision,
@@ -10,12 +11,13 @@ import {
 type Props = {
   candidate: CorrectionCandidate;
   traceability?: TraceabilityResponse | null;
+  visualBundle?: CandidateVisualBundle | null;
   loading?: boolean;
 };
 
 /**
  * Graph node model. Every node is derived from a field that the backend
- * traceability payload actually returns — never synthesized.
+ * traceability / visual-bundle payload actually returns — never synthesized.
  */
 export type GraphNodeKind =
   | 'candidate'
@@ -23,7 +25,8 @@ export type GraphNodeKind =
   | 'evidence'
   | 'page'
   | 'doc_ver'
-  | 'decision';
+  | 'decision'
+  | 'canonical_asset';
 
 export type GraphNode = {
   id: string;
@@ -85,6 +88,7 @@ function compact(
 export function buildGraphModel(
   candidate: CorrectionCandidate,
   traceability?: TraceabilityResponse | null,
+  visualBundle?: CandidateVisualBundle | null,
 ): GraphModel {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -139,6 +143,39 @@ export function buildGraphModel(
     };
     nodes.push(objNode);
     edges.push({ from: candId, to: archObj.id, label: 'ABOUT' });
+  }
+
+  // Canonical identity path (review §11): the visual-bundle `canonical` asset is
+  // the DEPICTS visual asset the backend resolved for this candidate
+  // ((cand)-[:ABOUT]->(obj)<-[:DEPICTS]-(asset)). Only rendered when the backend
+  // returns it — never invented (anti-pattern #7/#10).
+  const canonical = visualBundle?.canonical ?? null;
+  if (canonical && canonical.imageUrl && archObj && archObj.id) {
+    const assetTypeTag: Record<string, string> = {
+      page: 'Page',
+      plate: 'Plate',
+      plate_panel: 'PlatePanel',
+      drawing: 'Drawing',
+      drawing_region: 'DrawingRegion',
+    };
+    const canonicalNode: GraphNode = {
+      id: canonical.regionId ?? canonical.imageUrl,
+      kind: 'canonical_asset',
+      typeTag: assetTypeTag[canonical.assetType] ?? 'CanonicalAsset',
+      title: canonical.printedIdentifier ?? canonical.regionId ?? '표준 자산',
+      subtitle: canonical.caption ?? canonical.assetType,
+      properties: compact([
+        prop('assetType', canonical.assetType),
+        prop('regionId', canonical.regionId),
+        prop('printedIdentifier', canonical.printedIdentifier),
+        prop('sourceSha256', canonical.sourceSha256),
+        prop('physicalPage', canonical.physicalPage),
+        prop('caption', canonical.caption),
+      ]),
+      chips: compact([prop('bbox', canonical.bbox)]),
+    };
+    nodes.push(canonicalNode);
+    edges.push({ from: canonicalNode.id, to: archObj.id, label: 'DEPICTS' });
   }
 
   // (candidate)-[:SUPPORTED_BY]->(evidence) -> EXTRACTED_FROM / FROM_VERSION.
@@ -250,11 +287,13 @@ const NODE_KIND_LABEL: Record<GraphNodeKind, string> = {
   page: 'Page (보고서 페이지 노드)',
   doc_ver: 'DocumentVersion (문서 버전 정보)',
   decision: 'ReviewDecision (검수 판정 이력)',
+  canonical_asset: 'CanonicalAsset (표준 도판/도면/패널 자산)',
 };
 
 export function EvidenceGraphExplorer({
   candidate,
   traceability,
+  visualBundle,
   loading = false,
 }: Props) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -275,7 +314,7 @@ export function EvidenceGraphExplorer({
     ...(candidate.evidence ? [candidate.evidence] : []),
   ].filter((ev, idx, arr) => ev && arr.findIndex((item) => item?.id === ev.id) === idx);
 
-  const model = buildGraphModel(candidate, traceability);
+  const model = buildGraphModel(candidate, traceability, visualBundle);
   const nodeById = new Map(model.nodes.map((n) => [n.id, n]));
 
   const selectedNode =
@@ -316,6 +355,9 @@ export function EvidenceGraphExplorer({
   const branchEdges = model.edges.filter(
     (e) => e.from === candNode?.id && e.label !== 'SUPPORTED_BY',
   );
+
+  const canonicalNode = model.nodes.find((n) => n.kind === 'canonical_asset');
+  const archObjNode = model.nodes.find((n) => n.kind === 'arch_obj');
 
   function renderNode(node: GraphNode) {
     const isActive = selectedNode?.id === node.id;
@@ -407,6 +449,22 @@ export function EvidenceGraphExplorer({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {canonicalNode && archObjNode && (
+          <div className="canonical-identity-section">
+            <span className="section-label">CANONICAL IDENTITY PATH</span>
+            <p className="canonical-identity-desc">
+              이 후보가 대조하는 표준 도판/도면 자산이 왜 선택되었는지 보여줍니다. 표준 자산은
+              [:DEPICTS]로 표준 고고학 객체와 연결됩니다 (backend visual-bundle에서 반환된 관계만
+              표시).
+            </p>
+            <div className="canonical-identity-row">
+              {renderNode(canonicalNode)}
+              {renderEdge('DEPICTS')}
+              {renderNode(archObjNode)}
+            </div>
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useSta
 import {
   ApiError,
   type CandidateFilters,
+  type CandidateVisualBundle,
   type CorrectionCandidate,
   type DocumentVersion,
   type Project,
@@ -14,7 +15,9 @@ import {
   fetchCandidates,
   fetchMetrics,
   fetchTraceability,
+  fetchVisualBundle,
   getProject,
+  retryAnalysisRun,
   triggerProofreadingRun,
   uploadDocument,
 } from '../api';
@@ -83,13 +86,16 @@ export function ProjectDetailPage({ project, onBack }: Props) {
   const [metrics, setMetrics] = useState<ReviewMetrics | null>(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [traceabilityMap, setTraceabilityMap] = useState<Record<string, TraceabilityResponse>>({});
+  const [visualBundleMap, setVisualBundleMap] = useState<Record<string, CandidateVisualBundle>>({});
   const [loadingTrace, setLoadingTrace] = useState(false);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Retry state
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
 
   // Active View Tab for Inspector
   const [activeTab, setActiveTab] = useState<TabType>('split');
@@ -99,7 +105,6 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     try {
       const filters: CandidateFilters = {};
       if (filterStatus === 'pending_review') filters.status = filterStatus;
-      if (filterSeverity !== 'all') filters.severity = filterSeverity;
       if (filterCategory !== 'all') filters.rule_category = filterCategory;
 
       const [candRes, metricRes] = await Promise.all([
@@ -120,7 +125,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     } catch {
       // Non-critical data loading error
     }
-  }, [project.id, filterStatus, filterSeverity, filterCategory]);
+  }, [project.id, filterStatus, filterCategory]);
 
   useEffect(() => {
     void loadReviewData();
@@ -165,6 +170,28 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     };
   }, [project.id, selectedCandidateId, traceabilityMap]);
 
+  // Fetch the visual bundle (Test D) for the selected candidate so both the
+  // split view and the evidence graph can render the real source material.
+  useEffect(() => {
+    if (!selectedCandidateId) return;
+    if (visualBundleMap[selectedCandidateId]) return;
+
+    let isMounted = true;
+    fetchVisualBundle(project.id, selectedCandidateId)
+      .then((bundle) => {
+        if (isMounted) {
+          setVisualBundleMap((prev) => ({ ...prev, [selectedCandidateId]: bundle }));
+        }
+      })
+      .catch(() => {
+        // Visual assets are optional; the split view shows a graceful fallback.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [project.id, selectedCandidateId, visualBundleMap]);
+
   useEffect(
     () => () => {
       if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
@@ -208,6 +235,21 @@ export function ProjectDetailPage({ project, onBack }: Props) {
       setBodyVersionId(bodyVersions[0].id);
     }
   }, [bodyVersions, bodyVersionId]);
+
+  // Analysis readiness (§8.2): disable 검수 시작 when a selected version's
+  // canonical graph ingestion failed.
+  const runForVersion = (versionId: string) =>
+    detail.analysisRuns.find((r) => r.documentVersionId === versionId);
+  const bodyIngestFailed = bodyVersionId
+    ? runForVersion(bodyVersionId)?.status === 'failed'
+    : false;
+  const plateIngestFailed = plateVersionId
+    ? runForVersion(plateVersionId)?.status === 'failed'
+    : false;
+  const drawingIngestFailed = drawingVersionId
+    ? runForVersion(drawingVersionId)?.status === 'failed'
+    : false;
+  const readinessBlocked = bodyIngestFailed || plateIngestFailed || drawingIngestFailed;
 
   const pollRunStatus = useCallback(
     async (runId: string) => {
@@ -314,6 +356,20 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     void handleTriggerProofread();
   }
 
+  async function handleRetryRun(analysisRunId: string) {
+    if (retryingRunId) return;
+    setRetryingRunId(analysisRunId);
+    setErrorCode(null);
+    try {
+      await retryAnalysisRun(project.id, analysisRunId);
+      void refreshLater();
+    } catch (err) {
+      setErrorCode(err instanceof Error ? err.message : '재시도 요청 중 오류가 발생했습니다.');
+    } finally {
+      setRetryingRunId(null);
+    }
+  }
+
   function handleDecisionSubmitted(newDecision: ReviewDecision) {
     setCandidates((prev) =>
       prev.map((c) => {
@@ -364,6 +420,10 @@ export function ProjectDetailPage({ project, onBack }: Props) {
 
   const selectedTraceability = selectedCandidate
     ? traceabilityMap[selectedCandidate.id] || null
+    : null;
+
+  const selectedVisualBundle = selectedCandidate
+    ? visualBundleMap[selectedCandidate.id] || null
     : null;
 
   // Selected candidate index for prev/next buttons
@@ -545,13 +605,26 @@ export function ProjectDetailPage({ project, onBack }: Props) {
               <button
                 type="submit"
                 className="btn-trigger-run"
-                disabled={runningProofread || !bodyVersionId}
+                disabled={runningProofread || !bodyVersionId || readinessBlocked}
+                title={
+                  readinessBlocked
+                    ? '선택한 버전의 캐노니컬 그래프 수집이 실패하여 검수를 시작할 수 없습니다.'
+                    : undefined
+                }
               >
                 {runningProofread ? '교정 분석 실행 중...' : '▶ 새 검수 실행'}
               </button>
             </div>
           </form>
         </div>
+
+        {readinessBlocked && (
+          <div className="readiness-warning" role="alert">
+            <strong>⚠ 검수 준비 상태:</strong> 선택한 버전 중 캐노니컬 그래프 수집이 실패한
+            버전이 있어 [새 검수 실행]이 비활성화되었습니다. 실패한 수집을 [재시도]한 뒤 다시
+            시도하세요.
+          </div>
+        )}
 
         {runResult && (
           <div className="run-result-banner">
@@ -636,6 +709,16 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                       {run?.status === 'running' ? '실행 중' : run?.status === 'queued' ? '대기 중' : run?.status === 'completed' ? '완료' : run?.status === 'failed' ? '실패' : run?.status ?? 'unknown'}
                     </span>
                     {run?.errorCode && <code>{run.errorCode}</code>}
+                    {run?.status === 'failed' && run.retryable && (
+                      <button
+                        type="button"
+                        className="btn-retry"
+                        onClick={() => void handleRetryRun(run.id)}
+                        disabled={retryingRunId === run.id}
+                      >
+                        {retryingRunId === run.id ? '재시도 중...' : '재시도'}
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -727,20 +810,6 @@ export function ProjectDetailPage({ project, onBack }: Props) {
               <option value="rejected">반려</option>
               <option value="modified">수정 승인</option>
               <option value="deferred">보류</option>
-            </select>
-          </div>
-
-          <div className="filter-group">
-            <label htmlFor="filter-severity">중요도:</label>
-            <select
-              id="filter-severity"
-              value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
-            >
-              <option value="all">전체 중요도</option>
-              <option value="high">높음 (High)</option>
-              <option value="medium">보통 (Medium)</option>
-              <option value="low">낮음 (Low)</option>
             </select>
           </div>
 
@@ -866,6 +935,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                   projectId={project.id}
                   candidate={selectedCandidate}
                   traceability={selectedTraceability}
+                  visualBundle={selectedVisualBundle}
                   onDecisionSubmitted={handleDecisionSubmitted}
                 />
               )}
@@ -874,6 +944,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                 <EvidenceGraphExplorer
                   candidate={selectedCandidate}
                   traceability={selectedTraceability}
+                  visualBundle={selectedVisualBundle}
                   loading={loadingTrace}
                 />
               )}

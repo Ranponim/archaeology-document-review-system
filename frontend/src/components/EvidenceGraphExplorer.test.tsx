@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { CorrectionCandidate, TraceabilityResponse } from '../api';
+import type { CandidateVisualBundle, CorrectionCandidate, TraceabilityResponse } from '../api';
 import {
   EvidenceGraphExplorer,
   buildGraphModel,
@@ -173,5 +173,53 @@ describe('buildGraphModel payload mapping', () => {
     expect(evidenceNode?.chips?.map((c) => c.key)).toEqual(
       expect.arrayContaining(['bbox', 'source_sha256']),
     );
+  });
+});
+
+describe('EvidenceGraphExplorer canonical identity path', () => {
+  const visualBundle: CandidateVisualBundle = {
+    candidateId: 'cand_trace_1',
+    source: {
+      assetType: 'page',
+      imageUrl: '/api/v1/assets/pages/ver_1_p105/render',
+      regionId: 'ver_1_p105',
+    },
+    canonical: {
+      assetType: 'plate_panel',
+      imageUrl: '/api/v1/assets/plate-panels/plate_45_panel_1/render',
+      printedIdentifier: '【도판 45】',
+      regionId: 'plate_45_panel_1',
+      caption: '조사 전',
+      bbox: [0.1, 0.1, 0.5, 0.5],
+    },
+  };
+
+  it('renders the canonical identity path (DEPICTS) when the visual-bundle returns a canonical asset', () => {
+    render(
+      <EvidenceGraphExplorer
+        candidate={candidate}
+        traceability={traceability}
+        visualBundle={visualBundle}
+      />,
+    );
+
+    expect(screen.getByTestId('graph-node-canonical_asset')).toBeInTheDocument();
+    expect(screen.getByTestId('graph-edge-DEPICTS')).toBeInTheDocument();
+    expect(screen.getByText('【도판 45】')).toBeInTheDocument();
+  });
+
+  it('does not invent the canonical identity path when the visual-bundle is absent', () => {
+    render(<EvidenceGraphExplorer candidate={candidate} traceability={traceability} />);
+
+    expect(screen.queryByTestId('graph-node-canonical_asset')).toBeNull();
+    expect(screen.queryByTestId('graph-edge-DEPICTS')).toBeNull();
+  });
+
+  it('buildGraphModel adds a DEPICTS edge only when a canonical asset is present', () => {
+    const withBundle = buildGraphModel(candidate, traceability, visualBundle);
+    expect(withBundle.edges.map((e) => e.label)).toContain('DEPICTS');
+
+    const withoutBundle = buildGraphModel(candidate, traceability);
+    expect(withoutBundle.edges.map((e) => e.label)).not.toContain('DEPICTS');
   });
 });

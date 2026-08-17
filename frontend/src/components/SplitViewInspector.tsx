@@ -1,24 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  type CandidateVisualBundle,
   type CorrectionCandidate,
   type Evidence,
   type ReviewDecision,
   type ReviewDecisionPayload,
   type TraceabilityResponse,
+  fetchVisualBundle,
   submitReviewDecision,
 } from '../api';
+import { VisualAssetPane } from './VisualAssetPane';
 
 type Props = {
   projectId: string;
   candidate: CorrectionCandidate;
   traceability?: TraceabilityResponse | null;
+  visualBundle?: CandidateVisualBundle | null;
   onDecisionSubmitted?: (decision: ReviewDecision) => void;
 };
+
+function isDrawingType(assetType: string | undefined): boolean {
+  return assetType === 'drawing' || assetType === 'drawing_region';
+}
 
 export function SplitViewInspector({
   projectId,
   candidate,
   traceability,
+  visualBundle: visualBundleProp,
   onDecisionSubmitted,
 }: Props) {
   const [reviewer, setReviewer] = useState('고고학 전문 검수관');
@@ -33,6 +42,40 @@ export function SplitViewInspector({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [copiedHash, setCopiedHash] = useState(false);
+
+  const [visualBundle, setVisualBundle] = useState<CandidateVisualBundle | null>(null);
+  const [loadingVisual, setLoadingVisual] = useState(false);
+  const [visualError, setVisualError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visualBundleProp) {
+      setVisualBundle(visualBundleProp);
+      setLoadingVisual(false);
+      setVisualError(null);
+      return;
+    }
+    let isMounted = true;
+    setLoadingVisual(true);
+    setVisualError(null);
+    setVisualBundle(null);
+    fetchVisualBundle(projectId, candidate.id)
+      .then((bundle) => {
+        if (isMounted) setVisualBundle(bundle);
+      })
+      .catch(() => {
+        if (isMounted) setVisualError('시각 자산(본문 페이지/도판/도면)을 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        if (isMounted) setLoadingVisual(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [projectId, candidate.id, visualBundleProp]);
+
+  const sourceAsset = visualBundle?.source ?? null;
+  const canonicalAsset = visualBundle?.canonical ?? null;
+  const canonicalIsDrawing = canonicalAsset ? isDrawingType(canonicalAsset.assetType) : false;
 
   const originalText = candidate.original_text ?? candidate.originalText ?? '';
   const proposedText = candidate.proposed_text ?? candidate.proposedText ?? '';
@@ -200,6 +243,26 @@ export function SplitViewInspector({
             <h4 id="source-pane-heading">원본 추출 문맥 및 주장</h4>
           </div>
 
+          {loadingVisual && (
+            <div className="visual-loading" role="status">
+              <div className="spinner" />
+              <p>본문 페이지 렌더를 불러오는 중...</p>
+            </div>
+          )}
+          {visualError && <p className="visual-error">{visualError}</p>}
+          {!loadingVisual && sourceAsset && (
+            <VisualAssetPane
+              asset={sourceAsset}
+              title="본문 PDF — 실제 렌더 페이지"
+              subtitle={
+                sourceAsset.physicalPage != null
+                  ? `물리 ${sourceAsset.physicalPage}쪽`
+                  : undefined
+              }
+              testIdPrefix="source"
+            />
+          )}
+
           <div className="pane-meta-grid">
             <div className="meta-item">
               <span className="meta-label">문서 버전:</span>
@@ -265,6 +328,21 @@ export function SplitViewInspector({
             <h4 id="canonical-pane-heading">도면·도판 대조 표준 및 제안</h4>
           </div>
 
+          {!loadingVisual && canonicalAsset && !canonicalIsDrawing && (
+            <VisualAssetPane
+              asset={canonicalAsset}
+              title="표준 도판 / 사진 — 실제 패널 이미지"
+              subtitle={canonicalAsset.printedIdentifier ?? undefined}
+              testIdPrefix="canonical"
+            />
+          )}
+          {!loadingVisual && canonicalIsDrawing && (
+            <p className="visual-note">
+              이 후보의 표준 대조 자산은 도면입니다. 아래 [표준 도면] 영역에서 실제 도면 렌더와
+              영역 하이라이트를 확인하세요.
+            </p>
+          )}
+
           <div className="pane-meta-grid">
             <div className="meta-item">
               <span className="meta-label">대상 유물/도판:</span>
@@ -321,6 +399,22 @@ export function SplitViewInspector({
           </div>
         </section>
       </div>
+
+      {/* CANONICAL DRAWING SECTION (review §9) */}
+      {!loadingVisual && canonicalAsset && canonicalIsDrawing && (
+        <section className="pane-card drawing-pane" aria-labelledby="drawing-pane-heading">
+          <div className="pane-header">
+            <span className="pane-tag">CANONICAL DRAWING (표준 도면)</span>
+            <h4 id="drawing-pane-heading">표준 도면 — 실제 렌더 및 영역 하이라이트</h4>
+          </div>
+          <VisualAssetPane
+            asset={canonicalAsset}
+            title="표준 도면 — 실제 렌더"
+            subtitle={canonicalAsset.printedIdentifier ?? undefined}
+            testIdPrefix="drawing"
+          />
+        </section>
+      )}
 
       {/* EXPERT REVIEW ACTION FORM */}
       <section className="review-action-section" aria-labelledby="action-heading">

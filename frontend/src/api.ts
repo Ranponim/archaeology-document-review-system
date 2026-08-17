@@ -240,6 +240,43 @@ export type ReviewDecisionPayload = {
   modified_text?: string | null;
 };
 
+/**
+ * Visual asset metadata contract (review §10 / P0-D backend).
+ *
+ * `imageUrl` is a relative API path to the render route — never a server
+ * filesystem path (anti-pattern #15). `bbox` is normalized (0..1, PDF
+ * top-left origin) for plate panels / drawing regions; the frontend overlays
+ * the highlight as `left = bbox[0]*renderWidth`, `top = bbox[1]*renderHeight`,
+ * etc. `renderWidth`/`renderHeight` are the full page render dimensions.
+ */
+export type VisualAssetMetadata = {
+  assetType: string;
+  imageUrl: string;
+  documentVersionId?: string | null;
+  sourceSha256?: string | null;
+  physicalPage?: number | null;
+  printedIdentifier?: string | null;
+  regionId?: string | null;
+  bbox?: number[] | null;
+  caption?: string | null;
+  renderWidth?: number | null;
+  renderHeight?: number | null;
+  contentType?: string;
+};
+
+/** Mandatory Test D: one candidate's source body page + canonical visual asset. */
+export type CandidateVisualBundle = {
+  candidateId: string;
+  source?: VisualAssetMetadata | null;
+  canonical?: VisualAssetMetadata | null;
+};
+
+export type RetryAnalysisRunResponse = {
+  analysisRunId?: string;
+  analysis_run_id?: string;
+  status: string;
+};
+
 export type ReviewMetrics = {
   projectId?: string;
   project_id?: string;
@@ -416,4 +453,25 @@ export async function fetchMetrics(projectId: string): Promise<ReviewMetrics> {
     `/api/v1/projects/${encodeURIComponent(projectId)}/metrics`,
   );
   return decode<ReviewMetrics>(response);
+}
+
+export async function fetchVisualBundle(
+  projectId: string,
+  candidateId: string,
+): Promise<CandidateVisualBundle> {
+  const response = await fetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/candidates/${encodeURIComponent(candidateId)}/visual-bundle`,
+  );
+  return decode<CandidateVisualBundle>(response);
+}
+
+export async function retryAnalysisRun(
+  projectId: string,
+  analysisRunId: string,
+): Promise<RetryAnalysisRunResponse> {
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/analysis-runs/${encodeURIComponent(analysisRunId)}/retry`,
+    { method: 'POST' },
+  );
+  return decode<RetryAnalysisRunResponse>(response);
 }
