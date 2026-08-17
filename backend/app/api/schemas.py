@@ -68,6 +68,7 @@ class AnalysisRunResponse(ApiModel):
     status: str
     step: str
     document_version_id: str = Field(alias="documentVersionId")
+    review_round_id: str | None = Field(default=None, alias="reviewRoundId")
     error_code: str | None = Field(default=None, alias="errorCode")
     retryable: bool = False
     progress_stage: str | None = Field(default=None, alias="progressStage")
@@ -90,6 +91,7 @@ class ErrorResponse(ApiModel):
 # =============================================================================
 # Review & Audit Schemas
 # =============================================================================
+
 
 class EvidenceResponse(ApiModel):
     id: str
@@ -177,6 +179,7 @@ class CandidateResponse(ApiModel):
     archaeology_object_id: str | None = Field(default=None, alias="archaeologyObjectId")
     confidence: float = 1.0
     severity: str = "medium"
+    finding_fingerprint: str | None = Field(default=None, alias="findingFingerprint")
     decisions: list[ReviewDecisionResponse | dict[str, Any]] = Field(default_factory=list)
     latest_decision: ReviewDecisionResponse | dict[str, Any] | None = Field(
         default=None, alias="latestDecision"
@@ -230,7 +233,6 @@ class TraceabilityResponse(ApiModel):
                 cid = cand.get("id") if isinstance(cand, dict) else getattr(cand, "id", "")
             data["candidate_id"] = cid
 
-            # Populate shortcuts if evidence chain or evidence is present
             ev_list = data.get("evidence") or []
             if isinstance(ev_list, list) and ev_list:
                 first_ev = ev_list[0]
@@ -243,6 +245,7 @@ class TraceabilityResponse(ApiModel):
 
 
 class RunTriggerRequest(ApiModel):
+    review_round_id: str | None = Field(default=None, alias="reviewRoundId")
     body_version_id: str | None = Field(default=None, alias="bodyVersionId")
     plate_version_id: str | None = Field(default=None, alias="plateVersionId")
     drawing_version_id: str | None = Field(default=None, alias="drawingVersionId")
@@ -258,6 +261,7 @@ class RunTriggerResponse(ApiModel):
     run_id: str = Field(alias="runId")
     project_id: str = Field(alias="projectId")
     status: str
+    review_round_id: str | None = Field(default=None, alias="reviewRoundId")
     pages_parsed: int = Field(default=0, alias="pagesParsed")
     objects_resolved: int = Field(default=0, alias="objectsResolved")
     references_resolved: int = Field(default=0, alias="referencesResolved")
@@ -318,6 +322,7 @@ class CandidateVisualBundle(ApiModel):
     candidate_id: str = Field(alias="candidateId")
     source: VisualAssetMetadata | None = None
     canonical: VisualAssetMetadata | None = None
+    unresolved_reason: str | None = Field(default=None, alias="unresolvedReason")
 
 
 # =============================================================================
@@ -326,7 +331,7 @@ class CandidateVisualBundle(ApiModel):
 
 
 class CreateReviewRoundRequest(ApiModel):
-    body_version_id: str | None = Field(default=None, alias="bodyVersionId")
+    body_version_id: str = Field(alias="bodyVersionId")
     plate_version_id: str | None = Field(default=None, alias="plateVersionId")
     drawing_version_id: str | None = Field(default=None, alias="drawingVersionId")
     notes: str | None = None
@@ -354,4 +359,3 @@ class ReviewRoundResponse(ApiModel):
 
 class ReviewRoundListResponse(ApiModel):
     items: list[ReviewRoundResponse]
-
