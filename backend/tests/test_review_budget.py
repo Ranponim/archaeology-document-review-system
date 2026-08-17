@@ -5,6 +5,7 @@ from app.services.review_budget import (
     make_run_candidate_id,
     select_development_candidates,
 )
+from app.services.rule_engine import prioritize_and_cap_candidates
 
 
 def _candidate(cid: str, category: str, *, severity: str = "high", text: str = "") -> CorrectionCandidateData:
@@ -45,6 +46,23 @@ def test_development_selection_is_deterministic_and_category_balanced():
     assert "visual_drawing" in buckets
     assert "feature_or_artifact_id" in buckets
     assert "numeric_value" in buckets
+
+
+def test_final_candidate_cap_is_representative_without_global_monkeypatch():
+    candidates = [
+        *[_candidate(f"num_{i}", "numeric_value", severity="critical", text=f"길이 {i}cm") for i in range(20)],
+        _candidate("plate_1", "figure_plate_table_photo_ref", severity="high", text="도판 45"),
+        _candidate("drawing_1", "figure_plate_table_photo_ref", severity="high", text="도면 30"),
+        _candidate("type_1", "feature_or_artifact_id", severity="high", text="6호 석관묘"),
+    ]
+
+    selected = prioritize_and_cap_candidates(candidates, max_candidates=10)
+    buckets = {candidate_sampling_bucket(c) for c in selected}
+
+    assert len(selected) == 10
+    assert "visual_plate" in buckets
+    assert "visual_drawing" in buckets
+    assert "feature_or_artifact_id" in buckets
 
 
 def test_run_candidate_id_changes_per_run_but_fingerprint_stays_stable():
