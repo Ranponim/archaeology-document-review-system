@@ -12,6 +12,7 @@ Candidate generation status stays pending_review and decision values are in the
 4-value set (accepted|rejected|modified|deferred). Scoped ids (it_<uuid8>_) are
 deleted in finally.
 """
+import time
 import uuid
 
 from app.domain.canonical_models import ArchaeologyObjectData
@@ -134,6 +135,7 @@ def test_real_neo4j_review_traceability_graph(neo4j_driver, scoped_prefix, clean
             reviewer="expert_1",
             note="1차 수용",
         )
+        time.sleep(0.05)
         review_repo.save_review_decision(
             decision_id=dec2,
             candidate_id=cand_id,
