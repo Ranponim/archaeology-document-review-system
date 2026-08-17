@@ -46,6 +46,37 @@ jobs:
       - name: Full backend suite
         run: pytest -q
 
+  neo4j-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      neo4j:
+        image: neo4j:5.26-community
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+        ports:
+          - 7687:7687
+          - 7474:7474
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      RUN_NEO4J_INTEGRATION: '1'
+      TEST_NEO4J_URI: bolt://localhost:7687
+      TEST_NEO4J_PASSWORD: testpassword
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest pytest-asyncio
+      - name: Real Neo4j canonical path test
+        run: pytest -q tests/test_real_neo4j_remediation.py -s
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
