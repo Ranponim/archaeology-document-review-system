@@ -8,6 +8,7 @@ import {
   type ReviewDecision,
   type TraceabilityResponse,
 } from '../api';
+import { relationshipLabel, semanticNodeTitle } from '../graphPresentation';
 
 type Props = {
   candidate: CorrectionCandidate;
@@ -98,43 +99,7 @@ function canonicalTitleForLabel(
   label: string | undefined,
   props: Record<string, unknown>,
 ): string {
-  const id = String(props.id ?? '');
-  switch (label) {
-    case 'TextBlock':
-    case 'Caption': {
-      const text = props.text ?? props.raw_text ?? props.normalized_text;
-      if (typeof text === 'string' && text.trim()) return text.slice(0, 40);
-      return id.slice(0, 14);
-    }
-    case 'Reference': {
-      const refType = props.ref_type ?? props.refType;
-      const number = props.number;
-      if (refType && number !== undefined && number !== null && number !== '') {
-        return `참조 ${refType} ${number}`;
-      }
-      return id.slice(0, 14);
-    }
-    case 'Plate':
-    case 'PlatePanel':
-    case 'Drawing':
-    case 'DrawingRegion': {
-      const raw = props.raw_identifier ?? props.rawIdentifier;
-      if (raw) return String(raw);
-      const number = props.number;
-      if (number !== undefined && number !== null && number !== '') {
-        const isDrawing = label === 'Drawing' || label === 'DrawingRegion';
-        return isDrawing ? `【도면 ${number}】` : `【도판 ${number}】`;
-      }
-      return id.slice(0, 14);
-    }
-    case 'ArchaeologyObject': {
-      const name = props.canonical_name ?? props.canonicalName ?? props.title;
-      if (name) return String(name);
-      return id.slice(0, 14);
-    }
-    default:
-      return id.slice(0, 14);
-  }
+  return semanticNodeTitle(label, props);
 }
 
 function canonicalSubtitleForLabel(label: string | undefined): string | undefined {
@@ -279,7 +244,7 @@ export function buildGraphModel(
     id: candId,
     kind: 'candidate',
     typeTag: 'CorrectionCandidate',
-    title: `후보: ${candId.slice(0, 14)}`,
+    title: semanticNodeTitle('CorrectionCandidate', { ...(candProps ?? {}), rule_category: candProps?.rule_category ?? candidate.rule_category ?? candidate.category }),
     subtitle: candProps?.rule_category ?? candidate.rule_category ?? candidate.category ?? '검수',
     statusPill: candProps?.status ?? candidate.status,
     properties: compact([
@@ -310,7 +275,7 @@ export function buildGraphModel(
       id: archObj.id,
       kind: 'arch_obj',
       typeTag: 'ArchaeologyObject',
-      title: archObj.id.slice(0, 14),
+      title: semanticNodeTitle('ArchaeologyObject', archObj as unknown as Record<string, unknown>),
       subtitle: archObj.canonical_name ?? archObj.title ?? '도판/도면 객체',
       properties: compact([
         prop('id', archObj.id),
@@ -342,7 +307,7 @@ export function buildGraphModel(
       id: canonical.regionId ?? canonical.imageUrl,
       kind: 'canonical_asset',
       typeTag: assetTypeTag[canonical.assetType] ?? 'CanonicalAsset',
-      title: canonical.printedIdentifier ?? canonical.regionId ?? '표준 자산',
+      title: semanticNodeTitle(assetTypeTag[canonical.assetType], { number: canonical.printedIdentifier?.replace(/[^0-9]/g, ''), caption: canonical.caption, title: canonical.caption }),
       subtitle: canonical.caption ?? canonical.assetType,
       properties: compact([
         prop('assetType', canonical.assetType),
@@ -370,7 +335,7 @@ export function buildGraphModel(
       id: evId,
       kind: 'evidence',
       typeTag: 'Evidence',
-      title: evId.slice(0, 14),
+      title: `[근거] ${ev.kind ?? ev.method ?? '검수 근거'}`,
       subtitle: `방법: ${ev.method ?? 'rule'}`,
       properties: compact([
         prop('id', evId),
@@ -396,7 +361,7 @@ export function buildGraphModel(
         id: pageId,
         kind: 'page',
         typeTag: 'Page',
-        title: pageId.slice(0, 14),
+        title: `[페이지] ${page.physical_page ?? '?'}`,
         subtitle: `물리 ${page.physical_page ?? '?'}쪽 (인쇄 ${page.printed_page ?? '?'}쪽)`,
         properties: compact([
           prop('id', pageId),
@@ -417,7 +382,7 @@ export function buildGraphModel(
         id: dvId,
         kind: 'doc_ver',
         typeTag: 'DocumentVersion',
-        title: dvId.slice(0, 14),
+        title: `[문서 버전] ${docVer.stage ?? 'source'}`,
         subtitle: `단계: ${docVer.stage ?? 'source'}`,
         properties: compact([
           prop('id', dvId),
@@ -441,7 +406,7 @@ export function buildGraphModel(
       id: decId,
       kind: 'decision',
       typeTag: 'ReviewDecision',
-      title: decId.slice(0, 14),
+      title: `[검수 결정] ${dec.decision_status ?? dec.decision ?? '대기'}`,
       subtitle: dec.reviewer ?? '검수관',
       statusPill: dec.decision_status ?? dec.decision ?? undefined,
       properties: compact([
@@ -595,7 +560,7 @@ export function EvidenceGraphExplorer({
   function renderEdge(label: string) {
     return (
       <div className="path-edge" data-testid={`graph-edge-${label}`}>
-        <span className="edge-label">[:{label}]</span>
+        <span className="edge-label" title={label}>[{relationshipLabel(label)}]</span>
         <div className="edge-line" />
       </div>
     );
