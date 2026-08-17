@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import * as api from '../api';
+import * as api from '../projectStructureApi';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
 
 const root = {
