@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ApiError,
@@ -49,13 +49,14 @@ function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage;
 }
 
-function versionLabel(version: DocumentVersion): string {
-  return `${kindLabel(version.kind)} · ${stageLabel(version.stage)}`;
+function versionLabel(version: DocumentVersion, kind: string): string {
+  return `${kindLabel(kind)} · ${stageLabel(version.stage)}`;
 }
 
 export function ProjectDetailPage({ project, onBack }: Props) {
   const [detail, setDetail] = useState<ProjectDetail>({
     ...project,
+    documents: [],
     documentVersions: [],
     analysisRuns: [],
   });
@@ -187,11 +188,20 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     }, 1200);
   }, [project.id, loadReviewData]);
 
+  const docKindMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const doc of detail.documents ?? []) map[doc.id] = doc.kind;
+    return map;
+  }, [detail.documents]);
+
+  const versionKind = (version: DocumentVersion): string =>
+    version.kind ?? docKindMap[version.documentId] ?? 'report_body';
+
   const bodyVersions = detail.documentVersions.filter(
-    (v) => v.kind === 'report_body' || v.kind === undefined,
+    (v) => versionKind(v) === 'report_body',
   );
-  const plateVersions = detail.documentVersions.filter((v) => v.kind === 'plate_book');
-  const drawingVersions = detail.documentVersions.filter((v) => v.kind === 'drawing_book');
+  const plateVersions = detail.documentVersions.filter((v) => versionKind(v) === 'plate_book');
+  const drawingVersions = detail.documentVersions.filter((v) => versionKind(v) === 'drawing_book');
 
   useEffect(() => {
     if (!bodyVersionId && bodyVersions.length > 0) {
@@ -276,6 +286,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
     setErrorCode(null);
     setRunningProofread(true);
     setRunStatus('queued');
+    const selectedBody = bodyVersions.find((v) => v.id === bodyVersionId);
     try {
       const res = await triggerProofreadingRun(project.id, {
         body_version_id: bodyVersionId,
@@ -283,6 +294,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
         drawing_version_id: drawingVersionId || null,
         enable_vlm: enableVlm,
         enable_ai_review: enableAiReview,
+        version_stage: selectedBody?.stage ?? '1차',
       });
       setRunResult(res);
       setRunStatus(res.status ?? 'queued');
@@ -475,7 +487,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                   {bodyVersions.length === 0 && <option value="">본문 버전 없음</option>}
                   {bodyVersions.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {versionLabel(v)}
+                      {versionLabel(v, versionKind(v))}
                     </option>
                   ))}
                 </select>
@@ -491,7 +503,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                   <option value="">선택 안 함</option>
                   {plateVersions.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {versionLabel(v)}
+                      {versionLabel(v, versionKind(v))}
                     </option>
                   ))}
                 </select>
@@ -507,7 +519,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                   <option value="">선택 안 함</option>
                   {drawingVersions.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {versionLabel(v)}
+                      {versionLabel(v, versionKind(v))}
                     </option>
                   ))}
                 </select>
@@ -580,7 +592,7 @@ export function ProjectDetailPage({ project, onBack }: Props) {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <strong>{version.originalName}</strong>
-                      <span className="version-kind-label">{versionLabel(version)}</span>
+                      <span className="version-kind-label">{versionLabel(version, versionKind(version))}</span>
                       <span>{Math.max(1, Math.ceil(version.sizeBytes / 1024))} KB</span>
                     </div>
 

@@ -23,6 +23,8 @@ from app.jobs.worker import (
     _run_analysis_worker,
     run_analysis_worker,
 )
+from app.services.drawing_parser import DrawingIndex
+from app.services.plate_parser import PlateIndex
 from app.services.proofreading_orchestrator import OrchestratorResult
 
 
@@ -141,13 +143,78 @@ class StubProjectRepository:
         )
 
 
+class FakeAnalysisRunRepositoryWithAssets(FakeAnalysisRunRepository):
+    def __init__(
+        self,
+        run_id: str = "run_abc123",
+        *,
+        body_version_id: str = "ver_body_01",
+        project_id: str = "p1",
+        plate_version_id: str = "ver_plate_01",
+        drawing_version_id: str = "ver_draw_01",
+    ) -> None:
+        super().__init__(run_id, body_version_id=body_version_id, project_id=project_id)
+        self.plate_version_id = plate_version_id
+        self.drawing_version_id = drawing_version_id
+
+    def _claim_context(self) -> dict[str, Any]:
+        ctx = super()._claim_context()
+        ctx["plate_version_id"] = self.plate_version_id
+        ctx["drawing_version_id"] = self.drawing_version_id
+        return ctx
+
+
+class StubCanonicalRepository:
+    def __init__(self, plate_index=None, drawing_index=None) -> None:
+        self.plate_index = plate_index or PlateIndex()
+        self.drawing_index = drawing_index or DrawingIndex()
+        self.plate_queries = 0
+        self.drawing_queries = 0
+
+    def get_plate_index_for_version(self, doc_version_id: str):
+        self.plate_queries += 1
+        return self.plate_index
+
+    def get_drawing_index_for_version(self, doc_version_id: str):
+        self.drawing_queries += 1
+        return self.drawing_index
+
+
+class StubAssetProjectRepository(StubProjectRepository):
+    def get_document_version_by_id(self, version_id: str):
+        from app.domain.models import DocumentVersion
+
+        return DocumentVersion(
+            id=version_id,
+            document_id="doc_asset",
+            analysis_run_id="run_asset",
+            uri=None,
+            sha256="a" * 64,
+            size_bytes=1,
+            mime_type="application/pdf",
+            original_name="asset.pdf",
+            stage="3차",
+        )
+
+
 class RecordingWorkerOrchestrator:
     """Duck-typed ProofreadingOrchestrator recording run_proofreading kwargs."""
 
-    def __init__(self, review_repo, project_repo=None, run_error: Exception | None = None):
+    def __init__(
+        self,
+        review_repo,
+        project_repo=None,
+        run_error: Exception | None = None,
+        canonical_repo=None,
+        plate_parser=None,
+        drawing_parser=None,
+    ):
         self.review_repo = review_repo
         self.project_repo = project_repo
         self.pdf_parser = None
+        self.canonical_repo = canonical_repo
+        self.plate_parser = plate_parser
+        self.drawing_parser = drawing_parser
         self.run_error = run_error
         self.calls: list[dict[str, Any]] = []
 
@@ -386,6 +453,99 @@ async def test_analysis_worker_surfaces_proofreading_warnings_in_outcome(
     outcome = await _run_analysis_worker("run_abc123", orch)
 
     assert outcome["warnings"] == ["stub warning surfaced from proofreading"]
+
+
+async def test_analysis_worker_resolves_selected_plate_and_drawing_indexes(
+    stub_version_resolution,
+):
+    """P0-1: the worker reconstructs PlateIndex/DrawingIndex from the selected
+    plate/drawing DocumentVersion ids (graph-first) and hands the non-empty
+    canonical indexes to the orchestrator."""
+    from app.domain.canonical_models import DrawingData, PlateData
+
+    plate = PlateData(
+        plate_id="ver_plate_01_plate_45",
+        number="45",
+        physical_page=47,
+        title="1지점 청동기시대 6호 석관묘",
+        document_version_id="ver_plate_01",
+    )
+    drawing = DrawingData(
+        drawing_id="ver_draw_01_drawing_16",
+        number="16",
+        physical_page=18,
+        title="실측도",
+        document_version_id="ver_draw_01",
+    )
+    canonical = StubCanonicalRepository(
+        plate_index=PlateIndex(plates_by_number={"45": plate}, plates=[plate]),
+        drawing_index=DrawingIndex(
+            drawings_by_number={"16": drawing}, drawings=[drawing]
+        ),
+    )
+    repo = FakeAnalysisRunRepositoryWithAssets()
+    orch = RecordingWorkerOrchestrator(
+        review_repo=repo,
+        project_repo=StubProjectRepository(repo.body_version_id),
+        canonical_repo=canonical,
+    )
+
+    outcome = await _run_analysis_worker("run_abc123", orch)
+
+    assert outcome["status"] == "completed"
+    assert len(orch.calls) == 1
+    call = orch.calls[0]
+    assert call["plate_version_id"] == "ver_plate_01"
+    assert call["drawing_version_id"] == "ver_draw_01"
+    assert call["plate_index"].get_plate("45") is not None
+    assert call["drawing_index"].get_drawing("16") is not None
+    assert canonical.plate_queries == 1
+    assert canonical.drawing_queries == 1
+
+
+async def test_analysis_worker_fails_closed_when_selected_plate_version_resolves_empty(
+    stub_version_resolution,
+):
+    """P0-1 / anti-pattern #5: a selected plate version that resolves to an
+    empty canonical index (no HAS_PLATE graph data, no parseable stored PDF)
+    must fail the run — never silently substitute an empty PlateIndex."""
+    canonical = StubCanonicalRepository()
+    repo = FakeAnalysisRunRepositoryWithAssets()
+    orch = RecordingWorkerOrchestrator(
+        review_repo=repo,
+        project_repo=StubAssetProjectRepository(repo.body_version_id),
+        canonical_repo=canonical,
+    )
+
+    outcome = await _run_analysis_worker("run_abc123", orch)
+
+    assert outcome["status"] == "failed"
+    assert outcome["executed"] is True
+    assert outcome["error_code"] == "input_error"
+    assert outcome["retryable"] is False
+    assert orch.calls == []
+    assert repo.run.status == "failed"
+    assert repo.run.error_code == "input_error"
+
+
+async def test_analysis_worker_fails_closed_when_selected_drawing_version_resolves_empty(
+    stub_version_resolution,
+):
+    """P0-1 / anti-pattern #5: same fail-closed contract for a selected drawing
+    version that resolves to an empty canonical index."""
+    canonical = StubCanonicalRepository()
+    repo = FakeAnalysisRunRepositoryWithAssets()
+    orch = RecordingWorkerOrchestrator(
+        review_repo=repo,
+        project_repo=StubAssetProjectRepository(repo.body_version_id),
+        canonical_repo=canonical,
+    )
+
+    outcome = await _run_analysis_worker("run_abc123", orch)
+
+    assert outcome["status"] == "failed"
+    assert outcome["error_code"] == "input_error"
+    assert orch.calls == []
 
 
 # ---------------------------------------------------------------------------

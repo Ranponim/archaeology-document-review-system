@@ -4,6 +4,13 @@ export type Project = {
   internalCode: string | null;
 };
 
+export type Document = {
+  id: string;
+  projectId: string;
+  kind: string;
+  title: string;
+};
+
 export type DocumentVersion = {
   id: string;
   documentId: string;
@@ -29,6 +36,7 @@ export type AnalysisRun = {
 };
 
 export type ProjectDetail = Project & {
+  documents: Document[];
   documentVersions: DocumentVersion[];
   analysisRuns: AnalysisRun[];
 };

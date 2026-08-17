@@ -26,6 +26,11 @@ const project: Project = { id: 'proj_1', name: '산노리', internalCode: null }
 function makeDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
     ...project,
+    documents: [
+      { id: 'doc_1', projectId: 'proj_1', kind: 'report_body', title: '본문' },
+      { id: 'doc_2', projectId: 'proj_1', kind: 'plate_book', title: '도판' },
+      { id: 'doc_3', projectId: 'proj_1', kind: 'drawing_book', title: '도면' },
+    ],
     documentVersions: [
       {
         id: 'ver_body_1',
@@ -199,5 +204,116 @@ describe('ProjectDetailPage run form', () => {
     expect(
       await screen.findByText('도판 버전이 지정되지 않았습니다'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('ProjectDetailPage document kind after reload', () => {
+  it('maps DocumentVersion.documentId -> Document.kind so kinds survive reload', async () => {
+    apiMocks.getProject.mockResolvedValue(
+      makeDetail({
+        documents: [
+          { id: 'doc_1', projectId: 'proj_1', kind: 'report_body', title: '본문' },
+          { id: 'doc_2', projectId: 'proj_1', kind: 'plate_book', title: '도판' },
+          { id: 'doc_3', projectId: 'proj_1', kind: 'drawing_book', title: '도면' },
+        ],
+        documentVersions: [
+          {
+            id: 'ver_body_1',
+            documentId: 'doc_1',
+            originalName: '본문-1차.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 2048,
+            stage: '1차',
+          },
+          {
+            id: 'ver_plate_1',
+            documentId: 'doc_2',
+            originalName: '도판.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 1024,
+            stage: '1차',
+          },
+          {
+            id: 'ver_draw_1',
+            documentId: 'doc_3',
+            originalName: '도면.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 1024,
+            stage: '1차',
+          },
+        ],
+      }),
+    );
+    render(<ProjectDetailPage project={project} />);
+
+    const bodySelect = await screen.findByLabelText('본문 버전');
+    const bodyValues = within(bodySelect)
+      .getAllByRole('option')
+      .map((o) => o.getAttribute('value'));
+    expect(bodyValues).toContain('ver_body_1');
+    expect(bodyValues).not.toContain('ver_plate_1');
+    expect(bodyValues).not.toContain('ver_draw_1');
+
+    const plateSelect = screen.getByLabelText('도판 버전');
+    const plateValues = within(plateSelect)
+      .getAllByRole('option')
+      .map((o) => o.getAttribute('value'));
+    expect(plateValues).toContain('ver_plate_1');
+    expect(plateValues).not.toContain('ver_body_1');
+
+    const drawSelect = screen.getByLabelText('도면 버전');
+    const drawValues = within(drawSelect)
+      .getAllByRole('option')
+      .map((o) => o.getAttribute('value'));
+    expect(drawValues).toContain('ver_draw_1');
+    expect(drawValues).not.toContain('ver_body_1');
+  });
+
+  it('sends version_stage from the selected body version', async () => {
+    const user = userEvent.setup();
+    apiMocks.getProject.mockResolvedValue(
+      makeDetail({
+        documentVersions: [
+          {
+            id: 'ver_body_1',
+            documentId: 'doc_1',
+            originalName: '본문-1차.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 2048,
+            stage: '1차',
+            kind: 'report_body',
+          },
+          {
+            id: 'ver_body_3',
+            documentId: 'doc_1',
+            originalName: '본문-3차.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 4096,
+            stage: '3차',
+            kind: 'report_body',
+          },
+        ],
+      }),
+    );
+    apiMocks.triggerProofreadingRun.mockResolvedValue({
+      run_id: 'run_1',
+      status: 'queued',
+      warnings: [],
+    });
+    render(<ProjectDetailPage project={project} />);
+
+    const bodySelect = await screen.findByLabelText('본문 버전');
+    await user.selectOptions(bodySelect, 'ver_body_3');
+    await user.click(screen.getByRole('button', { name: /새 검수 실행/ }));
+
+    await waitFor(() => {
+      expect(apiMocks.triggerProofreadingRun).toHaveBeenCalledWith(
+        'proj_1',
+        expect.objectContaining({
+          body_version_id: 'ver_body_3',
+          version_stage: '3차',
+        }),
+      );
+    });
   });
 });

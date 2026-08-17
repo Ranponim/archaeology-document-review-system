@@ -149,6 +149,7 @@ class ProofreadingOrchestrator:
         drawing_pdf_path: str | Path | None = None,
         body_pages: list[ParsedPage] | None = None,
         plate_index: PlateIndex | None = None,
+        drawing_index: DrawingIndex | None = None,
         plates: list[PlateData] | None = None,
         drawings: list[DrawingData] | None = None,
         analysis_run_id: str | None = None,
@@ -357,6 +358,20 @@ class ProofreadingOrchestrator:
         else:
             active_plate_index = PlateIndex()
 
+        if plate_version_id and not all_plates:
+            if self.review_repo is not None:
+                self.review_repo.save_analysis_run(
+                    project_id=project_id,
+                    run_id=run_id,
+                    status="failed",
+                    step="ingest",
+                    error_code="PLATE_INDEX_EMPTY",
+                )
+            raise ValueError(
+                f"Selected plate version '{plate_version_id}' produced an empty "
+                "canonical index (anti-pattern #5: never substitute an empty "
+                "PlateIndex for a selected asset version)"
+            )
 
         if not plate_sha256:
             plate_sha256 = f"sha256_{plate_version_id or 'plate'}"
@@ -370,7 +385,10 @@ class ProofreadingOrchestrator:
         all_drawings: list[DrawingData] = []
         drawing_sha256: str | None = None
 
-        if drawings is not None:
+        if drawing_index is not None:
+            active_drawing_index = drawing_index
+            all_drawings = list(active_drawing_index.drawings)
+        elif drawings is not None:
             all_drawings = list(drawings)
             active_drawing_index = DrawingIndex(
                 drawings_by_number={d.number: d for d in all_drawings},
@@ -387,6 +405,21 @@ class ProofreadingOrchestrator:
             all_drawings = list(active_drawing_index.drawings)
         else:
             active_drawing_index = DrawingIndex()
+
+        if drawing_version_id and not all_drawings:
+            if self.review_repo is not None:
+                self.review_repo.save_analysis_run(
+                    project_id=project_id,
+                    run_id=run_id,
+                    status="failed",
+                    step="ingest",
+                    error_code="DRAWING_INDEX_EMPTY",
+                )
+            raise ValueError(
+                f"Selected drawing version '{drawing_version_id}' produced an "
+                "empty canonical index (anti-pattern #5: never substitute an "
+                "empty DrawingIndex for a selected asset version)"
+            )
 
         if not drawing_sha256:
             drawing_sha256 = f"sha256_{drawing_version_id or 'drawing'}"

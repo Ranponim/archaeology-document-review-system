@@ -23,6 +23,20 @@ class DocumentVersionNotFoundError(LookupError):
     pass
 
 
+_STAGE_RANK = {"1차": 0, "2차": 1, "3차": 2, "final": 3}
+
+
+def _adjacent_stages(stage: str) -> tuple[str | None, str | None]:
+    """Return (previous_stage, next_stage) by semantic rank (1차<2차<3차<final).
+    Unknown stages have no lineage neighbors so they never create PRECEDES."""
+    rank = _STAGE_RANK.get(stage)
+    if rank is None:
+        return None, None
+    prev_stage = next((s for s, r in _STAGE_RANK.items() if r == rank - 1), None)
+    next_stage = next((s for s, r in _STAGE_RANK.items() if r == rank + 1), None)
+    return prev_stage, next_stage
+
+
 
 class ProjectRepository:
     def __init__(self, driver: Driver, database: str | None = None) -> None:
@@ -281,6 +295,8 @@ class ProjectRepository:
             OPTIONAL MATCH (project)-[:HAS_DOCUMENT]->(document:Document)
             OPTIONAL MATCH (document)-[:HAS_VERSION]->(version:DocumentVersion)
             OPTIONAL MATCH (run:AnalysisRun)-[:ANALYZES]->(version)
+            OPTIONAL MATCH (project)-[:HAS_RUN]->(prun:AnalysisRun)
+            OPTIONAL MATCH (prun)-[:ANALYZES]->(prun_version:DocumentVersion)
             RETURN project,
                    collect(DISTINCT {
                        id: document.id,
@@ -291,7 +307,6 @@ class ProjectRepository:
                    collect(DISTINCT {
                        id: version.id,
                        documentId: document.id,
-                       analysisRunId: run.id,
                        uri: version.uri,
                        sha256: version.sha256,
                        sizeBytes: version.sizeBytes,
@@ -311,7 +326,19 @@ class ProjectRepository:
                        progressMessage: run.progressMessage,
                        currentPage: run.currentPage,
                        totalPages: run.totalPages
-                   }) AS analysisRuns
+                   }) AS analysisRuns,
+                   collect(DISTINCT {
+                       id: prun.id,
+                       status: prun.status,
+                       step: prun.step,
+                       errorCode: prun.errorCode,
+                       retryable: coalesce(prun.retryable, false),
+                       documentVersionId: prun_version.id,
+                       progressStage: prun.progressStage,
+                       progressMessage: prun.progressMessage,
+                       currentPage: prun.currentPage,
+                       totalPages: prun.totalPages
+                   }) AS proofreadingRuns
             """,
             project_id=project_id,
             **self._query_config,
@@ -340,7 +367,7 @@ class ProjectRepository:
             DocumentVersion(
                 id=value["id"],
                 document_id=value["documentId"],
-                analysis_run_id=value["analysisRunId"],
+                analysis_run_id=value.get("analysisRunId") or "",
                 uri=value["uri"],
                 sha256=value["sha256"],
                 size_bytes=value["sizeBytes"],
@@ -369,11 +396,34 @@ class ProjectRepository:
             for value in record["analysisRuns"]
             if value["id"] is not None
         ]
+        proofreading_runs = [
+            {
+                "id": value["id"],
+                "status": value["status"],
+                "step": value["step"],
+                "document_version_id": value["documentVersionId"],
+                "error_code": value.get("errorCode"),
+                "retryable": value.get("retryable", False),
+                "progress_stage": value.get("progressStage"),
+                "progress_message": value.get("progressMessage"),
+                "current_page": value.get("currentPage"),
+                "total_pages": value.get("totalPages"),
+            }
+            for value in record.get("proofreadingRuns", [])
+            if value["id"] is not None
+        ]
+        seen_run_ids: set[str] = set()
+        merged_runs = []
+        for run in runs + proofreading_runs:
+            if run["id"] in seen_run_ids:
+                continue
+            seen_run_ids.add(run["id"])
+            merged_runs.append(run)
         return {
             "project": project,
             "documents": documents,
             "document_versions": versions,
-            "analysis_runs": runs,
+            "analysis_runs": merged_runs,
         }
 
     @staticmethod
@@ -388,6 +438,7 @@ class ProjectRepository:
         kind: str,
         title: str,
     ) -> dict | None:
+        prev_stage, next_stage = _adjacent_stages(stage)
         result = transaction.run(
             """
             MATCH (project:Project {id: $project_id})
@@ -398,11 +449,6 @@ class ProjectRepository:
                           document.createdAt = datetime()
             MERGE (project)-[:HAS_DOCUMENT]->(document)
             WITH project, document
-            OPTIONAL MATCH (document)-[:HAS_VERSION]->(prev:DocumentVersion)
-            WHERE NOT (prev)-[:PRECEDES]->(:DocumentVersion)
-            WITH project, document, prev
-            ORDER BY prev.createdAt DESC
-            LIMIT 1
             CREATE (document_version:DocumentVersion {
                 id: $ver_id,
                 uri: $uri,
@@ -421,8 +467,17 @@ class ProjectRepository:
             })
             CREATE (document)-[:HAS_VERSION]->(document_version)
             CREATE (run)-[:ANALYZES]->(document_version)
-            FOREACH (_ IN CASE WHEN prev IS NOT NULL AND prev <> document_version THEN [1] ELSE [] END |
-                CREATE (prev)-[:PRECEDES]->(document_version)
+            WITH document, document_version
+            OPTIONAL MATCH (prev:DocumentVersion)<-[:HAS_VERSION]-(document)
+            WHERE prev.stage = $prev_stage
+            FOREACH (_ IN CASE WHEN prev IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (prev)-[:PRECEDES]->(document_version)
+            )
+            WITH document, document_version
+            OPTIONAL MATCH (next:DocumentVersion)<-[:HAS_VERSION]-(document)
+            WHERE next.stage = $next_stage
+            FOREACH (_ IN CASE WHEN next IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (document_version)-[:PRECEDES]->(next)
             )
             RETURN document.id AS document_id,
                    document.kind AS kind,
@@ -441,6 +496,8 @@ class ProjectRepository:
             stage=stage,
             kind=kind,
             title=title,
+            prev_stage=prev_stage,
+            next_stage=next_stage,
         )
         record = result.single()
         if record is None:

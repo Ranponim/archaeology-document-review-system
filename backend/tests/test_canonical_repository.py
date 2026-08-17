@@ -326,6 +326,127 @@ def test_get_canonical_evidence_path():
     assert len(path["objects"]) == 1
 
 
+def test_get_plate_index_for_version_reconstructs_index_from_graph():
+    """P0-1: (v:DocumentVersion)-[:HAS_PLATE]->(p:Plate) + HAS_PANEL rows
+    reconstruct a real PlateIndex with panels/bbox/render_uri intact."""
+    fake_record = {
+        "plate": {
+            "id": "ver_plates_1_plate_45",
+            "number": "45",
+            "physical_page": 47,
+            "title": "1지점 청동기시대 6호 석관묘",
+            "bbox": [10.0, 20.0, 500.0, 700.0],
+            "source_sha256": "plate_doc_hash",
+            "document_version_id": "ver_plates_1",
+            "raw_identifier": "【도판 45】",
+            "source_kind": "plate_pdf",
+        },
+        "panels": [
+            {
+                "id": "ver_plates_1_plate_45_panel_1",
+                "plate_id": "ver_plates_1_plate_45",
+                "panel_index": 1,
+                "caption": "① 전경",
+                "bbox": [10.0, 20.0, 200.0, 300.0],
+                "bbox_status": "segmented",
+                "physical_page": 47,
+                "render_uri": "file:///storage/plate_45_1.jpg",
+                "source_sha256": "hash_p1",
+            }
+        ],
+    }
+    driver = FakeNeo4jDriver(records_to_return=[fake_record])
+    repo = CanonicalRepository(driver=driver, database="test_db")
+
+    index = repo.get_plate_index_for_version("ver_plates_1")
+
+    assert len(driver.queries) == 1
+    assert "HAS_PLATE" in driver.queries[0]["query"]
+    assert "HAS_PANEL" in driver.queries[0]["query"]
+    assert driver.queries[0]["kwargs"]["doc_version_id"] == "ver_plates_1"
+    assert len(index) == 1
+    plate = index.get_plate("45")
+    assert plate is not None
+    assert plate.plate_id == "ver_plates_1_plate_45"
+    assert plate.number == "45"
+    assert plate.physical_page == 47
+    assert plate.document_version_id == "ver_plates_1"
+    assert plate.raw_identifier == "【도판 45】"
+    assert plate.bbox == (10.0, 20.0, 500.0, 700.0)
+    assert len(plate.panels) == 1
+    assert plate.panels[0].panel_index == 1
+    assert plate.panels[0].bbox == (10.0, 20.0, 200.0, 300.0)
+    assert plate.panels[0].render_uri == "file:///storage/plate_45_1.jpg"
+
+
+def test_get_plate_index_for_version_returns_empty_when_no_plates():
+    """A version with no HAS_PLATE rows yields an empty PlateIndex (the caller
+    decides whether that is acceptable or must fail closed)."""
+    driver = FakeNeo4jDriver(records_to_return=[])
+    repo = CanonicalRepository(driver=driver, database="test_db")
+
+    index = repo.get_plate_index_for_version("ver_plates_1")
+
+    assert len(index) == 0
+
+
+def test_get_drawing_index_for_version_reconstructs_index_from_graph():
+    """P0-1: (v:DocumentVersion)-[:HAS_DRAWING]->(d:Drawing) + HAS_REGION rows
+    reconstruct a real DrawingIndex with regions intact."""
+    fake_record = {
+        "drawing": {
+            "id": "ver_draw_1_drawing_16",
+            "number": "16",
+            "physical_page": 18,
+            "title": "1지점 6호 석관묘 실측도",
+            "bbox": [20.0, 30.0, 550.0, 750.0],
+            "source_sha256": "draw_doc_hash",
+            "document_version_id": "ver_draw_1",
+            "raw_identifier": "【도면 16】",
+            "source_kind": "drawing_pdf",
+        },
+        "regions": [
+            {
+                "id": "ver_draw_1_drawing_16_region_1",
+                "drawing_id": "ver_draw_1_drawing_16",
+                "number": "1",
+                "title": "평면도",
+                "bbox": [50.0, 60.0, 400.0, 400.0],
+                "physical_page": 18,
+                "render_uri": "file:///storage/reg_16_1.png",
+                "source_sha256": "draw_hash_1",
+            }
+        ],
+    }
+    driver = FakeNeo4jDriver(records_to_return=[fake_record])
+    repo = CanonicalRepository(driver=driver, database="test_db")
+
+    index = repo.get_drawing_index_for_version("ver_draw_1")
+
+    assert len(driver.queries) == 1
+    assert "HAS_DRAWING" in driver.queries[0]["query"]
+    assert "HAS_REGION" in driver.queries[0]["query"]
+    assert driver.queries[0]["kwargs"]["doc_version_id"] == "ver_draw_1"
+    assert len(index) == 1
+    drawing = index.get_drawing("16")
+    assert drawing is not None
+    assert drawing.drawing_id == "ver_draw_1_drawing_16"
+    assert drawing.document_version_id == "ver_draw_1"
+    assert drawing.raw_identifier == "【도면 16】"
+    assert len(drawing.regions) == 1
+    assert drawing.regions[0].number == "1"
+    assert drawing.regions[0].title == "평면도"
+
+
+def test_get_drawing_index_for_version_returns_empty_when_no_drawings():
+    driver = FakeNeo4jDriver(records_to_return=[])
+    repo = CanonicalRepository(driver=driver, database="test_db")
+
+    index = repo.get_drawing_index_for_version("ver_draw_1")
+
+    assert len(index) == 0
+
+
 def test_review_repository_extensions():
     driver = FakeNeo4jDriver()
     repo = ReviewRepository(driver=driver, database="test_db")

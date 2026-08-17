@@ -554,3 +554,251 @@ def test_create_document_with_version_returns_document_and_version(
     assert doc.title == "보고서 본문"
     assert ver.stage == "1차"
 
+
+class FakeNeo4jRecord:
+    def __init__(self, data: dict):
+        self._data = data
+
+    def __getitem__(self, key: str):
+        return self._data[key]
+
+    def get(self, key: str, default=None):
+        return self._data.get(key, default)
+
+
+class FakeNeo4jDriver:
+    def __init__(self, records_to_return=None):
+        self.queries: list[dict] = []
+        self.records_to_return = [
+            FakeNeo4jRecord(r) for r in (records_to_return or [])
+        ]
+
+    def execute_query(self, query: str, **kwargs):
+        self.queries.append({"query": query, "kwargs": kwargs})
+        return self.records_to_return, None, None
+
+
+def test_get_project_surfaces_proofreading_runs_via_has_run():
+    """P0-5: get_project must surface a proofreading run reachable only through
+    (Project)-[:HAS_RUN]->(AnalysisRun) alongside ingest runs reachable through
+    ANALYZES, so frontend polling observes queued/running/completed/failed."""
+    record = {
+        "project": {"id": "p1", "name": "산노리", "internalCode": None},
+        "documents": [
+            {"id": "doc_1", "projectId": "p1", "kind": "report_body", "title": "본문"},
+        ],
+        "documentVersions": [
+            {
+                "id": "ver_body_1",
+                "documentId": "doc_1",
+                "uri": "incoming/p1/body.pdf",
+                "sha256": "a" * 64,
+                "sizeBytes": 100,
+                "mimeType": "application/pdf",
+                "originalName": "body.pdf",
+                "stage": "1차",
+                "createdAt": "2026-08-17T00:00:00Z",
+            },
+        ],
+        "analysisRuns": [
+            {
+                "id": "run_ingest",
+                "status": "completed",
+                "step": "ingest",
+                "errorCode": None,
+                "retryable": False,
+                "documentVersionId": "ver_body_1",
+                "progressStage": None,
+                "progressMessage": None,
+                "currentPage": None,
+                "totalPages": None,
+            },
+        ],
+        "proofreadingRuns": [
+            {
+                "id": "run_proof",
+                "status": "running",
+                "step": "analysis",
+                "errorCode": None,
+                "retryable": False,
+                "documentVersionId": "ver_body_1",
+                "progressStage": "도판 패널 렌더링",
+                "progressMessage": "도판 1/10쪽",
+                "currentPage": 1,
+                "totalPages": 10,
+            },
+        ],
+    }
+    driver = FakeNeo4jDriver(records_to_return=[record])
+    repo = ProjectRepository(driver)
+
+    snapshot = repo.get_project("p1")
+
+    assert "HAS_RUN" in driver.queries[0]["query"]
+    run_ids = [r["id"] for r in snapshot["analysis_runs"]]
+    assert "run_ingest" in run_ids
+    assert "run_proof" in run_ids
+    proof = next(r for r in snapshot["analysis_runs"] if r["id"] == "run_proof")
+    assert proof["status"] == "running"
+    assert proof["document_version_id"] == "ver_body_1"
+    assert proof["progress_stage"] == "도판 패널 렌더링"
+    assert proof["progress_message"] == "도판 1/10쪽"
+    assert proof["current_page"] == 1
+    assert proof["total_pages"] == 10
+
+
+def test_get_project_deduplicates_runs_reachable_by_both_paths():
+    """P0-5: a proofreading run with both HAS_RUN and ANALYZES edges appears
+    exactly once in the project run list."""
+    record = {
+        "project": {"id": "p1", "name": "산노리", "internalCode": None},
+        "documents": [
+            {"id": "doc_1", "projectId": "p1", "kind": "report_body", "title": "본문"},
+        ],
+        "documentVersions": [
+            {
+                "id": "ver_body_1",
+                "documentId": "doc_1",
+                "uri": "incoming/p1/body.pdf",
+                "sha256": "a" * 64,
+                "sizeBytes": 100,
+                "mimeType": "application/pdf",
+                "originalName": "body.pdf",
+                "stage": "1차",
+                "createdAt": "2026-08-17T00:00:00Z",
+            },
+        ],
+        "analysisRuns": [
+            {
+                "id": "run_proof",
+                "status": "queued",
+                "step": "queued",
+                "errorCode": None,
+                "retryable": False,
+                "documentVersionId": "ver_body_1",
+                "progressStage": None,
+                "progressMessage": None,
+                "currentPage": None,
+                "totalPages": None,
+            },
+        ],
+        "proofreadingRuns": [
+            {
+                "id": "run_proof",
+                "status": "queued",
+                "step": "queued",
+                "errorCode": None,
+                "retryable": False,
+                "documentVersionId": "ver_body_1",
+                "progressStage": None,
+                "progressMessage": None,
+                "currentPage": None,
+                "totalPages": None,
+            },
+        ],
+    }
+    driver = FakeNeo4jDriver(records_to_return=[record])
+    repo = ProjectRepository(driver)
+
+    snapshot = repo.get_project("p1")
+
+    run_ids = [r["id"] for r in snapshot["analysis_runs"]]
+    assert run_ids.count("run_proof") == 1
+
+
+def test_create_document_with_version_orders_precedes_by_stage_rank():
+    """7.2: the upload-time PRECEDES edge must follow semantic stage rank
+    (1차<2차<3차<final), never upload chronology — a 3차 upload must not
+    PRECEDES a later 1차 upload."""
+    driver = _FakeSessionDriver(
+        {"document_id": "doc_1", "kind": "report_body", "title": "본문", "version_id": "ver_1"}
+    )
+    repo = ProjectRepository(driver)
+    stored = StoredFile(
+        uri="incoming/p1/hash/body.pdf",
+        sha256="a" * 64,
+        size_bytes=100,
+        mime_type="application/pdf",
+        original_name="body.pdf",
+    )
+
+    repo.create_document_with_version(
+        "p1", stored, stage="3차", kind="report_body", title="본문"
+    )
+
+    tx = driver.sessions[0]._tx
+    assert len(tx.queries) == 1
+    cypher = tx.queries[0]["query"]
+    params = tx.queries[0]["params"]
+    assert "prev.stage = $prev_stage" in cypher
+    assert "next.stage = $next_stage" in cypher
+    assert params["prev_stage"] == "2차"
+    assert params["next_stage"] == "final"
+    assert params["stage"] == "3차"
+
+
+def test_create_document_with_version_first_stage_has_no_precedes_edges():
+    """7.2: uploading 1차 first creates no PRECEDES edge (no earlier stage)."""
+    driver = _FakeSessionDriver(
+        {"document_id": "doc_1", "kind": "report_body", "title": "본문", "version_id": "ver_1"}
+    )
+    repo = ProjectRepository(driver)
+    stored = StoredFile(
+        uri="incoming/p1/hash/body.pdf",
+        sha256="a" * 64,
+        size_bytes=100,
+        mime_type="application/pdf",
+        original_name="body.pdf",
+    )
+
+    repo.create_document_with_version(
+        "p1", stored, stage="1차", kind="report_body", title="본문"
+    )
+
+    params = driver.sessions[0]._tx.queries[0]["params"]
+    assert params["prev_stage"] is None
+    assert params["next_stage"] == "2차"
+
+
+class _FakeSessionDriver:
+    def __init__(self, record: dict):
+        self.sessions: list[_FakeSession] = []
+        self._record = record
+
+    def session(self, **kwargs):
+        session = _FakeSession(self._record)
+        self.sessions.append(session)
+        return session
+
+
+class _FakeSession:
+    def __init__(self, record: dict):
+        self._tx = _FakeTransaction(record)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def execute_write(self, callback, *args):
+        return callback(self._tx, *args)
+
+
+class _FakeTransaction:
+    def __init__(self, record: dict):
+        self.queries: list[dict] = []
+        self._record = record
+
+    def run(self, query: str, **params):
+        self.queries.append({"query": query, "params": params})
+        return _FakeResult(self._record)
+
+
+class _FakeResult:
+    def __init__(self, record: dict):
+        self._record = record
+
+    def single(self):
+        return FakeNeo4jRecord(self._record)
+

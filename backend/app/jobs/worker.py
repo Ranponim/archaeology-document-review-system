@@ -20,7 +20,11 @@ from app.jobs.ingest import (
     ingest_document,
     run_ingest_job as run_kind_ingest_job,
 )
-from app.jobs.run_inputs import resolve_body_versions_for_alignment
+from app.jobs.run_inputs import (
+    resolve_body_versions_for_alignment,
+    resolve_drawing_index_for_run,
+    resolve_plate_index_for_run,
+)
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 
 logger = logging.getLogger(__name__)
@@ -250,6 +254,20 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             primary_pdf_path=claim.get("body_pdf_path"),
             pdf_parser=getattr(orchestrator, "pdf_parser", None),
         )
+        plate_index = await resolve_plate_index_for_run(
+            canonical_repo=getattr(orchestrator, "canonical_repo", None),
+            project_repo=project_repo,
+            plate_version_id=claim.get("plate_version_id"),
+            plate_pdf_path=claim.get("plate_pdf_path"),
+            plate_parser=getattr(orchestrator, "plate_parser", None),
+        )
+        drawing_index = await resolve_drawing_index_for_run(
+            canonical_repo=getattr(orchestrator, "canonical_repo", None),
+            project_repo=project_repo,
+            drawing_version_id=claim.get("drawing_version_id"),
+            drawing_pdf_path=claim.get("drawing_pdf_path"),
+            drawing_parser=getattr(orchestrator, "drawing_parser", None),
+        )
         result = await orchestrator.run_proofreading(
             project_id=project_id,
             body_version_id=body_version_id,
@@ -264,6 +282,8 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             analysis_run_id=analysis_run_id,
             version_pages=version_pages,
             version_ids=version_ids,
+            plate_index=plate_index,
+            drawing_index=drawing_index,
         )
     except Exception as error:  # noqa: BLE001 - job boundary; normalize
         return _record_analysis_failure(review_repo, project_id, analysis_run_id, error)

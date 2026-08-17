@@ -17,6 +17,8 @@ from app.domain.evidence_bundle import (
     evidence_from_row_props,
 )
 from app.domain.review_models import EvidenceData
+from app.services.drawing_parser import DrawingIndex
+from app.services.plate_parser import PlateIndex
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,6 +505,124 @@ class CanonicalRepository:
         SET asset.depicts_status = 'semantic_review'
         """
         self._driver.execute_query(cypher, assets=params, **self._query_config())
+
+    def get_plate_index_for_version(self, doc_version_id: str) -> PlateIndex:
+        """Reconstruct a PlateIndex from the canonical graph for one
+        DocumentVersion via (v)-[:HAS_PLATE]->(p:Plate) + HAS_PANEL traversal.
+
+        Returns an empty PlateIndex when the version has no persisted plates;
+        callers decide whether that is acceptable or must fail closed.
+        """
+        if self._driver is None:
+            return PlateIndex()
+        cypher = """
+        MATCH (v:DocumentVersion {id: $doc_version_id})-[:HAS_PLATE]->(plate:Plate)
+        OPTIONAL MATCH (plate)-[:HAS_PANEL]->(panel:PlatePanel)
+        RETURN properties(plate) AS plate,
+               collect(DISTINCT properties(panel)) AS panels
+        ORDER BY plate.number
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            doc_version_id=doc_version_id,
+            **self._query_config(),
+        )
+        plates: list[PlateData] = []
+        for row in records:
+            plate_props = dict(row["plate"]) if row.get("plate") else {}
+            if not plate_props.get("id"):
+                continue
+            panels = [
+                PlatePanelData(
+                    panel_id=p["id"],
+                    plate_id=p["plate_id"],
+                    panel_index=int(p["panel_index"]),
+                    caption=p.get("caption") or "",
+                    bbox=_as_bbox(p.get("bbox")),
+                    bbox_status=p.get("bbox_status"),
+                    physical_page=p.get("physical_page"),
+                    render_uri=p.get("render_uri"),
+                    source_sha256=p.get("source_sha256"),
+                )
+                for p in (row.get("panels") or [])
+                if p and p.get("id")
+            ]
+            plates.append(
+                PlateData(
+                    plate_id=plate_props["id"],
+                    number=str(plate_props.get("number") or ""),
+                    physical_page=int(plate_props.get("physical_page") or 0),
+                    title=plate_props.get("title") or "",
+                    bbox=_as_bbox(plate_props.get("bbox")),
+                    source_sha256=plate_props.get("source_sha256"),
+                    document_version_id=plate_props.get("document_version_id"),
+                    panels=panels,
+                    raw_identifier=plate_props.get("raw_identifier"),
+                    source_kind=plate_props.get("source_kind") or "plate_pdf",
+                )
+            )
+        return PlateIndex(
+            plates_by_number={p.number: p for p in plates},
+            plates=plates,
+        )
+
+    def get_drawing_index_for_version(self, doc_version_id: str) -> DrawingIndex:
+        """Reconstruct a DrawingIndex from the canonical graph for one
+        DocumentVersion via (v)-[:HAS_DRAWING]->(d:Drawing) + HAS_REGION
+        traversal. Returns an empty DrawingIndex when the version has no
+        persisted drawings; callers decide whether that is acceptable or must
+        fail closed."""
+        if self._driver is None:
+            return DrawingIndex()
+        cypher = """
+        MATCH (v:DocumentVersion {id: $doc_version_id})-[:HAS_DRAWING]->(drawing:Drawing)
+        OPTIONAL MATCH (drawing)-[:HAS_REGION]->(region:DrawingRegion)
+        RETURN properties(drawing) AS drawing,
+               collect(DISTINCT properties(region)) AS regions
+        ORDER BY drawing.number
+        """
+        records, _, _ = self._driver.execute_query(
+            cypher,
+            doc_version_id=doc_version_id,
+            **self._query_config(),
+        )
+        drawings: list[DrawingData] = []
+        for row in records:
+            drawing_props = dict(row["drawing"]) if row.get("drawing") else {}
+            if not drawing_props.get("id"):
+                continue
+            regions = [
+                DrawingRegionData(
+                    region_id=r["id"],
+                    drawing_id=r["drawing_id"],
+                    number=str(r.get("number") or ""),
+                    title=r.get("title") or "",
+                    bbox=_as_bbox(r.get("bbox")),
+                    physical_page=r.get("physical_page"),
+                    render_uri=r.get("render_uri"),
+                    source_sha256=r.get("source_sha256"),
+                )
+                for r in (row.get("regions") or [])
+                if r and r.get("id")
+            ]
+            drawings.append(
+                DrawingData(
+                    drawing_id=drawing_props["id"],
+                    number=str(drawing_props.get("number") or ""),
+                    physical_page=int(drawing_props.get("physical_page") or 0),
+                    title=drawing_props.get("title") or "",
+                    bbox=_as_bbox(drawing_props.get("bbox")),
+                    source_sha256=drawing_props.get("source_sha256"),
+                    document_version_id=drawing_props.get("document_version_id"),
+                    regions=regions,
+                    raw_identifier=drawing_props.get("raw_identifier"),
+                    source_kind=drawing_props.get("source_kind") or "drawing_pdf",
+                )
+            )
+        return DrawingIndex(
+            drawings_by_number={d.number: d for d in drawings},
+            drawings=drawings,
+        )
 
     def get_canonical_evidence_path(self, reference_id: str) -> dict[str, Any]:
         if self._driver is None:

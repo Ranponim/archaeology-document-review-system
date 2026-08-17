@@ -512,6 +512,21 @@ class ReviewRepository:
             run.enableAiReview = $enable_ai_review,
             run.versionStage = $version_stage
         MERGE (proj)-[:HAS_RUN]->(run)
+        WITH run
+        OPTIONAL MATCH (body:DocumentVersion {id: $body_version_id})
+        FOREACH (_ IN CASE WHEN body IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (run)-[:ANALYZES]->(body)
+        )
+        WITH run
+        OPTIONAL MATCH (plate:DocumentVersion {id: $plate_version_id})
+        FOREACH (_ IN CASE WHEN plate IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (run)-[:USES_PLATE]->(plate)
+        )
+        WITH run
+        OPTIONAL MATCH (drawing:DocumentVersion {id: $drawing_version_id})
+        FOREACH (_ IN CASE WHEN drawing IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (run)-[:USES_DRAWING]->(drawing)
+        )
         """
         self._driver.execute_query(
             cypher,

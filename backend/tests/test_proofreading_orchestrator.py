@@ -25,6 +25,7 @@ from app.graph.review_repository import ReviewRepository
 from app.services.ai_review_service import AIReviewService
 from app.services.asset_matcher import AssetMatcher, ResolutionResult
 from app.services.asset_review_pipeline import AssetReviewPipeline
+from app.services.drawing_parser import DrawingIndex
 from app.services.object_resolver import ObjectResolver
 from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateIndex, PlateParser
@@ -437,6 +438,82 @@ async def test_orchestrator_vlm_integration(tmp_path: Path):
     )
 
     assert result.status == "completed"
+
+
+@pytest.mark.anyio
+async def test_orchestrator_uses_provided_drawing_index():
+    """P0-1: a reconstructed DrawingIndex passed by the worker is used directly
+    (no PDF reparse) and its drawings feed resolution + persistence."""
+    from app.domain.canonical_models import DrawingData
+
+    pages = _create_sample_parsed_pages()
+    drawing = DrawingData(
+        drawing_id="ver_draw_1_drawing_16",
+        number="16",
+        physical_page=18,
+        title="1지점 6호 석관묘 실측도",
+        document_version_id="ver_draw_1",
+    )
+    drawing_index = DrawingIndex(
+        drawings_by_number={"16": drawing}, drawings=[drawing]
+    )
+    driver = FakeNeo4jDriver()
+    orchestrator = ProofreadingOrchestrator(
+        canonical_repo=CanonicalRepository(driver=driver, database="test_db"),
+        review_repo=ReviewRepository(driver=driver, database="test_db"),
+    )
+
+    result = await orchestrator.run_proofreading(
+        project_id="proj_draw_index",
+        body_version_id="ver_body_1",
+        drawing_version_id="ver_draw_1",
+        body_pages=pages,
+        drawing_index=drawing_index,
+        enable_vlm=False,
+        enable_ai_review=False,
+    )
+
+    assert result.status == "completed"
+    assert len(result.drawings) == 1
+    assert result.drawings[0].drawing_id == "ver_draw_1_drawing_16"
+    all_queries = " ".join(q["query"] for q in driver.queries)
+    assert "MERGE (drawing:Drawing" in all_queries
+
+
+@pytest.mark.anyio
+async def test_orchestrator_fails_closed_when_selected_plate_version_has_no_index():
+    """P0-1 / anti-pattern #5: a selected plate version with no index, no
+    plates list, and no PDF must fail closed — never an empty PlateIndex."""
+    pages = _create_sample_parsed_pages()
+    orchestrator = ProofreadingOrchestrator()
+
+    with pytest.raises(ValueError, match="empty canonical index"):
+        await orchestrator.run_proofreading(
+            project_id="proj_empty_plate",
+            body_version_id="ver_body_1",
+            plate_version_id="ver_plate_1",
+            body_pages=pages,
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
+
+
+@pytest.mark.anyio
+async def test_orchestrator_fails_closed_when_selected_drawing_version_has_no_index():
+    """P0-1 / anti-pattern #5: same fail-closed contract for a selected drawing
+    version with no index, no drawings list, and no PDF."""
+    pages = _create_sample_parsed_pages()
+    orchestrator = ProofreadingOrchestrator()
+
+    with pytest.raises(ValueError, match="empty canonical index"):
+        await orchestrator.run_proofreading(
+            project_id="proj_empty_drawing",
+            body_version_id="ver_body_1",
+            drawing_version_id="ver_draw_1",
+            body_pages=pages,
+            enable_vlm=False,
+            enable_ai_review=False,
+        )
 
 
 @pytest.mark.anyio

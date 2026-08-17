@@ -14,6 +14,8 @@ from app.config import DATA_ROOT
 from app.domain.document_structure import ParsedPage
 from app.domain.models import VersionInput
 from app.graph.project_repository import DocumentVersionNotFoundError
+from app.services.drawing_parser import DrawingIndex
+from app.services.plate_parser import PlateIndex
 
 BODY_STAGES = ("1차", "2차", "3차", "final")
 
@@ -26,6 +28,86 @@ def resolve_stored_pdf_path(version: VersionInput) -> Path | None:
         return candidate
     if Path(version.uri).is_file():
         return Path(version.uri)
+    return None
+
+
+async def resolve_plate_index_for_run(
+    canonical_repo,
+    project_repo,
+    plate_version_id: str | None,
+    plate_pdf_path: str | None,
+    plate_parser,
+) -> PlateIndex:
+    """Resolve the canonical PlateIndex for a selected plate version.
+
+    Graph-first: reconstruct from (v)-[:HAS_PLATE]->(p:Plate) + HAS_PANEL.
+    Fallback: reparse the stored PDF of the selected version. Fail closed
+    (raise) when the version was explicitly selected but no canonical index
+    resolves — never silently substitute an empty PlateIndex (anti-pattern #5).
+    """
+    if not plate_version_id:
+        return PlateIndex()
+    if canonical_repo is not None:
+        index = canonical_repo.get_plate_index_for_version(plate_version_id)
+        if index is not None and len(index) > 0:
+            return index
+    pdf_path = _resolve_asset_pdf_path(project_repo, plate_version_id, plate_pdf_path)
+    if pdf_path is not None and plate_parser is not None:
+        index = await run_in_threadpool(
+            plate_parser.parse, pdf_path, document_version_id=plate_version_id
+        )
+        if len(index) > 0:
+            return index
+    raise ValueError(
+        f"Selected plate version '{plate_version_id}' resolved to an empty "
+        "canonical index (no HAS_PLATE graph data and no parseable stored PDF)"
+    )
+
+
+async def resolve_drawing_index_for_run(
+    canonical_repo,
+    project_repo,
+    drawing_version_id: str | None,
+    drawing_pdf_path: str | None,
+    drawing_parser,
+) -> DrawingIndex:
+    """Resolve the canonical DrawingIndex for a selected drawing version.
+
+    Graph-first: reconstruct from (v)-[:HAS_DRAWING]->(d:Drawing) + HAS_REGION.
+    Fallback: reparse the stored PDF of the selected version. Fail closed
+    (raise) when the version was explicitly selected but no canonical index
+    resolves — never silently substitute an empty DrawingIndex (anti-pattern #5).
+    """
+    if not drawing_version_id:
+        return DrawingIndex()
+    if canonical_repo is not None:
+        index = canonical_repo.get_drawing_index_for_version(drawing_version_id)
+        if index is not None and len(index) > 0:
+            return index
+    pdf_path = _resolve_asset_pdf_path(project_repo, drawing_version_id, drawing_pdf_path)
+    if pdf_path is not None and drawing_parser is not None:
+        index = await run_in_threadpool(
+            drawing_parser.parse, pdf_path, document_version_id=drawing_version_id
+        )
+        if len(index) > 0:
+            return index
+    raise ValueError(
+        f"Selected drawing version '{drawing_version_id}' resolved to an empty "
+        "canonical index (no HAS_DRAWING graph data and no parseable stored PDF)"
+    )
+
+
+def _resolve_asset_pdf_path(
+    project_repo, version_id: str, request_pdf_path: str | None
+) -> Path | None:
+    if request_pdf_path:
+        candidate = Path(request_pdf_path)
+        if candidate.is_file():
+            return candidate
+    if project_repo is not None:
+        version = project_repo.get_document_version_by_id(version_id)
+        if version is not None:
+            return resolve_stored_pdf_path(version)
     return None
 
 

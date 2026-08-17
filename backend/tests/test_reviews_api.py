@@ -52,6 +52,17 @@ class FakeProjectRepository:
                     original_name="plate.pdf",
                     stage="1차",
                 ),
+                DocumentVersion(
+                    id="ver_body_03",
+                    document_id="doc_body_1",
+                    analysis_run_id="run_3",
+                    uri="incoming/p1/sha_b3/body3.pdf",
+                    sha256="sha256_body_3rd_hash",
+                    size_bytes=12000,
+                    mime_type="application/pdf",
+                    original_name="body-3차.pdf",
+                    stage="3차",
+                ),
             ]
         }
 
@@ -549,6 +560,37 @@ def test_trigger_proofreading_run_missing_plate_version_returns_404(api_client):
     resp = client.post(
         "/api/v1/projects/p1/runs",
         json={"bodyVersionId": "ver_body_01", "plateVersionId": "ver_missing"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "input_error"
+    assert client.app.state._enqueued == []
+
+
+def test_trigger_proofreading_run_uses_selected_body_stage(api_client):
+    """6.1: the run trigger resolves the body version by the actual selected
+    stage — a 3차 body version selected with version_stage=3차 is persisted with
+    the same id+stage, never coerced to 1차."""
+    client, rev_repo = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={
+            "bodyVersionId": "ver_body_03",
+            "versionStage": "3차",
+        },
+    )
+    assert resp.status_code == 202
+    run = rev_repo.runs[resp.json()["runId"]]
+    assert run["body_version_id"] == "ver_body_03"
+    assert run["version_stage"] == "3차"
+
+
+def test_trigger_proofreading_run_rejects_stage_mismatch(api_client):
+    """6.1: selecting a 3차 body version while sending version_stage=1차 must
+    not silently resolve the wrong version — it fails closed with 404."""
+    client, _ = api_client
+    resp = client.post(
+        "/api/v1/projects/p1/runs",
+        json={"bodyVersionId": "ver_body_03", "versionStage": "1차"},
     )
     assert resp.status_code == 404
     assert resp.json()["code"] == "input_error"

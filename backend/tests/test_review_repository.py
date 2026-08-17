@@ -5,6 +5,29 @@ from app.domain.document_structure import ParsedPage, TextBlockData, CaptionData
 from app.domain.review_models import CorrectionCandidateData, EvidenceData
 
 
+class FakeNeo4jRecord:
+    def __init__(self, data: dict):
+        self._data = data
+
+    def __getitem__(self, key: str):
+        return self._data[key]
+
+    def get(self, key: str, default=None):
+        return self._data.get(key, default)
+
+
+class FakeNeo4jDriver:
+    def __init__(self, records_to_return=None):
+        self.queries: list[dict] = []
+        self.records_to_return = [
+            FakeNeo4jRecord(r) for r in (records_to_return or [])
+        ]
+
+    def execute_query(self, query: str, **kwargs):
+        self.queries.append({"query": query, "kwargs": kwargs})
+        return self.records_to_return, None, None
+
+
 def test_schema_includes_review_nodes_constraints():
     labels = [label for _, label in CONSTRAINTS]
     assert "Page" in labels
@@ -60,3 +83,55 @@ def test_review_repository_builds_cypher_parameters():
     assert cand_param["candidate_id"] == "cand_1"
     assert cand_param["rule_category"] == "figure_plate_table_photo_ref"
     assert cand_param["evidence"]["version_from"] == "1차"
+
+
+def test_create_analysis_run_links_run_to_selected_versions():
+    """P0-5: create_analysis_run must create (run)-[:ANALYZES]->(body),
+    (run)-[:USES_PLATE]->(plate), (run)-[:USES_DRAWING]->(drawing) so the
+    selected body/plate/drawing versions are inspectable from the run graph."""
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="test_db")
+
+    repo.create_analysis_run(
+        project_id="p1",
+        run_id="run_1",
+        body_version_id="ver_body_3",
+        plate_version_id="ver_plate_3",
+        drawing_version_id="ver_draw_3",
+        version_stage="3차",
+    )
+
+    assert len(driver.queries) == 1
+    q = driver.queries[0]
+    cypher = q["query"]
+    kwargs = q["kwargs"]
+
+    assert "MERGE (proj)-[:HAS_RUN]->(run)" in cypher
+    assert "MERGE (run)-[:ANALYZES]->(body)" in cypher
+    assert "MERGE (run)-[:USES_PLATE]->(plate)" in cypher
+    assert "MERGE (run)-[:USES_DRAWING]->(drawing)" in cypher
+    assert kwargs["body_version_id"] == "ver_body_3"
+    assert kwargs["plate_version_id"] == "ver_plate_3"
+    assert kwargs["drawing_version_id"] == "ver_draw_3"
+    assert kwargs["version_stage"] == "3차"
+
+
+def test_create_analysis_run_skips_missing_optional_versions():
+    """P0-5: a run without plate/drawing versions still links ANALYZES to the
+    body version and never fabricates USES_* edges."""
+    driver = FakeNeo4jDriver()
+    repo = ReviewRepository(driver=driver, database="test_db")
+
+    repo.create_analysis_run(
+        project_id="p1",
+        run_id="run_2",
+        body_version_id="ver_body_1",
+        version_stage="1차",
+    )
+
+    cypher = driver.queries[0]["query"]
+    assert "MERGE (run)-[:ANALYZES]->(body)" in cypher
+    assert "USES_PLATE" in cypher
+    assert "USES_DRAWING" in cypher
+    assert driver.queries[0]["kwargs"]["plate_version_id"] is None
+    assert driver.queries[0]["kwargs"]["drawing_version_id"] is None
