@@ -1,12 +1,23 @@
 # =============================================================================
-# Archaeological Document Review System - 10-Case Golden Benchmark
-# Locked Specification & Ground Truth Reference Dataset
-# Version: 1.0 (Locked for Task 17 Architectural Verification Gates)
+# Archaeological Document Review System - 10-Case Candidate Benchmark
+# Candidate reference scenarios; expert revalidation is required before any case
+# may be promoted to VALID_GROUND_TRUTH.
+# Version: 1.0 (verification status corrected after archaeology-domain review)
 # =============================================================================
 
 version: "1.0-locked"
-description: "Expert-verified 10-case golden benchmark for canonical document-object-evidence graph"
+description: "Candidate 10-case benchmark for canonical document-object-evidence graph; expert revalidation pending except the documented Case 6 invalid mapping"
 created_at: "2026-08-17"
+
+verification_policy:
+  valid_ground_truth_requires_expert_provenance: true
+  unverified_status: "NEEDS_REVALIDATION"
+  required_provenance_fields:
+    - verified_by
+    - verified_at
+    - source_pdf_sha256
+    - canonical_publication_identifier
+    - expert_note
 
 benchmark_cases:
   # ---------------------------------------------------------------------------
@@ -15,7 +26,8 @@ benchmark_cases:
   - case_id: "GT_CASE_001"
     name: "도판 22~28 (1지점 청동기시대 석관묘 1~7호 출토유물)"
     category: "reference_range_resolution"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     body_text: "1지점 청동기시대 석관묘 1~7호 출토유물(도판 : 22~28)"
     reference:
       type: "plate"
@@ -62,7 +74,8 @@ benchmark_cases:
   - case_id: "GT_CASE_002"
     name: "도판 81·82 (2지점 조선시대 2호 토광묘 유구)"
     category: "reference_multi_punctuation_resolution"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     body_text: "2지점 조선시대 2호 토광묘 ① 유구(도면 : 54, 도판 : 81·82)"
     reference:
       type: "plate"
@@ -92,7 +105,8 @@ benchmark_cases:
   - case_id: "GT_CASE_003"
     name: "도판 45·46 (1지점 청동기시대 6호 석관묘)"
     category: "reference_multi_dot_resolution"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     body_text: "1지점 청동기시대 6호 석관묘 ... ① 유구(도면 : 30, 도판 : 45ㆍ46)"
     reference:
       type: "plate"
@@ -122,7 +136,8 @@ benchmark_cases:
   - case_id: "GT_CASE_004"
     name: "도면 16~22 (1지점 청동기시대 석관묘 평단면도)"
     category: "drawing_range_resolution"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     body_text: "1지점 청동기시대 석관묘 1~7호 평단면도(도면 : 16~22)"
     reference:
       type: "drawing"
@@ -167,7 +182,8 @@ benchmark_cases:
   - case_id: "GT_CASE_005"
     name: "도면 30 (1지점 청동기시대 6호 석관묘 평단면도)"
     category: "drawing_single_resolution"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     body_text: "1지점 청동기시대 6호 석관묘 평단면도(도면 : 30)"
     reference:
       type: "drawing"
@@ -195,6 +211,8 @@ benchmark_cases:
     name: "Case 6 Regression: Inviolable Identity Separation (Plate 45 vs 4. 조사 후_45.JPG)"
     category: "filename_trap_regression"
     ground_truth_status: "INVALID_GROUND_TRUTH_MAPPING"
+    expert_verified: true
+    verification_basis: "Archaeologist feedback established that InDesign Links numeric suffixes are unrelated to publication plate numbers; the old filename-based pairing is invalid."
     body_text: "1지점 청동기시대 6호 석관묘 ... ① 유구(도면 : 30, 도판 : 45ㆍ46)"
     reference:
       type: "plate"
@@ -222,7 +240,8 @@ benchmark_cases:
   - case_id: "GT_CASE_007"
     name: "Unit Normalization Dimension Conflict (275cm vs 2.45m conflict, 275cm vs 2.75m match)"
     category: "numeric_unit_normalization"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     description: "Cross-draft dimension consistency validation with metric unit normalization"
     dimension_pairs:
       - id: "dim_pair_conflict"
@@ -258,7 +277,8 @@ benchmark_cases:
   - case_id: "GT_CASE_008"
     name: "Period Synonym Normalization (청동기 == 청동기시대)"
     category: "period_synonym_normalization"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     description: "Archaeological era normalization mapping synonyms to canonical period definitions"
     synonym_pairs:
       - input_a: "1지점 청동기 6호 석관묘"
@@ -289,7 +309,8 @@ benchmark_cases:
   - case_id: "GT_CASE_009"
     name: "Ambiguous Entity Safety (2호 토광묘 isolated -> semantic_review, never auto-merged)"
     category: "ambiguity_safety"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     description: "Conservative entity resolution prevents unsafe automatic merging of under-specified mentions"
     multi_entity_context:
       - block_id: "b_joseon_2"
@@ -316,7 +337,8 @@ benchmark_cases:
   - case_id: "GT_CASE_010"
     name: "VLM Observation Negative Safety (2지점 2호 vs 2지점 25호 -> CONTRADICTED)"
     category: "multimodal_negative_safety"
-    ground_truth_status: "VALID_GROUND_TRUTH"
+    ground_truth_status: "NEEDS_REVALIDATION"
+    expert_verified: false
     description: "VLM discrimination prevents false positive visual verification when site label matches but feature ID differs"
     test_scenario:
       expected_feature: "2호 토광묘"
