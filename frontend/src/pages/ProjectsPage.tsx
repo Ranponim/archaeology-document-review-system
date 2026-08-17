@@ -11,14 +11,17 @@ function formatProjectCreatedAt(value?: string | null): string {
   if (!value) return '생성일 기록 없음';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '생성일 기록 없음';
-  return `생성일 ${new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed)}`;
+  return `생성일 ${new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(parsed)}`;
 }
 
 export function ProjectsPage({ onCreated, onSelect }: Props) {
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,10 +62,9 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
   }
 
   return (
-    <div style={{ display: 'grid', gap: '24px' }}>
-      {/* 1. 기존 프로젝트 목록 */}
+    <div className="projects-page-stack">
       <section className="panel" aria-labelledby="existing-title">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="projects-header-row">
           <div>
             <p className="section-label">등록된 프로젝트</p>
             <h2 id="existing-title">진행 중인 검수 프로젝트</h2>
@@ -70,10 +72,9 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
           </div>
           <button
             type="button"
-            className="secondary-button"
+            className="secondary-button projects-refresh-button"
             onClick={loadProjectList}
             disabled={loadingProjects}
-            style={{ fontSize: '0.85rem', padding: '6px 12px' }}
           >
             {loadingProjects ? '새로고침 중…' : '목록 새로고침'}
           </button>
@@ -84,46 +85,32 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
         ) : loadError ? (
           <p className="error-code">목록 조회 오류: {loadError}</p>
         ) : projects.length === 0 ? (
-          <div className="empty-state" style={{ padding: '16px 0' }}>
+          <div className="empty-state projects-empty-state">
             <p>등록된 프로젝트가 없습니다. 아래에서 새 프로젝트를 생성해 주세요.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: '10px' }}>
-            {projects.map((p) => (
+          <div className="project-list">
+            {projects.map((project) => (
               <div
-                key={p.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '14px 18px',
-                  background: '#ffffff',
-                  border: '1px solid rgb(50 65 55 / 12%)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'border-color 0.15s ease',
-                }}
-                onClick={() => handleSelect(p)}
+                className="project-card-item"
+                key={project.id}
+                onClick={() => handleSelect(project)}
               >
-                <div>
-                  <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#183328', fontWeight: 600 }}>
-                    {p.name}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#88928a', fontFamily: 'monospace' }}>
-                    ID: {p.id}
-                    {p.internalCode ? ` · 코드: ${p.internalCode}` : ''}
+                <div className="project-card-copy">
+                  <h3 className="project-card-title">{project.name}</h3>
+                  <p className="project-card-meta">
+                    ID: {project.id}
+                    {project.internalCode ? ` · 코드: ${project.internalCode}` : ''}
                   </p>
-                  <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.78rem' }}>
-                    {formatProjectCreatedAt(p.createdAt)}
-                  </p>
+                  <p className="project-created-at">{formatProjectCreatedAt(project.createdAt)}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelect(p);
+                  className="project-card-open"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleSelect(project);
                   }}
-                  style={{ whiteSpace: 'nowrap' }}
                 >
                   프로젝트 열기 →
                 </button>
@@ -133,7 +120,6 @@ export function ProjectsPage({ onCreated, onSelect }: Props) {
         )}
       </section>
 
-      {/* 2. 새 프로젝트 생성 */}
       <section className="panel" aria-labelledby="create-title">
         <div>
           <p className="section-label">새 검수 작업</p>
