@@ -256,7 +256,6 @@ class StrictVisualAssetService(VisualAssetService):
 
         selected, selection_reason = self._select_canonical_entry(data)
         if selected is not None:
-            reference_key = self._entry_reference_key(selected)
             label = selected.get("label")
             if label in {"Drawing", "DrawingRegion"}:
                 bundle["comparison_type"] = "drawing_reference"
@@ -310,13 +309,16 @@ class StrictVisualAssetService(VisualAssetService):
 
         # Plain text/rule evidence is not a failed visual comparison. Show the
         # current body source when available, but explicitly mark the second
-        # visual side as not applicable.
+        # visual side as not applicable. Preserve graph ambiguity as an audit
+        # warning even though no visual mode is selected.
         source_entry = current_entry or next(iter(data.get("evidence_chain") or []), None)
         source_metadata, _ = self._metadata_from_evidence_entry(source_entry)
         bundle["source"] = source_metadata
         bundle["comparison_type"] = "text_evidence"
         bundle["render_status"] = "not_applicable"
         requested = self._requested_targets(data)
-        if requested and selection_reason not in {None, "no_candidate_reference"}:
+        if selection_reason == "ambiguous_canonical_target":
+            bundle["unresolved_reason"] = selection_reason
+        elif requested and selection_reason not in {None, "no_candidate_reference"}:
             bundle["unresolved_reason"] = selection_reason
         return bundle
