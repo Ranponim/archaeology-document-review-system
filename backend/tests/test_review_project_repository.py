@@ -1,3 +1,5 @@
+import pytest
+
 from app.graph.review_project_repository import ReviewProjectRepository
 
 
@@ -53,6 +55,17 @@ def test_stage_only_legacy_lookup_still_uses_stage():
     assert repo.resolve_version_input("p1", "report_body", "4차", None) is None
     _, kwargs = driver.queries[0]
     assert kwargs["stage"] == "4차"
+
+
+def test_review_round_rejects_incomplete_canonical_input_set():
+    repo = ReviewProjectRepository(FakeDriver())
+    with pytest.raises(ValueError, match="complete canonical input set"):
+        repo.create_review_round(
+            "p1",
+            body_version_id="body_v1",
+            plate_version_id=None,
+            drawing_version_id="drawing_v1",
+        )
 
 
 def test_approve_round_preserves_first_approved_timestamp():
