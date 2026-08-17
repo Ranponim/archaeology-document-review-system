@@ -1,0 +1,37 @@
+/* ReviewRound is the canonical input authority.
+   Legacy stage/version selectors remain mounted for backward-compatible state
+   and tests, but are intentionally hidden from the production workspace. */
+.upload-field:has(#upload-stage),
+.run-field:has(#run-body-version),
+.run-field:has(#run-plate-version),
+.run-field:has(#run-drawing-version) {
+  display: none;
+}
+
+.upload-form::before {
+  content: '회차 번호는 검수 라운드 기준으로 자동 증가합니다.';
+  display: block;
+  align-self: center;
+  max-width: 240px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #5f624f;
+}
+
+.run-form::before {
+  content: '선택된 검수 라운드의 본문 · 도판 · 도면 조합으로 실행됩니다.';
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #255643;
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .upload-form::before,
+  .run-form::before {
+    max-width: none;
+    width: 100%;
+  }
+}
