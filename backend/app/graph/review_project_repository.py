@@ -4,7 +4,11 @@ from neo4j import ManagedTransaction
 
 from app.domain.models import Document, DocumentVersion, StoredFile
 from app.domain.review_round import ReviewRound
-from app.graph.project_repository import ProjectRepository, ReviewRoundNotFoundError
+from app.graph.project_repository import (
+    DocumentVersionNotFoundError,
+    ProjectRepository,
+    ReviewRoundNotFoundError,
+)
 
 
 class ReviewProjectRepository(ProjectRepository):
@@ -122,26 +126,44 @@ class ReviewProjectRepository(ProjectRepository):
         drawing_version_id: str | None = None,
         notes: str | None = None,
     ) -> ReviewRound:
-        missing = [
-            label
-            for label, value in (
-                ("report_body", body_version_id),
-                ("plate_book", plate_version_id),
-                ("drawing_book", drawing_version_id),
-            )
-            if not value
-        ]
+        requested = (
+            ("report_body", body_version_id),
+            ("plate_book", plate_version_id),
+            ("drawing_book", drawing_version_id),
+        )
+        missing = [kind for kind, version_id in requested if not version_id]
         if missing:
             raise ValueError(
                 "ReviewRound requires the complete canonical input set "
                 "(report_body + plate_book + drawing_book); missing: "
                 + ", ".join(missing)
             )
+
+        # Validate every id through the project+Document.kind path before any
+        # ReviewRound node is created. The base repository historically matches
+        # DocumentVersion ids globally; calling it with an unvalidated id could
+        # therefore connect another project's asset into this project's round.
+        validated: dict[str, str] = {}
+        for kind, version_id in requested:
+            assert version_id is not None  # guarded by complete-set check above
+            resolved = self.resolve_version_input(
+                project_id=project_id,
+                kind=kind,
+                stage=None,
+                version_id=version_id,
+            )
+            if resolved is None:
+                raise DocumentVersionNotFoundError(
+                    f"DocumentVersion '{version_id}' is not a {kind} asset "
+                    f"owned by project '{project_id}'"
+                )
+            validated[kind] = resolved.version_id
+
         return super().create_review_round(
             project_id=project_id,
-            body_version_id=body_version_id,
-            plate_version_id=plate_version_id,
-            drawing_version_id=drawing_version_id,
+            body_version_id=validated["report_body"],
+            plate_version_id=validated["plate_book"],
+            drawing_version_id=validated["drawing_book"],
             notes=notes,
         )
 
