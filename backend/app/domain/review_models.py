@@ -99,6 +99,7 @@ class CorrectionCandidateData:
     confidence: float = 1.0
     analysis_run_id: str | None = None
     severity: str = "medium"
+    finding_fingerprint: str | None = None
 
     @property
     def evidences(self) -> list[EvidenceData]:
