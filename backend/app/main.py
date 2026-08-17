@@ -61,20 +61,6 @@ def _server_error_response(request: Request) -> JSONResponse:
     )
 
 
-def _hide_legacy_run_route_from_schema() -> None:
-    """Keep old handler code available for tests/migration, but never publish it.
-
-    Runtime order also registers the ReviewRound-only route first, so the
-    legacy direct-version route cannot be selected by Starlette.
-    """
-    for route in reviews_router.routes:
-        if (
-            getattr(route, "path", None) == "/api/v1/projects/{project_id}/runs"
-            and "POST" in (getattr(route, "methods", None) or set())
-        ):
-            route.include_in_schema = False
-
-
 def create_app(
     *,
     file_store: FileStore | None = None,
@@ -182,6 +168,7 @@ def create_app(
         return {"status": "ok"}
 
     application.include_router(projects_router)
+    application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
     application.include_router(run_diagnostics_router)
     application.include_router(assets_router)
