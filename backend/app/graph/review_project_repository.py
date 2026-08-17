@@ -7,9 +7,10 @@ from app.graph.project_repository import ProjectRepository, ReviewRoundNotFoundE
 class ReviewProjectRepository(ProjectRepository):
     """Project repository semantics for ReviewRound execution.
 
-    ReviewRound resolution passes `stage=None` and therefore resolves exact
-    version identities without a fixed stage ceiling. Legacy direct-version
-    callers that still provide a stage keep strict stage-mismatch validation.
+    A concrete DocumentVersion id is canonical graph identity. Human stage
+    labels such as ``2차`` are compatibility/display metadata and must never
+    reject an exact id selected by a ReviewRound. Stage-only legacy lookup is
+    still supported when no version id is supplied.
     """
 
     def resolve_version_input(
@@ -19,6 +20,8 @@ class ReviewProjectRepository(ProjectRepository):
         stage: str | None = None,
         version_id: str | None = None,
     ):
+        if version_id:
+            stage = None
         return super().resolve_version_input(project_id, kind, stage, version_id)
 
     def approve_review_round(self, project_id: str, round_id: str) -> ReviewRound:
