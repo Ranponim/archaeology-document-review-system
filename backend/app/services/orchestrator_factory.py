@@ -1,7 +1,7 @@
 """Production orchestrator assembly for ReviewRound-authoritative analysis."""
 import os
 
-from app.graph.canonical_repository import CanonicalRepository
+from app.graph.coverage_canonical_repository import CoverageCanonicalRepository
 from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.review_project_repository import ReviewProjectRepository
 from app.services.ai_review_service import AIReviewService
@@ -15,13 +15,13 @@ from app.services.development_review_control import (
 )
 from app.services.drawing_parser import DrawingParser
 from app.services.object_resolver import ObjectResolver
-from app.services.pdf_parser import PDFParser
 from app.services.plate_parser import PlateParser
 from app.services import proofreading_orchestrator as proofreading_orchestrator_module
 from app.services.proofreading_orchestrator import ProofreadingOrchestrator
 from app.services.review_budget import select_development_candidates
 from app.services.review_round_orchestrator import ReviewRoundProofreadingOrchestrator
 from app.services.strict_rule_engine import StrictRuleEngine
+from app.services.visual_reference_pdf_parser import VisualReferencePDFParser
 from app.services.vlm_review_service import VLMReviewService
 
 
@@ -54,7 +54,7 @@ def _development_candidate_budget() -> int | None:
 
 def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
     project_repo = ReviewProjectRepository(driver)
-    canonical_repo = CanonicalRepository(driver)
+    canonical_repo = CoverageCanonicalRepository(driver)
     review_repo = ProductionReviewRepository(driver)
     vlm_service = VLMReviewService()
     ai_service = AIReviewService()
@@ -67,7 +67,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
             project_repo=project_repo,
             canonical_repo=canonical_repo,
             review_repo=review_repo,
-            pdf_parser=PDFParser(),
+            pdf_parser=VisualReferencePDFParser(),
             plate_parser=PlateParser(),
             drawing_parser=DrawingParser(),
             object_resolver=ObjectResolver(),
@@ -85,7 +85,7 @@ def build_proofreading_orchestrator(driver) -> ProofreadingOrchestrator:
         project_repo=project_repo,
         canonical_repo=canonical_repo,
         review_repo=review_repo,
-        pdf_parser=PDFParser(),
+        pdf_parser=VisualReferencePDFParser(),
         plate_parser=PlateParser(),
         drawing_parser=DrawingParser(),
         object_resolver=ObjectResolver(),
