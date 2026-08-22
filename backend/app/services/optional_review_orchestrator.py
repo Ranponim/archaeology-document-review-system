@@ -9,6 +9,12 @@ from app.services.graph_first_review_round_orchestrator import (
 from app.services.graph_rules import GraphRuleFinding
 
 
+_PLACEHOLDER_OPTIONAL_WARNING = (
+    "optional semantic AI/VLM escalation requested; graph findings were "
+    "preserved without delegating canonical identity"
+)
+
+
 class OptionalReviewOrchestratorMixin:
     """Run optional model review only after deterministic graph review completes.
 
@@ -102,7 +108,12 @@ class OptionalReviewOrchestratorMixin:
             enable_vlm=enable_vlm,
             context_by_finding=context_by_finding,
         )
-        warnings = list(getattr(result, "warnings", []) or []) + list(outcome.warnings)
+        warnings = [
+            item
+            for item in list(getattr(result, "warnings", []) or [])
+            if item != _PLACEHOLDER_OPTIONAL_WARNING
+        ]
+        warnings.extend(outcome.warnings)
 
         if outcome.findings and self.optional_review_repository is not None:
             try:
