@@ -1,3 +1,4 @@
+// @ts-expect-error Vitest runs in Node; this frontend package intentionally omits @types/node.
 import { readFileSync } from 'node:fs';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
