@@ -65,6 +65,17 @@ def get_file_store(request: Request) -> FileStore:
     return request.app.state.file_store
 
 
+def _corpus_upload_mime(content_type: str | None) -> str | None:
+    """Treat browser-generic binary MIME as unknown for extension validation.
+
+    INDD and AI files commonly arrive from browsers as application/octet-stream.
+    FileStore still validates the filename suffix and chooses its canonical MIME;
+    all other explicit MIME values retain the existing strict validation.
+    """
+    normalized = str(content_type or "").strip().lower()
+    return None if normalized in {"", "application/octet-stream"} else content_type
+
+
 router = APIRouter(prefix="/api/projects/{project_id}/reference-corpora", tags=["reference-corpora"])
 
 
@@ -109,8 +120,16 @@ async def upload_reference_corpus_source(
     service: Annotated[ReferenceCorpusService, Depends(get_reference_corpus_service)],
     file_store: Annotated[FileStore, Depends(get_file_store)],
 ) -> ReferenceCorpusSourceResponse:
-    normalized_role = service.validate_source_role(role, file.filename or "")
-    stored = await file_store.store_upload(project_id, file)
+    filename = file.filename or ""
+    normalized_role = service.validate_source_role(role, filename)
+    content = await file.read()
+    stored = await run_in_threadpool(
+        file_store.store_bytes,
+        project_id,
+        filename,
+        content,
+        _corpus_upload_mime(file.content_type),
+    )
     asset = await run_in_threadpool(
         service.stage_stored_source,
         str(project_id),
