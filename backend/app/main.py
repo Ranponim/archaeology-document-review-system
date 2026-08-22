@@ -11,6 +11,7 @@ from app.api.assets import router as assets_router
 from app.api.project_structure import router as project_structure_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
+from app.api.reference_corpora import router as reference_corpora_router
 from app.api.repository_compat import (
     VisualBundleReviewCompatibilityRepository,
     adapt_project_repository,
@@ -30,12 +31,20 @@ from app.graph.project_repository import (
     ReviewRoundNotFoundError,
 )
 from app.graph.project_structure_repository import ProjectStructureRepository
+from app.graph.reference_corpus_repository import ReferenceCorpusRepository
 from app.graph.review_project_repository import ReviewProjectRepository
 from app.graph.schema import ensure_schema
+from app.graph.source_asset_repository import SourceAssetRepository
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
+from app.services.adobe_conversion_client import SubprocessAdobeConversionClient
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.project_structure_service import ProjectStructureService
+from app.services.reference_canonicalizer import ReferenceCanonicalizer
+from app.services.reference_corpus_service import (
+    ReferenceCorpusNotFoundError,
+    ReferenceCorpusService,
+)
 from app.services.visual_asset_service import (
     VisualAssetIncompleteError,
     VisualAssetNotFoundError,
@@ -76,6 +85,7 @@ def create_app(
     asset_repository=None,
     visual_asset_service=None,
     project_structure_service=None,
+    reference_corpus_service=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -99,6 +109,16 @@ def create_app(
                     ProjectStructureRepository(driver),
                     app.state.file_store,
                 )
+        if getattr(app.state, "reference_corpus_service", None) is None:
+            driver = getattr(app.state, "neo4j_driver", None)
+            if driver is not None:
+                source_repository = SourceAssetRepository(driver)
+                app.state.reference_corpus_service = ReferenceCorpusService(
+                    ReferenceCorpusRepository(driver),
+                    SubprocessAdobeConversionClient(),
+                    ReferenceCanonicalizer(),
+                    source_asset_repository=source_repository,
+                )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
         if driver is not None:
@@ -120,6 +140,7 @@ def create_app(
     application.state.asset_repository = asset_repository
     application.state.visual_asset_service = injected_visual_service
     application.state.project_structure_service = project_structure_service
+    application.state.reference_corpus_service = reference_corpus_service
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -146,6 +167,10 @@ def create_app(
 
     @application.exception_handler(ReviewRoundNotFoundError)
     async def missing_review_round(request: Request, _error: ReviewRoundNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(ReferenceCorpusNotFoundError)
+    async def missing_reference_corpus(request: Request, _error: ReferenceCorpusNotFoundError):
         return _error_response(request, 404)
 
     @application.exception_handler(AnalysisRunNotFoundError)
@@ -180,6 +205,7 @@ def create_app(
         return {"status": "ok"}
 
     application.include_router(projects_router)
+    application.include_router(reference_corpora_router)
     application.include_router(project_structure_router)
     application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
