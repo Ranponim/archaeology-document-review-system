@@ -40,6 +40,7 @@ class PlatePanelData:
     physical_page: int | None = None
     render_uri: str | None = None
     source_sha256: str | None = None
+    source_asset_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +55,7 @@ class PlateData:
     panels: list[PlatePanelData] = field(default_factory=list)
     raw_identifier: str | None = None
     source_kind: str = "plate_pdf"
+    reference_corpus_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +70,12 @@ class DrawingRegionData:
     circled label. None when the region could not be safely isolated."""
     bbox_status: str | None = None
     """'segmented' when bbox is the segmented region; 'insufficient' when the
-    region could not be safely isolated (bbox None, no render_uri); None when
-    no segmentation was attempted."""
+    region could not be safely isolated (bbox None, no render_uri); None
+    when no segmentation was attempted."""
     physical_page: int | None = None
     render_uri: str | None = None
     source_sha256: str | None = None
+    source_asset_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +90,7 @@ class DrawingData:
     regions: list[DrawingRegionData] = field(default_factory=list)
     raw_identifier: str | None = None
     source_kind: str = "drawing_pdf"
+    reference_corpus_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,5 +125,4 @@ ArchaeologyObject = ArchaeologyObjectData
 ResolutionResult = ObjectResolutionResult
 
 from app.domain.models import VersionInput  # noqa: E402
-
 
