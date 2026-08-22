@@ -10,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - ci-base-reference-corpus-red-20260822
   workflow_dispatch:
 
 jobs:
@@ -32,9 +33,6 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q app
       - name: Hermetic backend suite
-        # Local archaeology assets and real-Neo4j suites are not hermetic.
-        # The strict ReviewRound run API is part of this mandatory suite and
-        # is never deselected: legacy run inputs must fail with 422.
         run: >-
           pytest -q tests
           --ignore=tests/integration
