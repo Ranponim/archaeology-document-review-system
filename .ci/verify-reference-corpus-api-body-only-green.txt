@@ -1,0 +1,1 @@
+Verify ReferenceCorpus API and body-only document authority at feature commit a8eee6f433e9fe5d03befa931a758f49fffe5e86.
