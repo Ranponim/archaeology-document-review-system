@@ -7,6 +7,9 @@ on:
       - review-remediation-20260818-strict-run-contract
       - feature/source-provenance-remediation-20260818
       - windows-docker-foundation
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
