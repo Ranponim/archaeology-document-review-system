@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from app.services.graph_first_review_round_orchestrator import (
+    GraphFirstReviewRoundOrchestrator,
+)
 from app.services.graph_rules import GraphRuleFinding
 
 
@@ -38,11 +41,17 @@ class OptionalReviewOrchestratorMixin:
             source_block_id=(getattr(evidence, "region_id", None) or None),
             archaeology_object_id=getattr(candidate, "archaeology_object_id", None),
             reference_corpus_id=str(value.get("referenceCorpusId") or reference_corpus_id),
-            canonical_target_ids=tuple(str(item) for item in value.get("canonicalTargetIds", []) or []),
+            canonical_target_ids=tuple(
+                str(item) for item in value.get("canonicalTargetIds", []) or []
+            ),
             original_text=getattr(candidate, "original_text", None),
             proposed_text=getattr(candidate, "proposed_text", None),
-            rationale=str(getattr(evidence, "rationale", None) or "semantic graph escalation"),
-            evidence_ids=tuple(str(item) for item in value.get("graphEvidenceIds", []) or []),
+            rationale=str(
+                getattr(evidence, "rationale", None) or "semantic graph escalation"
+            ),
+            evidence_ids=tuple(
+                str(item) for item in value.get("graphEvidenceIds", []) or []
+            ),
             requires_ai=True,
         )
 
@@ -116,7 +125,8 @@ class OptionalReviewOrchestratorMixin:
 
 class OptionalGraphFirstReviewRoundOrchestrator(
     OptionalReviewOrchestratorMixin,
+    GraphFirstReviewRoundOrchestrator,
 ):
-    """Factory helper mixed dynamically with the graph-first concrete class."""
+    """Graph-first runtime with a non-authoritative optional model layer."""
 
     pass
