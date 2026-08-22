@@ -1,7 +1,7 @@
 # Graph-First Reference Corpus Review Architecture
 
 **Date:** 2026-08-22  
-**Status:** Approved design pending implementation plan  
+**Status:** Written design awaiting user review  
 **Branch:** `feature/source-provenance-remediation-20260818`
 
 ## 1. Purpose
