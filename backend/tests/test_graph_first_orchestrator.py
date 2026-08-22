@@ -6,10 +6,10 @@ import pytest
 
 from app.domain.canonical_models import ArchaeologyObjectData
 from app.domain.document_structure import ParsedPage, TextBlockData
-from app.services.graph_first_review_round_orchestrator import (
-    GraphFirstReviewRoundOrchestrator,
-)
+from app.services.graph_first_review_round_orchestrator import GraphFirstReviewRoundOrchestrator
 from app.services.graph_rules import GraphRuleFinding
+from app.services.optional_graph_review import OptionalReviewOutcome
+from app.services.optional_review_orchestrator import OptionalGraphFirstReviewRoundOrchestrator
 
 
 class FakeObjectResolver:
@@ -63,8 +63,9 @@ class FakeCorpusObjectLinker:
 
 
 class FakeGraphRuleEngine:
-    def __init__(self, events):
+    def __init__(self, events, *, include_semantic=False):
         self.events = events
+        self.include_semantic = include_semantic
 
     def run(self, **kwargs):
         self.events.append(("graph_rules", kwargs["reference_corpus_id"]))
@@ -72,7 +73,7 @@ class FakeGraphRuleEngine:
         assert kwargs["analysis_run_id"] == "run-1"
         assert kwargs["archaeology_object_ids"] == ["obj-6"]
         assert kwargs["body_regions_by_object"]["obj-6"][0].source_block_id == "b1"
-        return [
+        findings = [
             GraphRuleFinding(
                 rule_code="VISUAL_REFERENCE_MISSING",
                 severity="high",
@@ -86,6 +87,37 @@ class FakeGraphRuleEngine:
                 evidence_ids=("resolution:1",),
             )
         ]
+        if self.include_semantic:
+            findings.append(
+                GraphRuleFinding(
+                    rule_code="SEMANTIC_REVIEW_REQUIRED",
+                    severity="medium",
+                    source_block_id="b1",
+                    archaeology_object_id="obj-6",
+                    reference_corpus_id="corpus-1",
+                    canonical_target_ids=("region:corpus-1:30",),
+                    original_text="북쪽 단면 방향이 일치한다.",
+                    proposed_text=None,
+                    rationale="orientation requires semantic review",
+                    evidence_ids=("semantic:1",),
+                    requires_ai=True,
+                )
+            )
+        return findings
+
+
+class FakeOptionalDispatcher:
+    def __init__(self, *, warnings=None):
+        self.calls = []
+        self._warnings = list(warnings or [])
+
+    @staticmethod
+    def _context_key(finding):
+        return f"{finding.rule_code}:{finding.source_block_id or ''}"
+
+    async def review(self, **kwargs):
+        self.calls.append(kwargs)
+        return OptionalReviewOutcome(findings=[], warnings=list(self._warnings))
 
 
 def _page():
@@ -110,10 +142,8 @@ def _page():
     )
 
 
-@pytest.mark.anyio
-async def test_corpus_mode_runs_linker_then_graph_rules_and_emits_one_pending_candidate():
-    events = []
-    orchestrator = GraphFirstReviewRoundOrchestrator(
+def _orchestrator(*, events, graph_engine, optional_dispatcher=None):
+    return OptionalGraphFirstReviewRoundOrchestrator(
         pdf_parser=object(),
         plate_parser=object(),
         drawing_parser=object(),
@@ -121,9 +151,16 @@ async def test_corpus_mode_runs_linker_then_graph_rules_and_emits_one_pending_ca
         canonical_repo=FakeCanonicalRepository(),
         rule_engine=FakeStrictRuleEngine(),
         corpus_object_linker=FakeCorpusObjectLinker(events),
-        graph_rule_engine=FakeGraphRuleEngine(events),
+        graph_rule_engine=graph_engine,
+        optional_review_dispatcher=optional_dispatcher,
         allow_degraded_mode=False,
     )
+
+
+@pytest.mark.anyio
+async def test_corpus_mode_runs_linker_then_graph_rules_and_emits_one_pending_candidate():
+    events = []
+    orchestrator = _orchestrator(events=events, graph_engine=FakeGraphRuleEngine(events))
 
     result = await orchestrator.run_proofreading(
         project_id="p1",
@@ -152,6 +189,66 @@ async def test_corpus_mode_runs_linker_then_graph_rules_and_emits_one_pending_ca
     assert result.summary["reference_corpus_id"] == "corpus-1"
 
 
+@pytest.mark.anyio
+async def test_optional_dispatcher_is_not_called_when_both_flags_are_off():
+    events = []
+    dispatcher = FakeOptionalDispatcher()
+    orchestrator = _orchestrator(
+        events=events,
+        graph_engine=FakeGraphRuleEngine(events, include_semantic=True),
+        optional_dispatcher=dispatcher,
+    )
+
+    result = await orchestrator.run_proofreading(
+        project_id="p1",
+        body_version_id="body-v1",
+        body_pages=[_page()],
+        analysis_run_id="run-1",
+        reference_corpus_id="corpus-1",
+        enable_ai_review=False,
+        enable_vlm=False,
+    )
+
+    assert dispatcher.calls == []
+    assert len(result.candidates) == 2
+    assert result.status == "completed"
+
+
+@pytest.mark.anyio
+async def test_optional_failure_warning_preserves_all_graph_candidates_and_filters_inputs():
+    events = []
+    dispatcher = FakeOptionalDispatcher(
+        warnings=["optional ai review warning: TimeoutError"]
+    )
+    orchestrator = _orchestrator(
+        events=events,
+        graph_engine=FakeGraphRuleEngine(events, include_semantic=True),
+        optional_dispatcher=dispatcher,
+    )
+
+    result = await orchestrator.run_proofreading(
+        project_id="p1",
+        body_version_id="body-v1",
+        body_pages=[_page()],
+        analysis_run_id="run-1",
+        reference_corpus_id="corpus-1",
+        enable_ai_review=True,
+        enable_vlm=False,
+    )
+
+    assert len(dispatcher.calls) == 1
+    call = dispatcher.calls[0]
+    assert call["enable_ai_review"] is True
+    assert call["enable_vlm"] is False
+    assert len(call["findings"]) == 1
+    assert call["findings"][0].rule_code == "SEMANTIC_REVIEW_REQUIRED"
+    assert len(result.candidates) == 2
+    assert result.status == "completed"
+    assert result.warnings == ["optional ai review warning: TimeoutError"]
+    assert result.summary["optional_review_findings"] == 0
+    assert result.summary["optional_review_semantic_inputs"] == 1
+
+
 def test_production_factory_assembles_graph_first_collaborators(monkeypatch):
     import app.services.orchestrator_factory as factory
 
@@ -164,5 +261,8 @@ def test_production_factory_assembles_graph_first_collaborators(monkeypatch):
     orchestrator = factory.build_proofreading_orchestrator(object())
 
     assert isinstance(orchestrator, GraphFirstReviewRoundOrchestrator)
+    assert isinstance(orchestrator, OptionalGraphFirstReviewRoundOrchestrator)
     assert orchestrator.graph_rule_engine is not None
     assert orchestrator.corpus_object_linker is not None
+    assert orchestrator.optional_review_dispatcher is not None
+    assert orchestrator.optional_review_repository is not None
