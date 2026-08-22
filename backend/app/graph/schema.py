@@ -17,6 +17,8 @@ CONSTRAINTS = (
     ("drawing_region_id_unique", "DrawingRegion"),
     ("archaeology_object_id_unique", "ArchaeologyObject"),
     ("original_asset_id_unique", "OriginalAsset"),
+    ("derived_artifact_id_unique", "DerivedArtifact"),
+    ("reference_corpus_id_unique", "ReferenceCorpus"),
     ("review_decision_id_unique", "ReviewDecision"),
     ("review_round_id_unique", "ReviewRound"),
 )
@@ -34,6 +36,9 @@ INDEXES = (
     ("original_asset_project", "OriginalAsset", ("projectId",)),
     ("original_asset_project_relative", "OriginalAsset", ("projectId", "relativePath")),
     ("original_asset_sha256", "OriginalAsset", ("sha256",)),
+    ("reference_corpus_project_status", "ReferenceCorpus", ("projectId", "status")),
+    ("reference_corpus_project_revision", "ReferenceCorpus", ("projectId", "revision")),
+    ("reference_corpus_build_identity", "ReferenceCorpus", ("buildIdentity",)),
 )
 
 
