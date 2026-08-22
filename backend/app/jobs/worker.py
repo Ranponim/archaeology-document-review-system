@@ -24,6 +24,7 @@ from app.jobs.run_inputs import (
     resolve_body_versions_for_alignment,
     resolve_drawing_index_for_run,
     resolve_plate_index_for_run,
+    resolve_reference_corpus_indexes_for_run,
 )
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.review_round_execution import resolve_review_round_inputs
@@ -175,7 +176,9 @@ def _record_analysis_failure(
     error: Exception,
 ) -> dict:
     import logging
-    logging.getLogger("app.jobs.worker").exception("Analysis run %s failed with exception: %s", analysis_run_id, error)
+    logging.getLogger("app.jobs.worker").exception(
+        "Analysis run %s failed with exception: %s", analysis_run_id, error
+    )
     code, retryable = _normalize_analysis_failure(error)
     try:
         current = review_repo.analysis_status(analysis_run_id)
@@ -215,8 +218,8 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
 
     ReviewRound is re-resolved from Neo4j at execution time. AnalysisRun keeps
     input snapshots for auditability, but those snapshots never override the
-    graph-resident round membership. Round sequence is a workflow label, never
-    DocumentVersion identity.
+    graph-resident round membership. New rounds consume visual authority only
+    from the selected READY ReferenceCorpus; legacy rounds retain PDF mode.
     """
     review_repo = getattr(orchestrator, "review_repo", None)
     if review_repo is None:
@@ -234,6 +237,8 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
     project_id = claim.get("project_id")
     try:
         review_round_id = claim.get("review_round_id")
+        reference_corpus_id: str | None = None
+        run_mode = "legacy_visual_pdf"
 
         if review_round_id:
             project_repo = getattr(orchestrator, "project_repo", None)
@@ -258,6 +263,9 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
                 if resolved_round.drawing is not None
                 else None
             )
+            if resolved_round.reference_corpus is not None:
+                reference_corpus_id = resolved_round.reference_corpus.id
+            run_mode = resolved_round.mode
             version_stage = resolved_round.compatibility_stage
         else:
             # Compatibility path for pre-ReviewRound queued jobs. Preserve the
@@ -300,28 +308,43 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
         version_pages, version_ids = await resolve_body_versions_for_alignment(
             **alignment_kwargs
         )
-        plate_index = await resolve_plate_index_for_run(
-            canonical_repo=getattr(orchestrator, "canonical_repo", None),
-            project_repo=project_repo,
-            plate_version_id=plate_version_id,
-            plate_pdf_path=claim.get("plate_pdf_path"),
-            plate_parser=getattr(orchestrator, "plate_parser", None),
-        )
-        drawing_index = await resolve_drawing_index_for_run(
-            canonical_repo=getattr(orchestrator, "canonical_repo", None),
-            project_repo=project_repo,
-            drawing_version_id=drawing_version_id,
-            drawing_pdf_path=claim.get("drawing_pdf_path"),
-            drawing_parser=getattr(orchestrator, "drawing_parser", None),
-        )
+
+        if run_mode == "reference_corpus":
+            if not reference_corpus_id:
+                raise ValueError("ReferenceCorpus mode has no selected corpus identity")
+            plate_index, drawing_index = await resolve_reference_corpus_indexes_for_run(
+                canonical_repo=getattr(orchestrator, "canonical_repo", None),
+                project_id=project_id,
+                reference_corpus_id=reference_corpus_id,
+            )
+            plate_pdf_path = None
+            drawing_pdf_path = None
+        else:
+            plate_index = await resolve_plate_index_for_run(
+                canonical_repo=getattr(orchestrator, "canonical_repo", None),
+                project_repo=project_repo,
+                plate_version_id=plate_version_id,
+                plate_pdf_path=claim.get("plate_pdf_path"),
+                plate_parser=getattr(orchestrator, "plate_parser", None),
+            )
+            drawing_index = await resolve_drawing_index_for_run(
+                canonical_repo=getattr(orchestrator, "canonical_repo", None),
+                project_repo=project_repo,
+                drawing_version_id=drawing_version_id,
+                drawing_pdf_path=claim.get("drawing_pdf_path"),
+                drawing_parser=getattr(orchestrator, "drawing_parser", None),
+            )
+            plate_pdf_path = claim.get("plate_pdf_path")
+            drawing_pdf_path = claim.get("drawing_pdf_path")
+
         result = await orchestrator.run_proofreading(
             project_id=project_id,
             body_version_id=body_version_id,
             plate_version_id=plate_version_id,
             drawing_version_id=drawing_version_id,
             body_pdf_path=claim.get("body_pdf_path"),
-            plate_pdf_path=claim.get("plate_pdf_path"),
-            drawing_pdf_path=claim.get("drawing_pdf_path"),
+            plate_pdf_path=plate_pdf_path,
+            drawing_pdf_path=drawing_pdf_path,
             enable_vlm=claim.get("enable_vlm", True),
             enable_ai_review=claim.get("enable_ai_review", True),
             version_stage=version_stage,
@@ -333,8 +356,13 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
         )
     except Exception as error:  # noqa: BLE001 - job boundary; normalize
         import traceback
-        print(f"!!! ANALYSIS WORKER ERROR on {analysis_run_id}: {error}\n{traceback.format_exc()}", flush=True)
-        return _record_analysis_failure(review_repo, project_id, analysis_run_id, error)
+        print(
+            f"!!! ANALYSIS WORKER ERROR on {analysis_run_id}: {error}\n{traceback.format_exc()}",
+            flush=True,
+        )
+        return _record_analysis_failure(
+            review_repo, project_id, analysis_run_id, error
+        )
 
     return {
         "analysis_run_id": analysis_run_id,
