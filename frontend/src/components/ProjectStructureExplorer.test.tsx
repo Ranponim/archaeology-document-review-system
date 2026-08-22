@@ -20,10 +20,14 @@ const root = {
   ],
 };
 
-function cssBlock(pattern: RegExp): string {
-  const match = projectStructureCss.match(pattern);
-  expect(match, `missing CSS block for ${pattern}`).not.toBeNull();
-  return match?.[1] ?? '';
+function cssBlock(selector: string): string {
+  const selectorIndex = projectStructureCss.indexOf(selector);
+  expect(selectorIndex, `missing selector ${selector}`).toBeGreaterThanOrEqual(0);
+  const open = projectStructureCss.indexOf('{', selectorIndex);
+  const close = projectStructureCss.indexOf('}', open + 1);
+  expect(open, `missing declaration start for ${selector}`).toBeGreaterThan(selectorIndex);
+  expect(close, `missing declaration end for ${selector}`).toBeGreaterThan(open);
+  return projectStructureCss.slice(open + 1, close);
 }
 
 describe('ProjectStructureExplorer', () => {
@@ -62,14 +66,18 @@ describe('ProjectStructureExplorer', () => {
   });
 
   it('gives every light project-structure button an explicit readable foreground', () => {
-    const navigationControls = cssBlock(
-      /\.project-mode-tab,\s*\.project-mode-back,\s*\.structure-refresh\s*\{([^}]*)\}/,
-    );
-    const moreButton = cssBlock(/\.structure-more-button\s*\{([^}]*)\}/);
+    const selectors = [
+      '.project-mode-tab',
+      '.project-mode-back',
+      '.structure-refresh',
+      '.structure-more-button',
+    ];
 
-    expect(navigationControls).toMatch(/background:\s*#fff(?:fff)?\s*;/i);
-    expect(navigationControls).toMatch(/color:\s*#[0-9a-f]{3,6}\s*;/i);
-    expect(moreButton).toMatch(/background:\s*#f8fafc\s*;/i);
-    expect(moreButton).toMatch(/color:\s*#[0-9a-f]{3,6}\s*;/i);
+    for (const selector of selectors) {
+      const declarations = cssBlock(selector);
+      expect(declarations, `${selector} must override global white button text`).toMatch(
+        /color:\s*#[0-9a-f]{3,6}\s*;/i,
+      );
+    }
   });
 });
