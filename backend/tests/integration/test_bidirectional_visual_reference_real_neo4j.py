@@ -8,7 +8,7 @@ def _seed_graph(driver, scope: str) -> dict[str, str]:
         "project": f"{scope}_project",
         "body": f"{scope}_body_v",
         "plate": f"{scope}_plate_v",
-        "plate_old": f"{scope}_plate_old_v",
+        "plateOld": f"{scope}_plate_old_v",
         "drawing": f"{scope}_drawing_v",
         "object": f"{scope}_obj6",
         "block": f"{scope}_block",
