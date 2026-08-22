@@ -1,0 +1,1 @@
+verification marker for graph-first UI, optional AI/VLM isolation, Adobe handshake, and corpus upload MIME
