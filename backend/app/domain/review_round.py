@@ -9,6 +9,7 @@ class ReviewRound:
     sequence: int
     status: str = "reviewing"
     body_version_id: str | None = None
+    reference_corpus_id: str | None = None
     plate_version_id: str | None = None
     drawing_version_id: str | None = None
     created_at: datetime | str | None = None
