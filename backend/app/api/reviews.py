@@ -11,16 +11,18 @@ from app.api.projects import (
     get_project_repository,
 )
 from app.api.assets import get_visual_asset_service
+from app.api.review_round_contract import (
+    CreateReviewRoundRequest,
+    ReviewRoundListResponse,
+    ReviewRoundResponse,
+)
 from app.api.schemas import (
     CandidateListResponse,
     CandidateResponse,
     CandidateVisualBundle,
-    CreateReviewRoundRequest,
     ReviewDecisionRequest,
     ReviewDecisionResponse,
     ReviewMetricsResponse,
-    ReviewRoundListResponse,
-    ReviewRoundResponse,
     TraceabilityResponse,
 )
 from app.graph.project_repository import (
@@ -89,6 +91,22 @@ async def _resolve_version_for_kind(
             f"project '{project_id}'"
         )
     return resolved
+
+
+def _round_response(round_obj) -> ReviewRoundResponse:
+    return ReviewRoundResponse(
+        id=round_obj.id,
+        project_id=round_obj.project_id,
+        sequence=round_obj.sequence,
+        status=round_obj.status,
+        body_version_id=round_obj.body_version_id,
+        reference_corpus_id=getattr(round_obj, "reference_corpus_id", None),
+        plate_version_id=round_obj.plate_version_id,
+        drawing_version_id=round_obj.drawing_version_id,
+        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
+        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
+        notes=round_obj.notes,
+    )
 
 
 # =============================================================================
@@ -324,6 +342,19 @@ async def create_review_round(
         payload.body_version_id,
         required=True,
     )
+
+    if payload.reference_corpus_id is not None:
+        round_obj = await _run_repository(
+            project_repository.create_review_round,
+            project_id,
+            body.version_id,
+            None,
+            None,
+            payload.notes,
+            payload.reference_corpus_id,
+        )
+        return _round_response(round_obj)
+
     plate = await _resolve_version_for_kind(
         project_repository,
         project_id,
@@ -347,18 +378,7 @@ async def create_review_round(
         drawing.version_id if drawing is not None else None,
         payload.notes,
     )
-    return ReviewRoundResponse(
-        id=round_obj.id,
-        project_id=round_obj.project_id,
-        sequence=round_obj.sequence,
-        status=round_obj.status,
-        body_version_id=round_obj.body_version_id,
-        plate_version_id=round_obj.plate_version_id,
-        drawing_version_id=round_obj.drawing_version_id,
-        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
-        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
-        notes=round_obj.notes,
-    )
+    return _round_response(round_obj)
 
 
 @router.get(
@@ -372,23 +392,7 @@ async def list_review_rounds(
 ) -> ReviewRoundListResponse:
     await _run_repository(project_repository.get_project, project_id)
     rounds = await _run_repository(project_repository.list_review_rounds, project_id)
-    return ReviewRoundListResponse(
-        items=[
-            ReviewRoundResponse(
-                id=r.id,
-                project_id=r.project_id,
-                sequence=r.sequence,
-                status=r.status,
-                body_version_id=r.body_version_id,
-                plate_version_id=r.plate_version_id,
-                drawing_version_id=r.drawing_version_id,
-                created_at=str(r.created_at) if r.created_at is not None else None,
-                approved_at=str(r.approved_at) if r.approved_at is not None else None,
-                notes=r.notes,
-            )
-            for r in rounds
-        ]
-    )
+    return ReviewRoundListResponse(items=[_round_response(round_) for round_ in rounds])
 
 
 @router.get(
@@ -409,18 +413,7 @@ async def get_review_round(
         raise ReviewRoundNotFoundError(
             f"Review round {round_id} not found in project {project_id}"
         )
-    return ReviewRoundResponse(
-        id=round_obj.id,
-        project_id=round_obj.project_id,
-        sequence=round_obj.sequence,
-        status=round_obj.status,
-        body_version_id=round_obj.body_version_id,
-        plate_version_id=round_obj.plate_version_id,
-        drawing_version_id=round_obj.drawing_version_id,
-        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
-        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
-        notes=round_obj.notes,
-    )
+    return _round_response(round_obj)
 
 
 @router.post(
@@ -447,15 +440,4 @@ async def approve_review_round(
         round_obj = await _run_repository(
             project_repository.approve_review_round, project_id, round_id
         )
-    return ReviewRoundResponse(
-        id=round_obj.id,
-        project_id=round_obj.project_id,
-        sequence=round_obj.sequence,
-        status=round_obj.status,
-        body_version_id=round_obj.body_version_id,
-        plate_version_id=round_obj.plate_version_id,
-        drawing_version_id=round_obj.drawing_version_id,
-        created_at=str(round_obj.created_at) if round_obj.created_at is not None else None,
-        approved_at=str(round_obj.approved_at) if round_obj.approved_at is not None else None,
-        notes=round_obj.notes,
-    )
+    return _round_response(round_obj)
