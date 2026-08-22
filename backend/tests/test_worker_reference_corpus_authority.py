@@ -120,5 +120,6 @@ async def test_worker_uses_selected_corpus_graph_and_never_legacy_visual_pdf_res
     assert call["body_version_id"] == "body-v2"
     assert call["plate_version_id"] is None
     assert call["drawing_version_id"] is None
+    assert call["reference_corpus_id"] == "corpus-2"
     assert isinstance(call["plate_index"], PlateIndex)
     assert isinstance(call["drawing_index"], DrawingIndex)
