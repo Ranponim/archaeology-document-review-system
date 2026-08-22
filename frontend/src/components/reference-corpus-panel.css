@@ -1,0 +1,126 @@
+.reference-corpus-panel {
+  margin: 18px 0;
+  padding: 20px;
+  border: 1px solid #d7ded8;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.reference-corpus-header,
+.reference-corpus-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.reference-corpus-header h3 {
+  margin: 4px 0;
+}
+
+.reference-corpus-help,
+.reference-corpus-footer p,
+.reference-source-description,
+.reference-corpus-meta {
+  color: #5f6b63;
+}
+
+.reference-corpus-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reference-corpus-actions button,
+.reference-corpus-footer button {
+  border: 1px solid #cbd5ce;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #1e2520;
+  padding: 9px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reference-corpus-actions button:disabled,
+.reference-corpus-footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reference-corpus-status {
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #eef2ef;
+  color: #344038;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.reference-corpus-status.status-ready {
+  background: #e8f5eb;
+  color: #235c31;
+}
+
+.reference-corpus-status.status-failed,
+.reference-corpus-error {
+  color: #9f2f2f;
+}
+
+.reference-corpus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.reference-source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.reference-source-card {
+  display: flex;
+  min-height: 128px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dfe5e0;
+  border-radius: 12px;
+  background: #f8faf8;
+}
+
+.reference-source-title {
+  color: #1e2520;
+  font-weight: 800;
+}
+
+.reference-source-description {
+  min-height: 38px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.reference-source-card input {
+  max-width: 100%;
+  color: #1e2520;
+}
+
+.reference-corpus-footer {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .reference-source-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reference-corpus-header,
+  .reference-corpus-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
