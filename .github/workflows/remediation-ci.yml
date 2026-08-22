@@ -10,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/source-provenance-remediation-20260818
   workflow_dispatch:
 
 jobs:
