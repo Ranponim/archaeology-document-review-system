@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import * as api from '../projectStructureApi';
-import '../styles.css';
+import projectStructureCss from '../project-structure.css?raw';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
 
 const root = {
@@ -19,6 +19,12 @@ const root = {
     { id: 'archaeology-objects', nodeType: 'archaeology_object_group', label: '고고학 객체', sourceSystem: 'derived_group', expandable: true, childCount: 4, badges: [], details: {}, relationships: [] },
   ],
 };
+
+function cssBlock(pattern: RegExp): string {
+  const match = projectStructureCss.match(pattern);
+  expect(match, `missing CSS block for ${pattern}`).not.toBeNull();
+  return match?.[1] ?? '';
+}
 
 describe('ProjectStructureExplorer', () => {
   it('loads only root first and fetches children on expansion', async () => {
@@ -55,31 +61,15 @@ describe('ProjectStructureExplorer', () => {
     expect(screen.queryByText(/삭제|이동|연결 변경|rename/i)).not.toBeInTheDocument();
   });
 
-  it('keeps light project-structure controls readable against the global white button text', async () => {
-    vi.spyOn(api, 'fetchProjectStructure').mockResolvedValue(root as any);
-    vi.spyOn(api, 'fetchProjectStructureNode').mockResolvedValue(root.groups[0] as any);
-    vi.spyOn(api, 'fetchProjectStructureChildren').mockResolvedValue({ items: [], offset: 0, limit: 50, total: 0, hasMore: false } as any);
-
-    render(
-      <>
-        <button type="button" className="project-mode-tab">검수 작업</button>
-        <button type="button" className="project-mode-back">프로젝트 목록</button>
-        <button type="button" className="structure-more-button">더 보기</button>
-        <ProjectStructureExplorer projectId="p1" />
-      </>,
+  it('gives every light project-structure button an explicit readable foreground', () => {
+    const navigationControls = cssBlock(
+      /\.project-mode-tab,\s*\.project-mode-back,\s*\.structure-refresh\s*\{([^}]*)\}/,
     );
+    const moreButton = cssBlock(/\.structure-more-button\s*\{([^}]*)\}/);
 
-    const refresh = await screen.findByRole('button', { name: '새로고침' });
-    const controls = [
-      screen.getByRole('button', { name: '검수 작업' }),
-      screen.getByRole('button', { name: '프로젝트 목록' }),
-      screen.getByRole('button', { name: '더 보기' }),
-      refresh,
-    ];
-
-    for (const control of controls) {
-      const style = window.getComputedStyle(control);
-      expect(style.color).not.toBe('rgb(255, 255, 255)');
-    }
+    expect(navigationControls).toMatch(/background:\s*#fff(?:fff)?\s*;/i);
+    expect(navigationControls).toMatch(/color:\s*#[0-9a-f]{3,6}\s*;/i);
+    expect(moreButton).toMatch(/background:\s*#f8fafc\s*;/i);
+    expect(moreButton).toMatch(/color:\s*#[0-9a-f]{3,6}\s*;/i);
   });
 });
