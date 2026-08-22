@@ -12,6 +12,7 @@
 .structure-refresh {
   border: 1px solid #cbd5e1;
   background: #fff;
+  color: #1e2520;
   border-radius: 9px;
   padding: 9px 14px;
   cursor: pointer;
@@ -120,6 +121,7 @@
   margin-bottom: 6px;
   border: 1px solid #cbd5e1;
   background: #f8fafc;
+  color: #1e2520;
   border-radius: 7px;
   padding: 6px 10px;
   cursor: pointer;
