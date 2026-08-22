@@ -342,6 +342,7 @@ async def _run_analysis_worker(analysis_run_id: str, orchestrator: Any) -> dict:
             body_version_id=body_version_id,
             plate_version_id=plate_version_id,
             drawing_version_id=drawing_version_id,
+            reference_corpus_id=reference_corpus_id,
             body_pdf_path=claim.get("body_pdf_path"),
             plate_pdf_path=plate_pdf_path,
             drawing_pdf_path=drawing_pdf_path,
