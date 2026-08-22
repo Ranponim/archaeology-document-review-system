@@ -4,7 +4,7 @@
 
 **Goal:** Make ReviewRound execute against body PDF + READY ReferenceCorpus, perform deterministic graph review as the authority, and invoke LLM/VLM only for explicitly escalated semantic findings with both optional features default OFF.
 
-**Architecture:** New ReviewRounds bind exactly one body `DocumentVersion` and one immutable `ReferenceCorpus`; legacy plate/drawing-PDF rounds remain compatibility-only. The worker resolves the selected corpus, links body archaeology objects to corpus visuals only through deterministic strong identifiers, executes a four-layer graph rule engine, and emits pending candidates. Optional AI/VLM receives only semantic-review bundles and cannot mutate canonical graph identity or relationships.
+**Architecture:** New ReviewRounds bind exactly one body `DocumentVersion` and one immutable `ReferenceCorpus`; legacy plate/drawing-PDF rounds remain compatibility-only. The worker resolves the selected corpus, links body archaeology objects to corpus visuals only through deterministic strong identifiers, executes a four-layer graph rule engine, and emits pending candidates. Optional AI/VLM receives only semantic-review bundles and stores separate auditable `AIReviewFinding` records; it cannot mutate canonical graph identity or relationships.
 
 **Tech Stack:** Python 3.12, FastAPI, Neo4j 5.26, RQ/Redis, existing proofreading orchestrator/repositories, React/TypeScript/Vitest.
 
@@ -17,36 +17,33 @@
 - Mixed new/legacy authority is rejected.
 - Neo4j canonical graph and deterministic rules are authoritative; AI/VLM cannot create or mutate identity, `RESOLVES_TO`, `DEPICTS`, corpus membership, or provenance.
 - Core review completes with `enable_ai_review=false` and `enable_vlm=false`.
-- AI/VLM defaults are OFF in API/client/UI.
+- AI/VLM defaults are OFF in backend API, frontend client, and UI.
 - Ambiguous graph identity fails closed; automatic proposed text requires unique target, unique body edit location, and complete provenance.
-- All findings remain `pending_review` until human decision.
+- All correction findings remain `pending_review` until human decision.
 - Legacy ReviewRounds remain readable/executable through explicit compatibility code until later migration removal.
+- Existing deterministic visual-reference behavior must not be duplicated by a second generic regex candidate path.
 
 ---
 
 ## File Structure
 
 - Modify `backend/app/domain/review_round.py`: add `reference_corpus_id` while retaining legacy fields for compatibility.
-- Modify `backend/app/graph/review_project_repository.py`: create/resolve new corpus rounds and reject mixed authority.
+- Create `backend/app/domain/ai_review_finding.py`: isolated AI/VLM audit model; canonical graph models remain untouched by model opinion.
+- Modify `backend/app/graph/review_project_repository.py`: create/resolve corpus rounds and reject mixed authority.
 - Modify `backend/app/services/review_round_execution.py`: resolve body + corpus and expose explicit mode.
-- Modify `backend/app/jobs/run_inputs.py`: stop PDF fallback for corpus-mode plate/drawing authority.
+- Modify `backend/app/jobs/run_inputs.py`: stop visual-PDF fallback in corpus mode.
 - Modify `backend/app/jobs/worker.py`: branch corpus-mode vs legacy-mode input resolution.
 - Create `backend/app/services/corpus_object_linker.py`: deterministic visual-to-object linking scoped to selected corpus/run.
 - Create `backend/app/graph/graph_review_repository.py`: graph queries for integrity, corpus-scoped reference resolution, coverage, consistency, and scoped resolution evidence.
-- Create `backend/app/services/graph_rules/corpus_integrity.py`.
-- Create `backend/app/services/graph_rules/reference_resolution.py`.
-- Create `backend/app/services/graph_rules/visual_coverage.py`.
-- Create `backend/app/services/graph_rules/visual_consistency.py`.
-- Create `backend/app/services/graph_rules/semantic_escalation.py`.
-- Create `backend/app/services/graph_rules/engine.py`.
-- Modify `backend/app/services/strict_rule_engine.py`: compose the graph rule engine while preserving existing candidate intent compatibility.
-- Modify `backend/app/services/proofreading_orchestrator.py`: run graph-first review and optional semantic escalation.
-- Modify `backend/app/services/orchestrator_factory.py`: wire corpus/graph repositories and optional AI/VLM collaborators.
-- Modify `backend/app/api/review_run_contract.py`, `backend/app/api/review_round_runs.py`, and schemas: default AI/VLM OFF and keep run input strict.
-- Modify `frontend/src/api.ts` and `frontend/src/api.review-round.test.ts`: corpus-aware ReviewRound contract and OFF defaults.
-- Modify `frontend/src/pages/ProjectDetailPage.tsx`: choose READY corpus, create new corpus-mode round, and show graph review always enabled with optional AI/VLM switches OFF.
-- Modify candidate UI helpers to distinguish Graph confirmed / AI reviewed / Human confirmation required.
-- Test with new backend unit/integration tests and frontend ReviewRound/component tests.
+- Create `backend/app/services/graph_rules/models.py`, `corpus_integrity.py`, `reference_resolution.py`, `visual_coverage.py`, `visual_consistency.py`, `semantic_escalation.py`, and `engine.py`.
+- Modify `backend/app/services/strict_rule_engine.py`: compose graph rules while preserving existing candidate intent compatibility.
+- Modify `backend/app/services/proofreading_orchestrator.py`: graph-first execution followed by optional semantic review.
+- Modify `backend/app/services/orchestrator_factory.py`: wire corpus/graph collaborators.
+- Modify `backend/app/api/review_run_contract.py`, `backend/app/api/review_round_runs.py`, and relevant schemas: strict run input, AI/VLM defaults OFF.
+- Modify `backend/app/services/ai_review_service.py` and `backend/app/services/vlm_review_service.py`: semantic-only bounded inputs and separate audit output.
+- Modify `frontend/src/api.ts`, `frontend/src/api.review-round.test.ts`, and `frontend/src/pages/ProjectDetailPage.tsx`: corpus-aware rounds and OFF defaults.
+- Modify candidate presentation helpers/tests to distinguish Graph confirmed, AI reviewed, and Human confirmation required.
+- Verify via `.github/workflows/remediation-ci.yml`.
 
 ---
 
@@ -60,10 +57,10 @@
 - Test: `backend/tests/integration/test_p0a_run_input_integrity.py`
 
 **Interfaces:**
-- Produces: `ReviewRound.reference_corpus_id`, mode inference (`reference_corpus` vs `legacy_pdf`), and repository validation.
-- Consumes: Plan A READY corpus repository state.
+- Produces: `ReviewRound.reference_corpus_id` and explicit mode semantics (`reference_corpus` vs `legacy_pdf`).
+- Consumes: Plan A READY corpus state.
 
-- [ ] **Step 1: Write RED tests for the new authority contract**
+- [ ] **Step 1: Write new-mode RED tests**
 
 ```python
 def test_new_round_accepts_body_plus_ready_same_project_corpus(repository, body, ready_corpus):
@@ -87,25 +84,21 @@ def test_new_round_rejects_mixed_corpus_and_legacy_visual_versions(repository, b
         )
 ```
 
-Also cover non-READY corpus and cross-project corpus rejection.
+Also cover non-READY and cross-project corpus rejection.
 
 - [ ] **Step 2: Run RED**
 
 Run: `cd backend && pytest -q tests/test_review_round_reference_corpus.py`
-Expected: FAIL because ReviewRound/repository lack `reference_corpus_id`.
+Expected: FAIL because `reference_corpus_id` is not supported.
 
-- [ ] **Step 3: Implement the dual-mode repository contract**
+- [ ] **Step 3: Implement dual-mode creation/read contract**
 
-New mode requires `body_version_id + reference_corpus_id`; legacy mode permits the historical body/plate/drawing set only for existing compatibility paths. Mixed mode is always rejected. Corpus lookup must prove same project and `status='ready'` before the round node is created.
+New mode requires `body_version_id + reference_corpus_id`, validates body ownership/kind and corpus ownership/READY, persists `(round)-[:USES_REFERENCE_CORPUS]->(corpus)`, and does not create plate/drawing version edges. Legacy mode preserves historical complete body/plate/drawing relationships. Mixed mode always rejects. `PRECEDES` remains the only round-order authority.
 
-Persist `(round)-[:USES_REFERENCE_CORPUS]->(corpus)` and keep existing `PRECEDES` semantics untouched.
+- [ ] **Step 4: Run GREEN and commit**
 
-- [ ] **Step 4: Run GREEN**
-
-Run: `cd backend && pytest -q tests/test_review_round_reference_corpus.py tests/integration/test_p0a_run_input_integrity.py`
+Run: `cd backend && pytest -q tests/test_review_round_reference_corpus.py tests/integration/test_p0a_run_input_integrity.py tests/test_review_round_repository.py`
 Expected: PASS.
-
-- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/app/domain/review_round.py backend/app/graph/review_project_repository.py backend/app/api/schemas.py backend/tests/test_review_round_reference_corpus.py backend/tests/integration/test_p0a_run_input_integrity.py
@@ -121,7 +114,8 @@ git commit -m "feat(review): bind rounds to reference corpora"
 - Modify: `backend/app/jobs/run_inputs.py`
 - Modify: `backend/app/jobs/worker.py`
 - Test: `backend/tests/test_review_round_execution.py`
-- Test: `backend/tests/test_run_inputs_reference_corpus.py`
+- Create: `backend/tests/test_run_inputs_reference_corpus.py`
+- Test: `backend/tests/test_worker_review_round_authority.py`
 
 **Interfaces:**
 - Produces: `ResolvedReviewRoundInputs(body, reference_corpus, mode, compatibility_stage)`.
@@ -131,30 +125,30 @@ git commit -m "feat(review): bind rounds to reference corpora"
 
 ```python
 @pytest.mark.asyncio
-async def test_corpus_mode_uses_graph_indexes_not_plate_pdf_fallback(...):
-    resolved = await resolve_review_round_inputs(...)
+async def test_corpus_mode_resolves_selected_reference_corpus(...):
+    resolved = resolve_review_round_inputs(project_repo, "p1", "r1")
     assert resolved.mode == "reference_corpus"
-    assert resolved.reference_corpus.id == corpus.id
+    assert resolved.reference_corpus.id == "c1"
 ```
 
-Add a test that missing/invalid selected corpus fails before proofreading and that legacy round still resolves old plate/drawing versions.
+Add tests that invalid corpus fails before proofreading and legacy rounds still resolve their old visual DocumentVersions.
 
 - [ ] **Step 2: Run RED**
 
 Run: `cd backend && pytest -q tests/test_review_round_execution.py tests/test_run_inputs_reference_corpus.py`
-Expected: FAIL.
+Expected: FAIL until mode-aware input resolution exists.
 
-- [ ] **Step 3: Implement explicit mode branching**
+- [ ] **Step 3: Implement explicit worker mode branching**
 
-In `worker.py`, corpus mode resolves body pages normally, loads Plate/Drawing indexes only from the selected corpus graph, and never calls `_resolve_asset_pdf_path` for visual authority. Keep the existing PDF path only inside the legacy branch.
+Corpus mode resolves body pages normally, gets visual indexes only from the selected corpus graph, and never invokes `_resolve_asset_pdf_path` for plate/drawing authority. Legacy mode retains the existing visual PDF compatibility path.
 
 - [ ] **Step 4: Run GREEN and commit**
 
-Run: `cd backend && pytest -q tests/test_review_round_execution.py tests/test_run_inputs_reference_corpus.py tests/test_worker_review_round.py`
+Run: `cd backend && pytest -q tests/test_review_round_execution.py tests/test_run_inputs_reference_corpus.py tests/test_worker_review_round_authority.py tests/test_analysis_worker.py`
 Expected: PASS.
 
 ```bash
-git add backend/app/services/review_round_execution.py backend/app/jobs/run_inputs.py backend/app/jobs/worker.py backend/tests/test_review_round_execution.py backend/tests/test_run_inputs_reference_corpus.py
+git add backend/app/services/review_round_execution.py backend/app/jobs/run_inputs.py backend/app/jobs/worker.py backend/tests/test_review_round_execution.py backend/tests/test_run_inputs_reference_corpus.py backend/tests/test_worker_review_round_authority.py
 git commit -m "feat(review): resolve corpus-mode run inputs"
 ```
 
@@ -170,14 +164,14 @@ git commit -m "feat(review): resolve corpus-mode run inputs"
 
 **Interfaces:**
 - Produces: `CorpusObjectLinker.link(project_id, corpus_id, objects) -> LinkResult`.
-- Consumes: canonical visual descriptors from Plan A and body `ArchaeologyObjectData`.
+- Consumes: corpus visual descriptors and body `ArchaeologyObjectData`.
 
 - [ ] **Step 1: Write RED uniqueness tests**
 
 ```python
 def test_unique_strong_identifier_creates_depicts_link(linker):
     result = linker.link("p1", "c1", [object_6_tomb()])
-    assert result.created == [("PlatePanel", "plate-panel:c1:45:1", object_6_tomb().object_id)]
+    assert result.created
 
 
 def test_multiple_strong_matches_remain_ambiguous(linker):
@@ -193,11 +187,11 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement deterministic linking**
 
-Reuse the existing strong-identifier normalization semantics from canonical matching, but make all queries corpus scoped. A weak numeric match alone must never create `DEPICTS`. Persist only unique deterministic links and return ambiguity metadata for later human/semantic review.
+Reuse existing strong-identifier normalization semantics but scope all visual queries to `project_id + corpus_id`. Weak numeric matches alone never create `DEPICTS`. Persist only unique strong matches; ambiguous assets remain explicit review metadata.
 
-- [ ] **Step 4: Run unit + Neo4j GREEN and commit**
+- [ ] **Step 4: Run GREEN and commit**
 
-Run: `cd backend && pytest -q tests/test_corpus_object_linker.py tests/integration/test_reference_corpus_real_neo4j.py`
+Run: `cd backend && pytest -q tests/test_corpus_object_linker.py tests/test_depicts_links.py tests/integration/test_reference_corpus_real_neo4j.py`
 Expected: PASS.
 
 ```bash
@@ -212,19 +206,15 @@ git commit -m "feat(graph): link corpus visuals to body objects"
 **Files:**
 - Create: `backend/app/graph/graph_review_repository.py`
 - Test: `backend/tests/test_graph_review_repository.py`
-- Test: `backend/tests/integration/test_graph_first_review_real_neo4j.py`
+- Create: `backend/tests/integration/test_graph_first_review_real_neo4j.py`
 
 **Interfaces:**
-- Produces query methods: `validate_corpus_integrity`, `resolve_reference`, `visuals_for_object`, `references_for_object`, `save_resolution_evidence`.
-- Consumers: graph rules.
+- Produces: `validate_corpus_integrity`, `resolve_reference`, `visuals_for_object`, `references_for_object`, `save_resolution_evidence`.
+- Consumers: Task 5 graph rules.
 
-- [ ] **Step 1: Write RED repository tests**
+- [ ] **Step 1: Write repository RED tests**
 
-Cover:
-- resolving `Reference(type='plate', number='45')` only inside selected corpus;
-- V1/V2 results never overwrite each other;
-- missing and ambiguous statuses;
-- cross-project target exclusion.
+Cover selected-corpus resolution, V1/V2 separation, missing/ambiguous status, and cross-project exclusion.
 
 ```python
 def test_resolution_is_corpus_scoped(repository):
@@ -238,9 +228,9 @@ def test_resolution_is_corpus_scoped(repository):
 Run: `cd backend && pytest -q tests/test_graph_review_repository.py`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement Cypher behind focused methods**
+- [ ] **Step 3: Implement focused Cypher methods**
 
-No rule module may embed Cypher. Save `RESOLVES_TO` evidence with `analysisRunId` and `referenceCorpusId` properties or an equivalent scoped evidence node/relationship that preserves both run and corpus identity.
+Rule modules contain no Cypher. Persist resolution evidence scoped by both `analysisRunId` and `referenceCorpusId` so reruns and corpus revisions cannot overwrite each other's meaning.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -271,7 +261,7 @@ git commit -m "feat(graph): add corpus-scoped review queries"
 - Produces: `GraphRuleFinding` and `GraphRuleEngine.run(...) -> list[GraphRuleFinding]`.
 - Consumes: Task 4 repository.
 
-- [ ] **Step 1: Define and test the shared finding model**
+- [ ] **Step 1: Define/test the finding model**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -289,33 +279,31 @@ class GraphRuleFinding:
     requires_ai: bool = False
 ```
 
-Run: `cd backend && pytest -q tests/test_graph_rule_engine.py::test_finding_model`
-Expected: RED before implementation, GREEN after model creation.
+- [ ] **Step 2: L1 corpus-integrity RED/GREEN**
 
-- [ ] **Step 2: Add L1 corpus-integrity rule tests and implementation**
+Hard failures: non-READY corpus, duplicate visual number, missing mandatory provenance/artifact, cross-project relationship, empty canonical graph. These stop review rather than becoming ordinary correction candidates.
 
-Hard failures include duplicate visual numbers, missing required provenance/artifacts, cross-project edges, empty graph, or non-READY corpus. These stop graph review rather than becoming ordinary correction candidates.
+- [ ] **Step 3: L2 reference-resolution RED/GREEN**
 
-- [ ] **Step 3: Add L2 reference-resolution tests and implementation**
+Resolve only selected corpus. Emit deterministic missing/invalid findings; graph ambiguity cannot be delegated to AI to choose identity.
 
-Emit deterministic findings for `MISSING`/`INVALID`; resolved references persist scoped evidence. Canonical ambiguity must not be delegated to AI for identity selection.
+- [ ] **Step 4: L3 coverage/consistency RED/GREEN**
 
-- [ ] **Step 4: Add L3 coverage/consistency tests and implementation**
-
-Cover the accepted semantics already implemented previously:
+Preserve approved semantics:
 - missing visual reference;
 - blank placeholder fill;
-- wrong-target replacement only when the existing reference is proven wrong/unresolved and exactly one correct same-type target exists;
-- multiple targets -> `proposed_text=None`;
-- multiple insertion locations -> `proposed_text=None`.
+- wrong-target replacement only when current target is proven wrong/unresolved and exactly one correct same-type target exists;
+- multiple targets => `proposed_text=None`;
+- multiple insertion locations => `proposed_text=None`;
+- all candidates remain pending human review.
 
-- [ ] **Step 5: Add L4 semantic escalation tests and implementation**
+- [ ] **Step 5: L4 semantic escalation RED/GREEN**
 
-Emit `SEMANTIC_REVIEW_REQUIRED` with `requires_ai=True` for visual geometry/orientation/nuanced claims the graph cannot prove. With AI disabled this remains a pending human-review finding.
+Emit `SEMANTIC_REVIEW_REQUIRED` with `requires_ai=True` only for geometry/orientation/nuanced semantic claims the graph cannot prove. With AI/VLM disabled this remains a human-review finding and does not fail the run.
 
-- [ ] **Step 6: Run GREEN and commit**
+- [ ] **Step 6: Run full graph-rule GREEN and commit**
 
-Run: `cd backend && pytest -q tests/test_graph_rule_engine.py`
+Run: `cd backend && pytest -q tests/test_graph_rule_engine.py tests/test_visual_reference_coverage.py tests/test_bidirectional_coverage_rule_engine.py`
 Expected: PASS.
 
 ```bash
@@ -331,15 +319,15 @@ git commit -m "feat(review): add graph-first rule engine"
 - Modify: `backend/app/services/strict_rule_engine.py`
 - Modify: `backend/app/services/proofreading_orchestrator.py`
 - Modify: `backend/app/services/orchestrator_factory.py`
-- Modify: `backend/app/services/visual_reference_coverage.py` as needed to delegate corpus-mode behavior rather than duplicate it.
+- Modify: `backend/app/services/visual_reference_coverage.py` only where corpus mode delegates to the new graph engine.
 - Test: `backend/tests/test_graph_first_orchestrator.py`
 - Test: `backend/tests/test_bidirectional_coverage_rule_engine.py`
 
 **Interfaces:**
-- Produces graph-first candidate generation while preserving legacy behavior.
-- Consumes Tasks 3-5.
+- Produces: graph-first candidate generation for corpus rounds and unchanged legacy compatibility behavior.
+- Consumes: Tasks 3-5.
 
-- [ ] **Step 1: Write RED orchestration tests**
+- [ ] **Step 1: Write orchestration RED tests**
 
 ```python
 @pytest.mark.asyncio
@@ -349,7 +337,7 @@ async def test_graph_only_run_completes_with_ai_and_vlm_disabled(orchestrator):
     assert any(c.rule_category == "visual_reference_missing" for c in result.candidates)
 ```
 
-Also assert blank-reference findings are not duplicated by generic regex and graph coverage paths.
+Also assert a blank reference is not emitted once by generic regex and again by graph coverage.
 
 - [ ] **Step 2: Run RED**
 
@@ -358,15 +346,15 @@ Expected: FAIL until graph engine is wired.
 
 - [ ] **Step 3: Integrate in strict order**
 
-Run body parse/object resolution -> corpus object linking -> graph rules -> candidate conversion -> optional semantic review. Corpus-mode uses the new engine; legacy mode keeps the existing compatibility path. Deduplicate by stable finding fingerprint.
+Body parse/object resolution -> corpus object linker -> graph rules -> stable-fingerprint candidate conversion -> optional semantic review. Corpus mode uses the new graph engine; legacy mode retains the old compatibility path. Deterministic graph findings never need AI to become candidates.
 
 - [ ] **Step 4: Run GREEN and commit**
 
-Run: `cd backend && pytest -q tests/test_graph_first_orchestrator.py tests/test_bidirectional_coverage_rule_engine.py tests/test_visual_reference_coverage.py`
+Run: `cd backend && pytest -q tests/test_graph_first_orchestrator.py tests/test_bidirectional_coverage_rule_engine.py tests/test_visual_reference_coverage.py tests/test_proofreading_orchestrator.py tests/test_production_orchestrator_assembly.py`
 Expected: PASS.
 
 ```bash
-git add backend/app/services/strict_rule_engine.py backend/app/services/proofreading_orchestrator.py backend/app/services/orchestrator_factory.py backend/app/services/visual_reference_coverage.py backend/tests/test_graph_first_orchestrator.py backend/tests/test_bidirectional_coverage_rule_engine.py
+git add backend/app/services/strict_rule_engine.py backend/app/services/proofreading_orchestrator.py backend/app/services/orchestrator_factory.py backend/app/services/visual_reference_coverage.py backend/tests/test_graph_first_orchestrator.py
 git commit -m "feat(review): run graph authority before optional ai"
 ```
 
@@ -375,18 +363,21 @@ git commit -m "feat(review): run graph authority before optional ai"
 ### Task 7: Optional AI/VLM escalation with OFF defaults and non-fatal failures
 
 **Files:**
+- Create: `backend/app/domain/ai_review_finding.py`
 - Modify: `backend/app/api/review_run_contract.py`
 - Modify: `backend/app/api/review_round_runs.py`
 - Modify: `backend/app/services/ai_review_service.py`
 - Modify: `backend/app/services/vlm_review_service.py`
-- Modify: `backend/app/domain/review_models.py` or create focused AI finding model if existing model cannot represent audit fields cleanly.
 - Test: `backend/tests/test_optional_ai_review.py`
-- Test: `backend/tests/test_review_round_runs.py`
+- Test: `backend/tests/test_review_round_run_contract.py`
+- Test: `backend/tests/test_strict_review_round_run_api.py`
+- Test: `backend/tests/test_ai_review_service.py`
+- Test: `backend/tests/test_vlm_review_service.py`
 
 **Interfaces:**
-- Produces default OFF API flags, semantic-only AI/VLM dispatch, auditable AI findings, and warning-only optional failures.
+- Produces: `AIReviewFindingData`, default OFF flags, semantic-only AI/VLM dispatch, warning-only optional failures.
 
-- [ ] **Step 1: Write RED default/off tests**
+- [ ] **Step 1: Write default-OFF RED tests**
 
 ```python
 def test_run_flags_default_off():
@@ -395,28 +386,28 @@ def test_run_flags_default_off():
     assert payload.enable_vlm is False
 ```
 
-Add tests that deterministic findings are never sent to AI, semantic findings are sent only when enabled, and an AI timeout does not erase/abort graph findings.
+Add tests that deterministic findings are not sent to model services; semantic findings are dispatched only when enabled; an AI/VLM timeout preserves all graph findings and returns warnings rather than a core failure.
 
 - [ ] **Step 2: Run RED**
 
-Run: `cd backend && pytest -q tests/test_optional_ai_review.py tests/test_review_round_runs.py`
-Expected: FAIL because current defaults are ON/dispatch is broader.
+Run: `cd backend && pytest -q tests/test_optional_ai_review.py tests/test_review_round_run_contract.py tests/test_strict_review_round_run_api.py`
+Expected: FAIL because current defaults/dispatch differ.
 
-- [ ] **Step 3: Implement semantic-only dispatch and audit record**
+- [ ] **Step 3: Implement isolated AI audit model and bounded review bundle**
 
-Build a bounded AI review bundle containing source text, object identity, selected canonical target IDs/render metadata, graph path/evidence, deterministic finding, and requested checks. Store model/provider/promptVersion/inputHash/confidence/verdict/rationale/proposedText separately from canonical nodes.
+`AIReviewFindingData` stores provider/model/prompt_version/input_hash/confidence/verdict/rationale/proposed_text and links to candidate/evidence/object IDs. The review bundle contains source text, already-resolved canonical target/render metadata, graph evidence/path, deterministic finding, and requested checks only.
 
 - [ ] **Step 4: Make optional failures non-fatal**
 
-Graph-successful runs finish with warnings when AI/VLM times out, rate-limits, or is unavailable. Core corpus/body/graph failures remain fatal.
+Graph-successful runs complete with optional-review warnings on timeout/rate limit/unavailability. Body/corpus/graph failures remain fatal.
 
 - [ ] **Step 5: Run GREEN and commit**
 
-Run: `cd backend && pytest -q tests/test_optional_ai_review.py tests/test_review_round_runs.py`
+Run: `cd backend && pytest -q tests/test_optional_ai_review.py tests/test_review_round_run_contract.py tests/test_strict_review_round_run_api.py tests/test_ai_review_service.py tests/test_vlm_review_service.py tests/test_graph_grounded_ai.py`
 Expected: PASS.
 
 ```bash
-git add backend/app/api/review_run_contract.py backend/app/api/review_round_runs.py backend/app/services/ai_review_service.py backend/app/services/vlm_review_service.py backend/app/domain/review_models.py backend/tests/test_optional_ai_review.py backend/tests/test_review_round_runs.py
+git add backend/app/domain/ai_review_finding.py backend/app/api/review_run_contract.py backend/app/api/review_round_runs.py backend/app/services/ai_review_service.py backend/app/services/vlm_review_service.py backend/tests/test_optional_ai_review.py
 git commit -m "feat(ai): make semantic review optional and isolated"
 ```
 
@@ -428,43 +419,35 @@ git commit -m "feat(ai): make semantic review optional and isolated"
 - Modify: `frontend/src/api.ts`
 - Modify: `frontend/src/api.review-round.test.ts`
 - Modify: `frontend/src/pages/ProjectDetailPage.tsx`
-- Create or modify: `frontend/src/pages/ProjectDetailPage.test.tsx`
+- Create: `frontend/src/pages/ProjectDetailPage.test.tsx` if no focused page test exists.
 - Modify: `frontend/src/candidateIntent.ts`
 - Modify: `frontend/src/candidateIntent.test.ts`
 - Modify: `frontend/src/styles.css`
 
 **Interfaces:**
-- Produces READY-corpus selection, corpus-mode round creation, and OFF-by-default semantic-review switches.
-- Consumes Plan A corpus API and Task 1/7 backend contracts.
+- Produces: READY-corpus selection, corpus-mode round creation, and OFF-by-default optional deep-review switches.
+- Consumes: Plan A corpus API and Tasks 1/7 backend contracts.
 
-- [ ] **Step 1: Write frontend RED tests for the new creation payload/defaults**
+- [ ] **Step 1: Write frontend RED tests for new payload/defaults**
 
-```ts
-it('creates a round with body + reference corpus and no visual document versions', async () => {
-  // assert request body includes body_version_id/reference_corpus_id only
-})
-
-it('defaults AI and VLM deep review to off', () => {
-  // render page and assert both checkboxes are unchecked
-})
-```
+Assert round creation sends `body_version_id + reference_corpus_id + notes` only, and AI/VLM controls are unchecked by default.
 
 - [ ] **Step 2: Run RED**
 
 Run: `cd frontend && npm test -- --run src/api.review-round.test.ts src/pages/ProjectDetailPage.test.tsx`
-Expected: FAIL on old plate/drawing round contract and ON defaults.
+Expected: FAIL on old plate/drawing contract and ON defaults.
 
-- [ ] **Step 3: Implement corpus selection and simplified round modal**
+- [ ] **Step 3: Implement corpus selection and simplified round creation**
 
-New round UI selects body PDF and READY ReferenceCorpus. Remove new `reusePlate/reuseDrawing/customPlate/customDrawing` authority controls from corpus-mode creation. Legacy rounds may display their historic assets read-only.
+New rounds select body PDF and a READY ReferenceCorpus. Remove new `reusePlate/reuseDrawing/customPlate/customDrawing` controls for corpus-mode creation. Legacy rounds display historical visual DocumentVersion IDs read-only.
 
 - [ ] **Step 4: Make execution copy graph-first**
 
-Display `Graph 기반 구조/참조 검수` as always enabled and show `AI 문맥 심화검수`, `VLM 도판·도면 시각 심화검수` as optional unchecked controls.
+Show `Graph 기반 구조/참조 검수` as always enabled and `AI 문맥 심화검수`, `VLM 도판·도면 시각 심화검수` as optional unchecked controls.
 
-- [ ] **Step 5: Distinguish finding provenance**
+- [ ] **Step 5: Distinguish finding provenance explicitly**
 
-Candidate UI must render Graph confirmed / AI reviewed / Human confirmation required from explicit finding metadata, not infer authority from free-form text.
+Render Graph confirmed / AI reviewed / Human confirmation required from explicit metadata rather than free-form text inference.
 
 - [ ] **Step 6: Run frontend GREEN and commit**
 
@@ -481,40 +464,31 @@ git commit -m "feat(ui): make review rounds graph first"
 ### Task 9: Full graph-first E2E, regression suite, CI and push gate
 
 **Files:**
+- Create: `backend/tests/test_graph_first_review_e2e.py`
 - Test: `backend/tests/integration/test_graph_first_review_real_neo4j.py`
 - Test: `backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py`
-- Test: `backend/tests/test_graph_first_review_e2e.py`
-- Modify `.github/workflows/review-remediation-ci.yml` only if current commands omit the new tests.
+- Modify: `.github/workflows/remediation-ci.yml` only if current commands omit new tests.
 
 **Interfaces:**
-- Produces final verification evidence for the feature branch.
+- Produces: final verification evidence for the feature branch.
 
-- [ ] **Step 1: Add E2E scenario**
+- [ ] **Step 1: Add end-to-end graph-only scenario**
 
-Exercise:
-1. project exists;
-2. READY ReferenceCorpus from fixture INDD/Links/AI build;
-3. upload body PDF;
-4. create ReviewRound(body + corpus);
-5. run with AI/VLM OFF;
-6. resolve references against selected corpus;
-7. detect one missing reference and one wrong reference;
-8. assert all generated candidates are pending human review;
-9. assert no AI collaborator was called.
+Exercise READY ReferenceCorpus -> body PDF -> ReviewRound(body+corpus) -> run AI/VLM OFF -> reference resolution -> one missing ref + one wrong ref -> pending candidates. Assert no AI/VLM collaborator call and corpus-scoped resolution evidence.
 
 - [ ] **Step 2: Run focused graph-first backend tests**
 
-Run the Task 1-7 test files together.
+Run all Task 1-7 new test files together.
 Expected: PASS.
 
 - [ ] **Step 3: Run complete backend hermetic suite**
 
-Run the repository's existing backend CI test command.
-Expected: all existing and new hermetic tests PASS; pre-existing warnings only.
+Run the exact backend command from `.github/workflows/remediation-ci.yml`.
+Expected: all existing and new hermetic tests PASS; only known non-failing warnings remain.
 
 - [ ] **Step 4: Run real Neo4j suite**
 
-Run the repository's existing Neo4j E2E command including both reference-corpus and graph-first integration tests.
+Run the exact Neo4j E2E command from `.github/workflows/remediation-ci.yml`, including reference-corpus and graph-first integration tests.
 Expected: PASS.
 
 - [ ] **Step 5: Run complete frontend verification**
@@ -522,14 +496,10 @@ Expected: PASS.
 Run: `cd frontend && npm ci && npm run typecheck && npm test -- --run && npm run build`
 Expected: PASS.
 
-- [ ] **Step 6: Push feature branch and inspect fresh GitHub Actions**
+- [ ] **Step 6: Push and inspect fresh GitHub Actions**
 
-```bash
-git push origin feature/source-provenance-remediation-20260818
-```
+Push `feature/source-provenance-remediation-20260818`, then inspect the workflow run attached to the fresh head SHA. Do not claim completion until required backend hermetic, frontend, and real Neo4j jobs are green.
 
-Wait for the fresh workflow run associated with the pushed head SHA. Inspect backend hermetic, frontend, and real Neo4j jobs. Do not claim completion until every required job is green.
+- [ ] **Step 7: Record final evidence**
 
-- [ ] **Step 7: Final verification record**
-
-Record current branch head SHA, workflow run ID, per-job pass counts, and any non-failing warnings. Keep PR #1 draft unless the user separately asks to merge or mark ready.
+Record feature head SHA, workflow run ID, per-job test counts, and warnings. Keep PR #1 draft and unmerged unless the user separately asks otherwise.
