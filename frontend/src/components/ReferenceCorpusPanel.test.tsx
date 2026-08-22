@@ -35,9 +35,11 @@ describe('ReferenceCorpusPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: '새 기준자료 구축' }));
 
     const input = screen.getByLabelText('도판 INDD 파일') as HTMLInputElement;
+    await waitFor(() => expect(input).toBeEnabled());
     fireEvent.change(input, { target: { files: [new File(['x'], 'plates.indd')] } });
 
     await waitFor(() => expect(upload).toHaveBeenCalledWith('p1', 'c1', 'plate_layout', expect.any(File)));
+    await waitFor(() => expect(screen.getByRole('button', { name: '기준 그래프 구축' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '기준 그래프 구축' }));
     expect(await screen.findByText('READY')).toBeInTheDocument();
   });
