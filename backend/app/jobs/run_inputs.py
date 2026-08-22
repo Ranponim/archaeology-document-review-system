@@ -1,15 +1,23 @@
 """Shared proofreading job-input resolution.
 
 ReviewRound runs compare the current body with its immediate predecessor via
-ReviewRound PRECEDES. Legacy injected/direct-version workers retain the old
-1차/2차/3차/final comparison behavior only for backward compatibility.
+ReviewRound PRECEDES. New rounds load visual authority only from their selected
+ReferenceCorpus. Legacy injected/direct-version workers retain the old
+1차/2차/3차/final and visual-PDF behavior only for backward compatibility.
 """
 from pathlib import Path
 import re
+from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
 from app.config import DATA_ROOT
+from app.domain.canonical_models import (
+    DrawingData,
+    DrawingRegionData,
+    PlateData,
+    PlatePanelData,
+)
 from app.domain.document_structure import ParsedPage
 from app.domain.models import VersionInput
 from app.graph.project_repository import DocumentVersionNotFoundError
@@ -42,6 +50,160 @@ def resolve_stored_pdf_path(version: VersionInput) -> Path | None:
     if Path(version.uri).is_file():
         return Path(version.uri)
     return None
+
+
+def _as_bbox(value: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    return (float(value[0]), float(value[1]), float(value[2]), float(value[3]))
+
+
+def _canonical_query_config(canonical_repo) -> dict[str, Any]:
+    config = getattr(canonical_repo, "_query_config", None)
+    if callable(config):
+        return dict(config())
+    database = getattr(canonical_repo, "_database", None)
+    return {"database_": database} if database else {}
+
+
+async def resolve_reference_corpus_indexes_for_run(
+    *,
+    canonical_repo,
+    project_id: str,
+    reference_corpus_id: str,
+) -> tuple[PlateIndex, DrawingIndex]:
+    """Load visual authority only from one selected READY ReferenceCorpus.
+
+    This function deliberately has no file-path or parser arguments. Therefore
+    corpus mode cannot fall back to plate/drawing PDFs or filename heuristics.
+    """
+    driver = getattr(canonical_repo, "_driver", None) if canonical_repo is not None else None
+    if driver is None:
+        raise ValueError("canonical graph repository is required for ReferenceCorpus mode")
+    query_config = _canonical_query_config(canonical_repo)
+
+    plate_records, _, _ = driver.execute_query(
+        """
+        MATCH (project:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->
+              (corpus:ReferenceCorpus {id: $reference_corpus_id})
+        WHERE corpus.projectId = $project_id AND corpus.status = 'ready'
+        MATCH (corpus)-[:HAS_PLATE]->(plate:Plate)
+        OPTIONAL MATCH (plate)-[:HAS_PANEL]->(panel:PlatePanel)
+        RETURN properties(plate) AS plate,
+               [item IN collect(DISTINCT panel) WHERE item IS NOT NULL | properties(item)] AS panels
+        ORDER BY plate.number
+        """,
+        project_id=project_id,
+        reference_corpus_id=reference_corpus_id,
+        **query_config,
+    )
+    plates: list[PlateData] = []
+    for row in plate_records:
+        props = dict(row.get("plate") or {})
+        if not props.get("id"):
+            continue
+        panels = [
+            PlatePanelData(
+                panel_id=str(panel["id"]),
+                plate_id=str(panel.get("plate_id") or props["id"]),
+                panel_index=int(panel.get("panel_index") or 0),
+                caption=str(panel.get("caption") or ""),
+                bbox=_as_bbox(panel.get("bbox")),
+                bbox_status=panel.get("bbox_status"),
+                physical_page=panel.get("physical_page"),
+                render_uri=panel.get("render_uri"),
+                source_sha256=panel.get("source_sha256"),
+                source_asset_id=panel.get("sourceAssetId") or panel.get("source_asset_id"),
+            )
+            for panel in (row.get("panels") or [])
+            if panel and panel.get("id")
+        ]
+        plates.append(
+            PlateData(
+                plate_id=str(props["id"]),
+                number=str(props.get("number") or ""),
+                physical_page=int(props.get("physical_page") or 0),
+                title=str(props.get("title") or ""),
+                bbox=_as_bbox(props.get("bbox")),
+                source_sha256=props.get("source_sha256"),
+                document_version_id=None,
+                panels=panels,
+                raw_identifier=props.get("raw_identifier"),
+                source_kind=str(props.get("source_kind") or "indesign_source"),
+                reference_corpus_id=str(
+                    props.get("referenceCorpusId") or reference_corpus_id
+                ),
+            )
+        )
+
+    drawing_records, _, _ = driver.execute_query(
+        """
+        MATCH (project:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->
+              (corpus:ReferenceCorpus {id: $reference_corpus_id})
+        WHERE corpus.projectId = $project_id AND corpus.status = 'ready'
+        MATCH (corpus)-[:HAS_DRAWING]->(drawing:Drawing)
+        OPTIONAL MATCH (drawing)-[:HAS_REGION]->(region:DrawingRegion)
+        RETURN properties(drawing) AS drawing,
+               [item IN collect(DISTINCT region) WHERE item IS NOT NULL | properties(item)] AS regions
+        ORDER BY drawing.number
+        """,
+        project_id=project_id,
+        reference_corpus_id=reference_corpus_id,
+        **query_config,
+    )
+    drawings: list[DrawingData] = []
+    for row in drawing_records:
+        props = dict(row.get("drawing") or {})
+        if not props.get("id"):
+            continue
+        regions = [
+            DrawingRegionData(
+                region_id=str(region["id"]),
+                drawing_id=str(region.get("drawing_id") or props["id"]),
+                number=str(region.get("number") or ""),
+                title=str(region.get("title") or ""),
+                bbox=_as_bbox(region.get("bbox")),
+                bbox_status=region.get("bbox_status"),
+                physical_page=region.get("physical_page"),
+                render_uri=region.get("render_uri"),
+                source_sha256=region.get("source_sha256"),
+                source_asset_id=region.get("sourceAssetId") or region.get("source_asset_id"),
+            )
+            for region in (row.get("regions") or [])
+            if region and region.get("id")
+        ]
+        drawings.append(
+            DrawingData(
+                drawing_id=str(props["id"]),
+                number=str(props.get("number") or ""),
+                physical_page=int(props.get("physical_page") or 0),
+                title=str(props.get("title") or ""),
+                bbox=_as_bbox(props.get("bbox")),
+                source_sha256=props.get("source_sha256"),
+                document_version_id=None,
+                regions=regions,
+                raw_identifier=props.get("raw_identifier"),
+                source_kind=str(props.get("source_kind") or "illustrator_source"),
+                reference_corpus_id=str(
+                    props.get("referenceCorpusId") or reference_corpus_id
+                ),
+            )
+        )
+
+    if not plates and not drawings:
+        raise ValueError(
+            f"Selected READY reference corpus '{reference_corpus_id}' has an empty canonical visual graph"
+        )
+    return (
+        PlateIndex(
+            plates_by_number={plate.number: plate for plate in plates},
+            plates=plates,
+        ),
+        DrawingIndex(
+            drawings_by_number={drawing.number: drawing for drawing in drawings},
+            drawings=drawings,
+        ),
+    )
 
 
 async def resolve_round_body_versions_for_alignment(
