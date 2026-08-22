@@ -4,7 +4,7 @@
 
 **Goal:** Detect and propose missing drawing/plate-photo references from graph-authoritative visual assets while preserving the existing forward body-reference-to-canonical-visual validation path.
 
-**Architecture:** Enrich graph-derived reference/visual evidence so reverse coverage can distinguish resolved, wrong, and missing references without filesystem heuristics. Add one deterministic `VisualReferenceCoverageService`, invoke it from `ProofreadingOrchestrator` after graph bundles exist, and expose the resulting candidate intent through existing evidence metadata for the current review UI.
+**Architecture:** Enrich graph-derived reference/visual evidence so reverse coverage can distinguish resolved, wrong, and missing references without filesystem heuristics. Add one deterministic `VisualReferenceCoverageService`, invoke it from `ProofreadingOrchestrator` after graph bundles exist, and expose finding intent through existing evidence metadata for the current review UI.
 
 **Tech Stack:** Python 3.12, dataclasses, Neo4j 5.26, pytest, React 18, TypeScript, Vitest.
 
@@ -15,7 +15,7 @@
 - ReviewRound remains the sole authority for active body/plate/drawing DocumentVersion selection.
 - Publication identity comes from canonical `Plate/PlatePanel/Drawing/DrawingRegion`; filenames never establish identity.
 - `OriginalAsset` is provenance only and is not an input to reverse coverage identity.
-- Reverse coverage must fail closed on ambiguous target identity or ambiguous body insertion location.
+- Reverse coverage fails closed on ambiguous target identity or ambiguous body insertion location.
 - Every generated candidate remains `pending_review`.
 - Existing resolved-reference VLM flow continues to use canonical renders and graph-derived body claims.
 - Raw source-image VLM comparison is out of scope.
@@ -28,18 +28,18 @@
 ### Backend create
 - `backend/app/services/visual_reference_coverage.py` — deterministic reverse-coverage logic only.
 - `backend/tests/test_visual_reference_coverage.py` — hermetic unit contract for missing/blank/ambiguous/wrong-reference states.
-- `backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py` — project/ReviewRound/version-scoped reverse-coverage graph tests.
+- `backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py` — project/version-scoped reverse-coverage graph tests.
 
 ### Backend modify
-- `backend/app/services/pdf_parser.py` — normalize body `사진 N` references into canonical plate-channel references without changing canonical identity semantics.
-- `backend/app/graph/canonical_repository.py` — enrich reference evidence with resolution metadata and make PlatePanel/DrawingRegion visual claims inherit the owning visual DocumentVersion through parent traversal.
-- `backend/app/services/proofreading_orchestrator.py` — call `VisualReferenceCoverageService` after graph bundles and include candidates in normal dedupe/budget/persistence.
-- `backend/tests/test_pdf_parser.py` — photo/plate reference parsing regression tests.
-- `backend/tests/test_proofreading_orchestrator.py` — service invocation/order/persistence regression tests if present; otherwise use the existing orchestrator-focused test file returned by repository inspection before editing.
+- `backend/app/services/pdf_parser.py` — normalize body `사진 N` references into the canonical plate channel.
+- `backend/app/graph/canonical_repository.py` — enrich reference evidence with resolution metadata and make child visual claims inherit owning visual DocumentVersion.
+- `backend/app/services/proofreading_orchestrator.py` — invoke `VisualReferenceCoverageService` after graph bundles and include findings in normal dedupe/budget/persistence.
+- `backend/tests/test_pdf_parser.py` — photo parsing regression tests.
+- `backend/tests/test_proofreading_orchestrator.py` — coverage invocation/order/persistence regression tests.
 
 ### Frontend modify
-- `frontend/src/components/SplitViewInspector.tsx` — show Korean intent labels based on evidence `rule_name` without creating a new mutation path.
-- `frontend/src/components/SplitViewInspector.test.tsx` — missing/blank/ambiguous label and evidence-side tests.
+- `frontend/src/components/SplitViewInspector.tsx` — show Korean finding-intent labels from evidence `rule_name`.
+- `frontend/src/components/SplitViewInspector.test.tsx` — missing/blank/ambiguous label tests.
 
 ---
 
@@ -51,11 +51,9 @@
 
 **Interfaces:**
 - Consumes: report-body text/caption strings.
-- Produces: `ReferenceData(ref_type="plate", number="N", raw_text="사진 ...")` for `사진 N` / `사진: N` while existing `도판` and `도면` behavior remains unchanged.
+- Produces: `ReferenceData(ref_type="plate", number="N", raw_text="사진 ...")` for `사진 N` / `사진: N`, preserving existing `도판` and `도면` behavior.
 
 - [ ] **Step 1: Write failing parser tests**
-
-Add tests equivalent to:
 
 ```python
 def test_extracts_photo_reference_as_plate_channel():
@@ -73,9 +71,7 @@ def test_caption_photo_reference_is_not_blank():
     assert [(r.ref_type, r.number) for r in cap.references] == [("plate", "45")]
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
-
-Run:
+- [ ] **Step 2: Run test and verify RED**
 
 ```bash
 cd backend
@@ -86,9 +82,9 @@ Expected: FAIL because current parser recognizes only `도면` and `도판`.
 
 - [ ] **Step 3: Implement minimal parser support**
 
-Use the same number expansion path as `도판`; normalize `사진` to `ref_type="plate"`. Do not create `ReferenceType="photo"` and do not touch asset filenames.
+Use the same number expansion path as `도판`; normalize `사진` to `ref_type="plate"`. Do not create `ReferenceType="photo"` and do not inspect filenames.
 
-- [ ] **Step 4: Run parser tests and verify GREEN**
+- [ ] **Step 4: Run focused parser tests and verify GREEN**
 
 ```bash
 pytest -q tests/test_pdf_parser.py -k 'photo_reference or reference'
@@ -110,8 +106,8 @@ git commit -m "feat: normalize body photo references"
 - Create: `backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py`
 
 **Interfaces:**
-- Consumes: `ArchaeologyObject`, `Reference`, `RESOLVES_TO`, `DEPICTS`, active `document_version_ids`.
-- Produces: `ObjectEvidenceBundle.references[].value` with resolution facts and `plate_claims` / `drawing_claims` whose `document_version_id` is the owning visual version for both parent and child assets.
+- Consumes: `ArchaeologyObject`, `Reference`, `RESOLVES_TO`, `DEPICTS`, and active `document_version_ids`.
+- Produces: reference evidence with resolution facts and visual claims scoped to the owning visual DocumentVersion for parent and child assets.
 
 Reference evidence value must contain:
 
@@ -140,9 +136,7 @@ assert ref.value["resolved_target_id"] == plate_44
 assert ref.value["resolved_depicts_object"] is False
 ```
 
-Also create `PlatePanel -> DEPICTS -> object` and `DrawingRegion -> DEPICTS -> object` where the child has no direct `document_version_id`; assert their claim evidence is scoped to `plate_v` / `drawing_v` through the owning parent.
-
-Add a second visual version with same-number assets and assert it is excluded when not present in `document_version_ids`.
+Also create `PlatePanel -> DEPICTS -> object` and `DrawingRegion -> DEPICTS -> object` where the child has no direct `document_version_id`; assert claim evidence inherits `plate_v` / `drawing_v` through the owning parent. Add a second visual version with same-number assets and assert it is excluded when not in `document_version_ids`.
 
 - [ ] **Step 2: Run integration file and verify RED**
 
@@ -150,22 +144,22 @@ Add a second visual version with same-number assets and assert it is excluded wh
 RUN_NEO4J_INTEGRATION=1 pytest -q tests/integration/test_bidirectional_visual_reference_real_neo4j.py -s
 ```
 
-Expected: FAIL because reference evidence lacks resolution fields and child visual ownership traversal is incomplete.
+Expected: FAIL because reference evidence lacks resolution fields and child ownership traversal is incomplete.
 
 - [ ] **Step 3: Enrich `_query_reference_evidences`**
 
-Use graph traversal from the exact `Reference`:
+Use exact graph traversal:
 
 ```cypher
 OPTIONAL MATCH (ref)-[:RESOLVES_TO]->(resolved)
 OPTIONAL MATCH (resolved)-[:DEPICTS]->(resolved_obj:ArchaeologyObject {id: $object_id})
 ```
 
-Return target label/id and compute `resolved_depicts_object` from whether `resolved_obj` exists. Keep project/version scoping on the body source path.
+Return target label/id and compute `resolved_depicts_object` from `resolved_obj`. Keep body source/version scoping unchanged.
 
 - [ ] **Step 4: Fix `_query_visual_claims` owning-version traversal**
 
-For child assets support both direct and parent ownership:
+Support direct and parent ownership:
 
 ```cypher
 OPTIONAL MATCH (plate_version:DocumentVersion)-[:HAS_PLATE]->(plate_parent:Plate)-[:HAS_PANEL]->(asset)
@@ -173,7 +167,7 @@ OPTIONAL MATCH (drawing_version:DocumentVersion)-[:HAS_DRAWING]->(drawing_parent
 OPTIONAL MATCH (direct_version:DocumentVersion)-[:HAS_PLATE|HAS_DRAWING]->(asset)
 ```
 
-Derive `visual_document_version_id` from direct or parent ownership and apply `document_version_ids` to that visual version, not to unrelated body-reference versions.
+Derive `visual_document_version_id` from direct or parent ownership and scope against that visual version, not an unrelated body-reference version.
 
 - [ ] **Step 5: Run Real Neo4j test and verify GREEN**
 
@@ -197,7 +191,6 @@ git commit -m "feat: expose graph facts for reverse visual coverage"
 - Create: `backend/tests/test_visual_reference_coverage.py`
 
 **Interfaces:**
-- Consumes:
 
 ```python
 review_object(
@@ -208,9 +201,9 @@ review_object(
 ) -> list[CorrectionCandidateData]
 ```
 
-- Produces: only `figure_plate_table_photo_ref` candidates with `status="pending_review"`.
+Produces only `figure_plate_table_photo_ref` candidates with `status="pending_review"`.
 
-Canonical key normalization:
+Canonical keys:
 
 ```python
 ("plate", "45")
@@ -227,24 +220,24 @@ visual_reference_location_ambiguous
 visual_reference_wrong_target
 ```
 
-- [ ] **Step 1: Write failing unit tests for all deterministic states**
+- [ ] **Step 1: Write failing unit tests**
 
-Cover these exact cases:
+Cover exactly:
 
 ```text
-A. unique body region + Drawing 30 + Plate 45 + no refs -> proposed_text '(도면 30, 도판 45)', change_type added
-B. body already references 30/45 -> []
+A. unique body region + Drawing30 + Plate45 + no refs -> '(도면 30, 도판 45)', added
+B. body already has Drawing30 + Plate45 -> []
 C. blank '(도면: , 도판: )' + unique 30/45 -> '(도면: 30, 도판: 45)'
-D. unique drawing + two plates -> precise drawing fill plus manual plate ambiguity
-E. two body regions + no placeholder -> proposed_text None, rule visual_reference_location_ambiguous
-F. two canonical plates -> proposed_text None, rule visual_reference_ambiguous
-G. existing plate 44 resolved_depicts_object=False + unique Plate45 -> modified candidate replacing token with '도판 45'
-H. existing Plate45 resolved_depicts_object=True -> no added/replacement candidate
-I. no canonical Plate91 claim -> filename-like text '_91.JPG' in unrelated evidence cannot create a proposal
-J. same graph claim duplicated by panel/parent -> canonical key is deduplicated
+D. unique drawing + two plates -> drawing fill plus manual plate ambiguity
+E. two body regions + no placeholder -> proposed_text None, visual_reference_location_ambiguous
+F. two canonical plates -> proposed_text None, visual_reference_ambiguous
+G. existing Plate44 with resolved_depicts_object=False + unique Plate45 -> modified replacement '도판 45'
+H. existing Plate45 with resolved_depicts_object=True -> no coverage candidate
+I. no canonical Plate91 claim -> unrelated '_91.JPG' text cannot create proposal
+J. duplicate parent/panel claim of same publication number -> key deduplicated
 ```
 
-Use real `EvidenceData` objects with valid document provenance; do not mock filesystem paths.
+Use real `EvidenceData` with valid document provenance; do not mock filesystem paths.
 
 - [ ] **Step 2: Run unit tests and verify RED**
 
@@ -256,22 +249,20 @@ Expected: import/service failure.
 
 - [ ] **Step 3: Implement minimal service**
 
-Implementation rules:
-
 ```python
 class VisualReferenceCoverageService:
     def review_object(self, *, bundle, archaeology_object, analysis_run_id): ...
 ```
 
-The service must:
+Rules:
 
-1. derive body regions from `bundle.text_claims` using `region_id`,
+1. derive body regions only from `bundle.text_claims`,
 2. derive body reference keys only from `bundle.references`,
 3. derive canonical keys only from `bundle.plate_claims` / `bundle.drawing_claims`,
 4. never import `Path`, `AssetMatcher`, `OriginalAssetData`, or source-import modules,
 5. prefer blank-placeholder candidates over generic missing candidates for the same region/key,
-6. use `finding_fingerprint` deterministically from run/object/source-region/reference keys,
-7. set `evidence` to the body evidence and include canonical claim(s) in `evidence_list`,
+6. use deterministic `finding_fingerprint` from run/object/source-region/reference keys,
+7. set primary evidence to body evidence and include canonical claim(s) in `evidence_list`,
 8. return ambiguity candidates with `proposed_text=None`.
 
 - [ ] **Step 4: Run unit tests and verify GREEN**
@@ -293,15 +284,15 @@ git commit -m "feat: detect missing visual references from graph evidence"
 
 **Files:**
 - Modify: `backend/app/services/proofreading_orchestrator.py`
-- Modify/create the current orchestrator-focused test file found in `backend/tests`.
+- Modify: `backend/tests/test_proofreading_orchestrator.py`
 
 **Interfaces:**
 - Consumes: graph bundles after `get_object_evidence_bundle` succeeds.
-- Produces: coverage candidates appended to the same `all_candidates` list before dedupe/budget/persistence.
+- Produces: coverage candidates appended to existing `all_candidates` before dedupe/budget/persistence.
 
 - [ ] **Step 1: Write failing orchestrator tests**
 
-Test with a stub coverage service injected into the orchestrator:
+Use an injected stub:
 
 ```python
 coverage = StubCoverageService([coverage_candidate])
@@ -311,79 +302,76 @@ assert coverage.calls[0].bundle is graph_bundle
 assert coverage_candidate in result.candidates
 ```
 
-Also assert coverage is not invoked for an object whose graph bundle is unavailable in production, and existing canonical VLM receives unchanged body claims / visual version IDs.
+Also assert coverage is not invoked for an object without a graph-authoritative bundle in production, and existing canonical VLM receives unchanged body claims / visual version IDs.
 
-- [ ] **Step 2: Run focused orchestrator tests and verify RED**
+- [ ] **Step 2: Run focused tests and verify RED**
 
-Expected: constructor has no coverage dependency and run flow does not append its candidates.
+```bash
+pytest -q tests/test_proofreading_orchestrator.py -k 'coverage or graph or vlm'
+```
+
+Expected: constructor has no coverage dependency and run flow does not append its candidate.
 
 - [ ] **Step 3: Add constructor dependency and invocation**
-
-Constructor:
 
 ```python
 visual_reference_coverage_service: VisualReferenceCoverageService | None = None
 ```
 
-Default to `VisualReferenceCoverageService()` and invoke only for objects with graph-authoritative bundles. Copy returned candidates into run-scoped `CorrectionCandidateData` exactly as existing rule/VLM candidates are normalized.
+Default to `VisualReferenceCoverageService()` and invoke only for objects with graph-authoritative bundles. Normalize returned candidates to the current `analysis_run_id` exactly like rule/VLM candidates.
 
-- [ ] **Step 4: Keep normal dedupe/budget/persistence unchanged**
+- [ ] **Step 4: Keep normal persistence path**
 
-Coverage candidates must flow through existing `prioritize_and_cap_candidates` and `ReviewRepository.save_candidates`; do not create a parallel persistence API.
+Coverage candidates must flow through existing `prioritize_and_cap_candidates` and `ReviewRepository.save_candidates`; no parallel persistence API.
 
 - [ ] **Step 5: Run focused tests and verify GREEN**
 
-Run the focused orchestrator test file plus:
-
 ```bash
-pytest -q tests/test_visual_reference_coverage.py
+pytest -q tests/test_proofreading_orchestrator.py tests/test_visual_reference_coverage.py
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/services/proofreading_orchestrator.py backend/tests/<orchestrator-test-file>
+git add backend/app/services/proofreading_orchestrator.py backend/tests/test_proofreading_orchestrator.py
 git commit -m "feat: run reverse visual coverage in proofreading"
 ```
 
 ---
 
-### Task 5: Add Real Neo4j end-to-end coverage acceptance
+### Task 5: Complete Real Neo4j end-to-end acceptance
 
 **Files:**
 - Modify: `backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py`
+- Modify only if exposed by tests: `backend/app/graph/canonical_repository.py`, `backend/app/services/visual_reference_coverage.py`
 
-**Interfaces:**
-- Exercises the repository + service contract using real Neo4j graph state.
-
-- [ ] **Step 1: Add failing graph acceptance cases**
-
-Build project-scoped graphs for:
+- [ ] **Step 1: Add graph acceptance cases**
 
 ```text
 1. body object, no reference, selected Plate45/Draw30 DEPICTS object -> proposal contains 45/30
-2. existing Reference45 RESOLVES_TO Plate45 DEPICTS object -> no added proposal
+2. Reference45 RESOLVES_TO Plate45 DEPICTS object -> no added proposal
 3. remove DEPICTS -> reverse proposal disappears
 4. same Plate45 under another project -> cannot satisfy proposal
-5. Plate45 in old/non-selected plate version -> cannot satisfy current ReviewRound bundle
-6. `_45.JPG` OriginalAsset with no DERIVED_FROM and no canonical Plate45 -> cannot create proposal
-7. canonical Plate45 with DERIVED_FROM `_45.JPG` -> identity remains canonical Plate45
-8. wrong Reference44 resolved to Plate44 not depicting object + unique Plate45 depicting object -> replacement candidate
+5. Plate45 in non-selected visual version -> cannot satisfy current bundle
+6. '_45.JPG' OriginalAsset with no canonical Plate45 -> cannot create proposal
+7. canonical Plate45 with DERIVED_FROM '_45.JPG' -> identity remains Plate45
+8. wrong Reference44 resolved to Plate44 not depicting object + unique Plate45 -> replacement candidate
 ```
 
-- [ ] **Step 2: Run test and verify RED/GREEN around missing integration gaps**
+- [ ] **Step 2: Run integration test**
 
 ```bash
 RUN_NEO4J_INTEGRATION=1 pytest -q tests/integration/test_bidirectional_visual_reference_real_neo4j.py -s
 ```
 
-- [ ] **Step 3: Fix only integration defects exposed by these cases**
+- [ ] **Step 3: Fix only defects exposed by those cases**
 
-Allowed fixes are limited to graph query scoping/metadata or service logic required by the approved spec. Do not add filename matching.
+Allowed fixes are graph query scoping/metadata or deterministic coverage logic. Do not add filename matching.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Re-run and commit**
 
 ```bash
+RUN_NEO4J_INTEGRATION=1 pytest -q tests/integration/test_bidirectional_visual_reference_real_neo4j.py -s
 git add backend/tests/integration/test_bidirectional_visual_reference_real_neo4j.py backend/app/graph/canonical_repository.py backend/app/services/visual_reference_coverage.py
 git commit -m "test: prove reverse visual coverage with real neo4j"
 ```
@@ -397,8 +385,8 @@ git commit -m "test: prove reverse visual coverage with real neo4j"
 - Modify: `frontend/src/components/SplitViewInspector.test.tsx`
 
 **Interfaces:**
-- Consumes: `Evidence.rule_name` from the primary/connected evidence.
-- Produces: Korean read-only finding label; no new mutation endpoint.
+- Consumes: `Evidence.rule_name` / `ruleName`.
+- Produces: one Korean read-only intent label; no new mutation endpoint.
 
 Mapping:
 
@@ -412,7 +400,7 @@ visual_reference_wrong_target -> '기존 참조 불일치'
 
 - [ ] **Step 1: Write failing Vitest cases**
 
-Render candidates with each rule name and assert the Korean label. For ambiguity assert no fake replacement text is shown as a proposed correction.
+Render candidates with each rule name and assert the Korean label. For ambiguity assert no fake replacement text is presented as an automatic proposal.
 
 - [ ] **Step 2: Run focused frontend test and verify RED**
 
@@ -421,9 +409,9 @@ cd frontend
 npm test -- --run src/components/SplitViewInspector.test.tsx
 ```
 
-- [ ] **Step 3: Implement a small pure label helper inside the component file**
+- [ ] **Step 3: Implement pure label mapping**
 
-Prefer `rule_name` / `ruleName` from linked evidence. Keep the existing category badge and add one intent label; no API contract change is required.
+Prefer `rule_name` / `ruleName` from connected evidence. Keep the existing category badge and add one intent label.
 
 - [ ] **Step 4: Run focused test and verify GREEN**
 
@@ -442,16 +430,14 @@ git commit -m "feat: label visual reference coverage findings"
 
 ### Task 7: Full verification and regression gate
 
-**Files:**
-- Modify only if a test exposes a defect; no speculative refactors.
-
 - [ ] **Step 1: Backend hermetic suite**
 
-Use the workflow-equivalent command from `.github/workflows/remediation-ci.yml`; `test_visual_reference_coverage.py` must be included and must not be deselected.
+Run the workflow-equivalent command from `.github/workflows/remediation-ci.yml`; `tests/test_visual_reference_coverage.py` must be included and not deselected.
 
 - [ ] **Step 2: Real Neo4j suite**
 
 ```bash
+cd backend
 RUN_NEO4J_INTEGRATION=1 pytest -q tests/integration tests/test_real_neo4j_remediation.py tests/test_project_repository.py -s
 ```
 
@@ -466,17 +452,17 @@ npm run build
 
 - [ ] **Step 4: Regression assertions**
 
-Confirm via tests/code inspection:
+Confirm through tests/code inspection:
 
 ```text
-- ReviewRound remains sole `/runs` input authority.
+- ReviewRound remains sole /runs input authority.
 - production coverage service imports no filesystem matcher.
-- `_45.JPG` / `_91.JPG` cannot create reference identity.
+- _45.JPG / _91.JPG cannot create reference identity.
 - removing DEPICTS removes reverse-coverage success.
 - already-covered references do not produce duplicate added candidates.
-- existing resolved-reference VLM path still uses canonical visual versions.
+- resolved-reference VLM still uses canonical visual versions.
 ```
 
-- [ ] **Step 5: Push final branch HEAD and record CI result**
+- [ ] **Step 5: Push final branch HEAD and record CI**
 
-The mandatory GitHub Actions workflow must show all three jobs green: backend-hermetic, neo4j-e2e, frontend. External VLM quality remains HOLD.
+Mandatory GitHub Actions jobs must all be green: backend-hermetic, neo4j-e2e, frontend. External VLM quality remains HOLD.
