@@ -184,6 +184,8 @@ async def upload_document(
     kind: Annotated[str, Query()] = "report_body",
 ) -> UploadResponse:
     normalized_project_id = str(project_id)
+    if kind != "report_body":
+        raise ValueError("New publication document uploads accept report_body PDF only")
     if Path(file.filename or "").suffix.lower() != ".pdf":
         raise ValueError("Publication document uploads must be PDF")
     # Validate project existence before accepting original bytes. The write
