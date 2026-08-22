@@ -7,10 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as api from '../projectStructureApi';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
 
-const projectStructureCss = readFileSync(
-  new URL('../project-structure.css', import.meta.url),
-  'utf8',
-);
+const projectStructureCss = readFileSync('src/project-structure.css', 'utf8');
 
 const root = {
   projectId: 'p1',
