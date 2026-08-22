@@ -10,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - ci-base-bidirectional-visual-20260822
   workflow_dispatch:
 
 jobs:
