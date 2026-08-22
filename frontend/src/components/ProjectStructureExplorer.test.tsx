@@ -1,9 +1,15 @@
+import { readFileSync } from 'node:fs';
+
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import * as api from '../projectStructureApi';
-import projectStructureCss from '../project-structure.css?raw';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
+
+const projectStructureCss = readFileSync(
+  new URL('../project-structure.css', import.meta.url),
+  'utf8',
+);
 
 const root = {
   projectId: 'p1',
