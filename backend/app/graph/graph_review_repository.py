@@ -153,9 +153,11 @@ class GraphReviewRepository:
                      THEN 1 END) AS panel_gaps
             OPTIONAL MATCH (corpus)-[:HAS_DRAWING]->(:Drawing)-[:HAS_REGION]->(region:DrawingRegion)
             OPTIONAL MATCH (region)-[:DERIVED_FROM]->(region_source:OriginalAsset)
-            RETURN panel_gaps + count(CASE WHEN region IS NOT NULL AND
+            WITH panel_gaps,
+                 count(CASE WHEN region IS NOT NULL AND
                      (region_source IS NULL OR region_source.projectId <> $project_id)
-                     THEN 1 END) AS provenance_gap_count
+                     THEN 1 END) AS region_gaps
+            RETURN panel_gaps + region_gaps AS provenance_gap_count
             """,
             project_id=project_id,
             corpus_id=corpus_id,
@@ -172,9 +174,10 @@ class GraphReviewRepository:
                  count(CASE WHEN source IS NOT NULL AND source.projectId <> $project_id
                        THEN 1 END) AS source_cross
             OPTIONAL MATCH (corpus)-[:HAS_PLATE|HAS_DRAWING]->(visual)
-            RETURN source_cross + count(CASE WHEN visual IS NOT NULL AND
-                     visual.referenceCorpusId <> $corpus_id THEN 1 END)
-                   AS cross_project_count
+            WITH source_cross,
+                 count(CASE WHEN visual IS NOT NULL AND
+                     visual.referenceCorpusId <> $corpus_id THEN 1 END) AS visual_cross
+            RETURN source_cross + visual_cross AS cross_project_count
             """,
             project_id=project_id,
             corpus_id=corpus_id,
