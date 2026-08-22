@@ -13,6 +13,9 @@ from typing import Protocol
 from app.domain.adobe_manifest import AdobeManifestV1
 
 
+ADOBE_WINDOWS_AGENT_VERSION = "adobe-windows-agent-v1"
+
+
 @dataclass(frozen=True, slots=True)
 class ConversionRequest:
     project_id: str
@@ -36,7 +39,7 @@ class ConversionArtifact:
 class ConversionResult:
     manifest: AdobeManifestV1
     artifacts: tuple[ConversionArtifact, ...] = ()
-    converter_version: str = "adobe-agent-v1"
+    converter_version: str = ADOBE_WINDOWS_AGENT_VERSION
 
 
 class AdobeConversionError(RuntimeError):
@@ -58,7 +61,7 @@ class SubprocessAdobeConversionClient:
         command: list[str] | tuple[str, ...] | None = None,
         *,
         timeout_seconds: int = 300,
-        version: str = "adobe-agent-v1",
+        version: str = ADOBE_WINDOWS_AGENT_VERSION,
     ) -> None:
         configured = os.environ.get("ADOBE_CONVERTER_COMMAND")
         if command is None and configured:
