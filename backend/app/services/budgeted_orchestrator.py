@@ -1,9 +1,11 @@
 from app.services.development_review_control import BudgetedProofreadingOrchestratorMixin
 from app.services.graph_first_review_round_orchestrator import GraphFirstReviewRoundOrchestrator
+from app.services.optional_review_orchestrator import OptionalReviewOrchestratorMixin
 
 
 class BudgetedProofreadingOrchestrator(
     BudgetedProofreadingOrchestratorMixin,
+    OptionalReviewOrchestratorMixin,
     GraphFirstReviewRoundOrchestrator,
 ):
     """Graph-first ReviewRound orchestrator with development-budget diagnostics."""
