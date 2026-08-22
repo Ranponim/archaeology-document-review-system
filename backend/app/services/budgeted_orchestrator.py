@@ -1,12 +1,12 @@
 from app.services.development_review_control import BudgetedProofreadingOrchestratorMixin
-from app.services.review_round_orchestrator import ReviewRoundProofreadingOrchestrator
+from app.services.graph_first_review_round_orchestrator import GraphFirstReviewRoundOrchestrator
 
 
 class BudgetedProofreadingOrchestrator(
     BudgetedProofreadingOrchestratorMixin,
-    ReviewRoundProofreadingOrchestrator,
+    GraphFirstReviewRoundOrchestrator,
 ):
-    """ReviewRound orchestrator that publishes development-budget diagnostics."""
+    """Graph-first ReviewRound orchestrator with development-budget diagnostics."""
 
     def __init__(self, *args, development_budget, **kwargs):
         self.development_budget = development_budget
