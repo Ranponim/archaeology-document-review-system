@@ -85,11 +85,39 @@ class StrictRuleEngine(RuleEngine):
             ),
             "",
         )
-        candidates.extend(
-            self.visual_reference_coverage_service.review_object(
-                bundle=bundle,
-                archaeology_object=archaeology_object,
-                analysis_run_id=analysis_run_id,
-            )
+        coverage_candidates = self.visual_reference_coverage_service.review_object(
+            bundle=bundle,
+            archaeology_object=archaeology_object,
+            analysis_run_id=analysis_run_id,
         )
+
+        # A precise graph-grounded blank fill (or graph-grounded ambiguity for
+        # that exact blank token) supersedes the older generic blank detector,
+        # which can only emit proposed_text=None. Keep the evidence-aware
+        # coverage candidate and remove only the ungrounded duplicate.
+        superseded_blank_texts = {
+            candidate.original_text
+            for candidate in coverage_candidates
+            if candidate.original_text
+            and candidate.evidence is not None
+            and candidate.evidence.rule_name
+            in {"visual_reference_blank_fill", "visual_reference_ambiguous"}
+        }
+        if superseded_blank_texts:
+            candidates = [
+                candidate
+                for candidate in candidates
+                if not (
+                    candidate.original_text in superseded_blank_texts
+                    and candidate.proposed_text is None
+                    and not (
+                        candidate.evidence is not None
+                        and str(candidate.evidence.rule_name or "").startswith(
+                            "visual_reference_"
+                        )
+                    )
+                )
+            ]
+
+        candidates.extend(coverage_candidates)
         return candidates
