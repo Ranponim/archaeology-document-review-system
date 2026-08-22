@@ -25,7 +25,7 @@ def _seed_graph(driver, scope: str) -> dict[str, str]:
         CREATE (drawingDoc:Document {id: $drawingDoc, kind: 'drawing_book'})
         CREATE (body:DocumentVersion {id: $body, sha256: 'body-sha', uri: 'body.pdf'})
         CREATE (plateV:DocumentVersion {id: $plate, sha256: 'plate-sha', uri: 'plate.pdf'})
-        CREATE (plateOld:DocumentVersion {id: $plateOld, sha256: 'plate-old-sha', uri: 'plate-old.pdf'})
+        CREATE (plateOld:DocumentVersion {id: $plate_old, sha256: 'plate-old-sha', uri: 'plate-old.pdf'})
         CREATE (drawingV:DocumentVersion {id: $drawing, sha256: 'drawing-sha', uri: 'drawing.pdf'})
         CREATE (page:Page {id: $page, physical_page: 10, source_sha256: 'body-sha'})
         CREATE (block:TextBlock {id: $block, text: '6호 석관묘는 구릉 정상부에 위치한다.', source_sha256: 'body-sha'})
