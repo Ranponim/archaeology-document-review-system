@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import * as api from '../projectStructureApi';
+import '../styles.css';
 import { ProjectStructureExplorer } from './ProjectStructureExplorer';
 
 const root = {
@@ -52,5 +53,33 @@ describe('ProjectStructureExplorer', () => {
     expect(semanticRelationship).toHaveAttribute('title', 'RESOLVES_TO');
     expect(screen.getByText('【도판 45】')).toBeInTheDocument();
     expect(screen.queryByText(/삭제|이동|연결 변경|rename/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps light project-structure controls readable against the global white button text', async () => {
+    vi.spyOn(api, 'fetchProjectStructure').mockResolvedValue(root as any);
+    vi.spyOn(api, 'fetchProjectStructureNode').mockResolvedValue(root.groups[0] as any);
+    vi.spyOn(api, 'fetchProjectStructureChildren').mockResolvedValue({ items: [], offset: 0, limit: 50, total: 0, hasMore: false } as any);
+
+    render(
+      <>
+        <button type="button" className="project-mode-tab">검수 작업</button>
+        <button type="button" className="project-mode-back">프로젝트 목록</button>
+        <button type="button" className="structure-more-button">더 보기</button>
+        <ProjectStructureExplorer projectId="p1" />
+      </>,
+    );
+
+    const refresh = await screen.findByRole('button', { name: '새로고침' });
+    const controls = [
+      screen.getByRole('button', { name: '검수 작업' }),
+      screen.getByRole('button', { name: '프로젝트 목록' }),
+      screen.getByRole('button', { name: '더 보기' }),
+      refresh,
+    ];
+
+    for (const control of controls) {
+      const style = window.getComputedStyle(control);
+      expect(style.color).not.toBe('rgb(255, 255, 255)');
+    }
   });
 });
