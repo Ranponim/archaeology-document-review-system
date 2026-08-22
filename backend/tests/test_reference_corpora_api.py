@@ -11,9 +11,12 @@ from app.api.reference_corpora import router
 from app.domain.reference_corpus import ReferenceCorpusData, ReferenceCorpusStatus
 from app.domain.source_assets import OriginalAssetData
 from app.services.file_store import FileStore
+from app.services.reference_corpus_service import ReferenceCorpusService
 
 
 class FakeReferenceCorpusService:
+    validate_source_role = staticmethod(ReferenceCorpusService.validate_source_role)
+
     def __init__(self) -> None:
         self.corpus = ReferenceCorpusData(
             id="corpus-1",
