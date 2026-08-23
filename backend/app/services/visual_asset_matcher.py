@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
+
+from PIL import Image, ImageOps
+import pymupdf
+
+from app.domain.source_assets import OriginalAssetData
+
+
+@dataclass(frozen=True, slots=True)
+class VisualAssetMatch:
+    source_asset_id: str
+    score: float
+    method: str = "pixel_thumbnail_similarity"
+
+
+class VisualAssetMatcher:
+    """Conservatively match one safely segmented PDF panel to an original image.
+
+    Matching is intentionally deterministic and fail-closed: the best normalized
+    thumbnail similarity must clear a high threshold and be separated from the
+    second-best candidate. Equal or near-equal candidates are unresolved.
+    """
+
+    def __init__(
+        self,
+        *,
+        minimum_score: float = 0.97,
+        minimum_margin: float = 0.03,
+        fingerprint_size: tuple[int, int] = (32, 32),
+    ) -> None:
+        self._minimum_score = float(minimum_score)
+        self._minimum_margin = float(minimum_margin)
+        self._fingerprint_size = fingerprint_size
+
+    def _fingerprint_image(self, image: Image.Image) -> bytes:
+        normalized = ImageOps.exif_transpose(image).convert("L")
+        normalized.thumbnail(self._fingerprint_size, Image.Resampling.LANCZOS)
+        canvas = Image.new("L", self._fingerprint_size, 255)
+        left = (self._fingerprint_size[0] - normalized.width) // 2
+        top = (self._fingerprint_size[1] - normalized.height) // 2
+        canvas.paste(normalized, (left, top))
+        return canvas.tobytes()
+
+    def _fingerprint_path(self, path: Path) -> bytes:
+        with Image.open(path) as image:
+            image.load()
+            return self._fingerprint_image(image)
+
+    @staticmethod
+    def _similarity(left: bytes, right: bytes) -> float:
+        if len(left) != len(right) or not left:
+            return 0.0
+        error = sum(abs(a - b) for a, b in zip(left, right, strict=True))
+        return max(0.0, 1.0 - error / (255.0 * len(left)))
+
+    @staticmethod
+    def _target_rect(page: pymupdf.Page, bbox: tuple[float, float, float, float]) -> pymupdf.Rect:
+        x0, y0, x1, y1 = bbox
+        return pymupdf.Rect(
+            x0 * page.rect.width,
+            y0 * page.rect.height,
+            x1 * page.rect.width,
+            y1 * page.rect.height,
+        )
+
+    @staticmethod
+    def _rect_similarity(left: pymupdf.Rect, right: pymupdf.Rect) -> float:
+        intersection = left & right
+        if intersection.is_empty:
+            return 0.0
+        inter_area = max(0.0, intersection.width) * max(0.0, intersection.height)
+        union_area = left.width * left.height + right.width * right.height - inter_area
+        return inter_area / union_area if union_area > 0 else 0.0
+
+    def _panel_fingerprint(
+        self,
+        pdf_path: Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+    ) -> bytes | None:
+        doc = pymupdf.open(str(pdf_path))
+        try:
+            if physical_page < 1 or physical_page > len(doc):
+                return None
+            page = doc[physical_page - 1]
+            target = self._target_rect(page, bbox)
+            occurrences: list[tuple[float, int]] = []
+            for image_info in page.get_images(full=True):
+                xref = int(image_info[0])
+                for rect in page.get_image_rects(xref):
+                    score = self._rect_similarity(rect, target)
+                    if score >= 0.90:
+                        occurrences.append((score, xref))
+            if not occurrences:
+                return None
+            occurrences.sort(key=lambda item: item[0], reverse=True)
+            best_score = occurrences[0][0]
+            best_xrefs = {xref for score, xref in occurrences if abs(score - best_score) < 1e-6}
+            if len(best_xrefs) != 1:
+                return None
+            xref = next(iter(best_xrefs))
+            extracted = doc.extract_image(xref)
+            data = extracted.get("image")
+            if not data:
+                return None
+            with Image.open(BytesIO(data)) as image:
+                image.load()
+                return self._fingerprint_image(image)
+        finally:
+            doc.close()
+
+    def match_panel(
+        self,
+        *,
+        pdf_path: str | Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> VisualAssetMatch | None:
+        panel_fingerprint = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
+        if panel_fingerprint is None:
+            return None
+
+        scored: list[tuple[float, str]] = []
+        for asset, candidate_path in candidates:
+            path = Path(candidate_path)
+            if not path.is_file():
+                continue
+            try:
+                fingerprint = self._fingerprint_path(path)
+            except (OSError, ValueError):
+                continue
+            scored.append((self._similarity(panel_fingerprint, fingerprint), asset.id))
+
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        best_score, best_id = scored[0]
+        if best_score < self._minimum_score:
+            return None
+        if len(scored) > 1 and best_score - scored[1][0] < self._minimum_margin:
+            return None
+        return VisualAssetMatch(source_asset_id=best_id, score=best_score)
