@@ -80,11 +80,12 @@ def resolve_review_round_inputs(
     project_id: str,
     round_id: str,
 ) -> ResolvedReviewRoundInputs:
-    """Resolve the graph-resident authoritative inputs for one ReviewRound.
+    """Resolve graph-resident authoritative inputs for one ReviewRound.
 
-    New rounds use one body DocumentVersion plus one READY ReferenceCorpus.
+    Body-only rounds carry text-proofreading authority only. Graph-first visual
+    rounds use one body DocumentVersion plus one READY ReferenceCorpus.
     Historical rounds may still reference plate/drawing DocumentVersions. The
-    two authority modes never mix, and corpus mode never resolves visual PDFs.
+    visual authority modes never mix, and corpus mode never resolves visual PDFs.
     """
     review_round = repository.get_review_round(project_id, round_id)
     if review_round is None:
@@ -114,6 +115,11 @@ def resolve_review_round_inputs(
         plate = None
         drawing = None
         mode = "reference_corpus"
+    elif not plate_version_id and not drawing_version_id:
+        reference_corpus = None
+        plate = None
+        drawing = None
+        mode = "body_only"
     else:
         reference_corpus = None
         plate = _resolve_required_version(
@@ -121,14 +127,14 @@ def resolve_review_round_inputs(
             project_id,
             "plate_book",
             plate_version_id,
-            required=False,
+            required=True,
         )
         drawing = _resolve_required_version(
             repository,
             project_id,
             "drawing_book",
             drawing_version_id,
-            required=False,
+            required=True,
         )
         mode = "legacy_visual_pdf"
 
