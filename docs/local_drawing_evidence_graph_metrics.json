@@ -1,0 +1,409 @@
+{
+  "audit": {
+    "adobe_used": false,
+    "ai_files": 56,
+    "body_context_count": 132,
+    "body_pdf": "완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-본문-3차 교정.pdf",
+    "com_used": false,
+    "extendscript_used": false,
+    "filename_labeled_ai": 35,
+    "measurement_time_utc": "2026-08-23T18:15:44.404385+00:00",
+    "resolver_version": "drawing-evidence-v1",
+    "source_root": "D:\\Coding\\archaeology-document-review-system\\src",
+    "source_root_read_only": true
+  },
+  "blinded_35": {
+    "ambiguous": 12,
+    "disagreements": [
+      {
+        "hidden_filename_label": "1",
+        "source": "환경 도면/도면1. 위치도(15-22)5만.ai",
+        "top1": "2",
+        "top1_score": 0.005641
+      },
+      {
+        "hidden_filename_label": "11",
+        "source": "환경 도면/도면11. 조사대상지역 현황도(15-22)3400.ai",
+        "top1": "91",
+        "top1_score": 0.092222
+      },
+      {
+        "hidden_filename_label": "12",
+        "source": "환경 도면/도면12. 조사대상지역 유구현황도(12,000).ai",
+        "top1": "23",
+        "top1_score": 0.105385
+      },
+      {
+        "hidden_filename_label": "15",
+        "source": "환경 도면/도면15. 4지점 선행트렌치 토층 cs5 수정본40.ai",
+        "top1": "6",
+        "top1_score": 0.396667
+      },
+      {
+        "hidden_filename_label": "16",
+        "source": "환경 도면/도면16. 구석기시대발굴조사지역 출토유물.ai",
+        "top1": "23",
+        "top1_score": 0.034737
+      },
+      {
+        "hidden_filename_label": "17",
+        "source": "환경 도면/도면17. 1지점-유구현황도(15-22)800.ai",
+        "top1": "42",
+        "top1_score": 0.298413
+      },
+      {
+        "hidden_filename_label": "18",
+        "source": "환경 도면/도면18. 1지점-유구편집본 수정.ai",
+        "top1": "44",
+        "top1_score": 1.835676
+      },
+      {
+        "hidden_filename_label": "19",
+        "source": "환경 도면/도면19. 1지점 분구묘-A3.ai",
+        "top1": "43",
+        "top1_score": 0.554375
+      },
+      {
+        "hidden_filename_label": "20",
+        "source": "환경 도면/도면20. 2지점-유구현황도(15-22)600.ai",
+        "top1": "48",
+        "top1_score": 0.304
+      },
+      {
+        "hidden_filename_label": "21",
+        "source": "환경 도면/도면21. 2지점 유구+유물 편집.ai",
+        "top1": "61",
+        "top1_score": 1.835918
+      },
+      {
+        "hidden_filename_label": "22",
+        "source": "환경 도면/도면22. 3지점-유구현황도(15-22)500.ai",
+        "top1": "64",
+        "top1_score": 0.323684
+      },
+      {
+        "hidden_filename_label": "23",
+        "source": "환경 도면/도면23. 3지점-유구편집본.ai",
+        "top1": "85",
+        "top1_score": 2.246395
+      },
+      {
+        "hidden_filename_label": "24",
+        "source": "환경 도면/도면24. 4지점-유구현황도(15-22)900.ai",
+        "top1": "113",
+        "top1_score": 0.299487
+      },
+      {
+        "hidden_filename_label": "25",
+        "source": "환경 도면/도면25. 4지점 유구+유물편집.ai",
+        "top1": "94",
+        "top1_score": 2.15468
+      },
+      {
+        "hidden_filename_label": "26",
+        "source": "환경 도면/도면26. 5지점-유구현황도(15-22)600.ai",
+        "top1": "113",
+        "top1_score": 0.304
+      },
+      {
+        "hidden_filename_label": "27",
+        "source": "환경 도면/도면27. 5지점-유구편집본.ai",
+        "top1": "127",
+        "top1_score": 2.164595
+      },
+      {
+        "hidden_filename_label": "4",
+        "source": "환경 도면/도면4. 침식등급(15-10).ai",
+        "top1": "6",
+        "top1_score": 0.002444
+      },
+      {
+        "hidden_filename_label": "7",
+        "source": "환경 도면/도면7. 구석기위치도(15-22)25000.ai",
+        "top1": "12",
+        "top1_score": 0.018857
+      },
+      {
+        "hidden_filename_label": "8",
+        "source": "환경 도면/도면8. 주변유적분포도(15-22)14000.ai",
+        "top1": "30",
+        "top1_score": 0.18023
+      },
+      {
+        "hidden_filename_label": "1",
+        "source": "환경 도면/삽도1. 위성지도(15-10)만도.ai",
+        "top1": "3",
+        "top1_score": 0.006377
+      }
+    ],
+    "filename_used_for_scoring": false,
+    "labeled_files": 35,
+    "no_candidate": [
+      "환경 도면/도면10. 해동지도(15-10)-은진현-갈마동면.ai",
+      "환경 도면/도면9. 광여도(15-10)-은진현-갈마동면.ai",
+      "환경 도면/삽도2-1. 항공지도-1968(15-10).ai",
+      "환경 도면/삽도2-2. 항공지도-1989(15-10).ai",
+      "환경 도면/삽도2-3. 항공지도-2007(15-10).ai",
+      "환경 도면/삽도2-4. 항공지도-2012(15-10).ai",
+      "환경 도면/삽도5. 2지점 S1E1 그리드 남벽.ai"
+    ],
+    "silver_label_is_ground_truth": false,
+    "top1_agreement": 8,
+    "top1_rate_percent": 22.8571,
+    "top3_agreement": 13,
+    "top3_rate_percent": 37.1429,
+    "unique_verified": 3,
+    "unresolved": 20
+  },
+  "full_56": {
+    "ambiguous": 10,
+    "derived_verified": 3,
+    "direct": 1,
+    "files": 56,
+    "heuristic_only": 23,
+    "known_false_verified_reviewed": 0,
+    "resolver_diagnostics": {
+      "ambiguousSourceCount": 10,
+      "canonicalDrawingCount": 4,
+      "evidenceCounts": {
+        "derived_verified": 3,
+        "direct": 1,
+        "heuristic": 227,
+        "unresolved": 0
+      },
+      "resolverVersion": "drawing-evidence-v1",
+      "unresolvedSourceCount": 42
+    },
+    "rows": [
+      {
+        "source": "본문 도면/1지점/【도면  】1지점 고려시대 1호 석곽묘 평·입단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/1지점/【도면  】1지점 원삼국시대 1호 분구묘 평·단면도-A3.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "본문 도면/1지점/【도면  】1지점 조선시대 1호 주거지 평·단면도 및 출토유물1.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/1지점/【도면  】1지점 청동기시대 6호 석관묘 평·입단면도.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/2지점/【도면  】2지점 조선시대 1호 주거지 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/2지점/【도면  】2지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/2지점/【도면  】2지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 1호 옹관묘평·단면도 및 출토유물 1.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 2호 옹관묘 평·단면도.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 3호 옹관묘 평·단면도 및 출토유물1.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 조선시대 3호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/3지점/【도면  】3지점 청동기시대 수혈 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/4지점/【도면  】4지점 조선시대 1호 토광묘 평·입단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 1호 구상유구 평·단면도.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 3호 토광묘 평·입단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 4호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "본문 도면/5지점/【도면  】5지점 조선시대 5호 토광묘 평·단면도 및 출토유물.ai",
+        "status": "unresolved"
+      },
+      {
+        "source": "환경 도면/도면1. 위치도(15-22)5만.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면10. 해동지도(15-10)-은진현-갈마동면.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면11. 조사대상지역 현황도(15-22)3400.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면12. 조사대상지역 유구현황도(12,000).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면13. 구석기-그리드현황도(15-22)800.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "number": "14",
+        "source": "환경 도면/도면14. 2지점 S1E1 북동 토층 cs5.ai",
+        "status": "direct"
+      },
+      {
+        "number": "15",
+        "source": "환경 도면/도면15. 4지점 선행트렌치 토층 cs5 수정본40.ai",
+        "status": "derived_verified"
+      },
+      {
+        "source": "환경 도면/도면16. 구석기시대발굴조사지역 출토유물.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면17. 1지점-유구현황도(15-22)800.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면18. 1지점-유구편집본 수정.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면19. 1지점 분구묘-A3.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면2. 근세도(15-22)대정오년 5만.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면20. 2지점-유구현황도(15-22)600.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면21. 2지점 유구+유물 편집.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면22. 3지점-유구현황도(15-22)500.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면23. 3지점-유구편집본.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면24. 4지점-유구현황도(15-22)900.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면25. 4지점 유구+유물편집.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면26. 5지점-유구현황도(15-22)600.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면27. 5지점-유구편집본.ai",
+        "status": "ambiguous"
+      },
+      {
+        "source": "환경 도면/도면3. 수계도(15-10)만도.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면4. 침식등급(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면5. 지질도(15-10)5000.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면6. 분포지형(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면7. 구석기위치도(15-22)25000.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면8. 주변유적분포도(15-22)14000.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/도면9. 광여도(15-10)-은진현-갈마동면.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/삽도1. 위성지도(15-10)만도.ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/삽도2-1. 항공지도-1968(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/삽도2-2. 항공지도-1989(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/삽도2-3. 항공지도-2007(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "source": "환경 도면/삽도2-4. 항공지도-2012(15-10).ai",
+        "status": "heuristic_only"
+      },
+      {
+        "number": "3",
+        "source": "환경 도면/삽도3. 2지점 그리드.ai",
+        "status": "derived_verified"
+      },
+      {
+        "number": "4",
+        "source": "환경 도면/삽도4. 4지점 그리드.ai",
+        "status": "derived_verified"
+      },
+      {
+        "source": "환경 도면/삽도5. 2지점 S1E1 그리드 남벽.ai",
+        "status": "heuristic_only"
+      }
+    ],
+    "unresolved": 19
+  }
+}
