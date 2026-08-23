@@ -94,8 +94,17 @@ class ReferenceCorpusService:
 
     @staticmethod
     def _source_set_hash(sources: Iterable[dict]) -> str:
-        pairs = sorted((str(item["role"]), str(item["sha256"])) for item in sources)
-        payload = "\n".join(f"{role}\0{sha}" for role, sha in pairs).encode("utf-8")
+        triples = sorted(
+            (
+                str(item["role"]),
+                str(item["sha256"]),
+                str(item.get("relative_path") or item.get("original_name") or "").replace("\\", "/"),
+            )
+            for item in sources
+        )
+        payload = "\n".join(
+            f"{role}\0{sha}\0{relative_path}" for role, sha, relative_path in triples
+        ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
     @staticmethod
@@ -356,6 +365,7 @@ class ReferenceCorpusService:
             by_id = {asset.id: asset for asset in assets}
             output_dir = self._output_root(corpus_id)
             output_dir.mkdir(parents=True, exist_ok=True)
+            workspace_root = self._workspace_root(corpus_id).resolve()
             manifests = []
             conversion_rows = sorted(
                 (row for row in source_rows if row.get("role") in _CONVERTER_ROLES),
@@ -372,6 +382,8 @@ class ReferenceCorpusService:
                         source_role=str(row["role"]),
                         output_dir=str(output_dir),
                         manifest_schema_version=int(self.manifest_schema_version),
+                        workspace_root=str(workspace_root),
+                        source_relative_path=source.relative_path,
                     )
                 )
                 if result.converter_version != converter_version:
