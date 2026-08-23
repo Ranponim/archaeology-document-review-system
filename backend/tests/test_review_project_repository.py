@@ -63,8 +63,13 @@ def test_stage_only_legacy_lookup_still_uses_stage():
 
 
 def test_review_round_rejects_incomplete_canonical_input_set():
-    repo = ReviewProjectRepository(FakeDriver())
-    with pytest.raises(ValueError, match="complete canonical input set"):
+    # Keep the body valid so this test exercises exactly the partial legacy
+    # visual-authority contract instead of depending on validation order.
+    driver = FakeDriver(responses=[[
+        _version_row("body_v1", "doc_body", "report_body")
+    ]])
+    repo = ReviewProjectRepository(driver)
+    with pytest.raises(ValueError, match="requires both plate_book and drawing_book"):
         repo.create_review_round(
             "p1",
             body_version_id="body_v1",
