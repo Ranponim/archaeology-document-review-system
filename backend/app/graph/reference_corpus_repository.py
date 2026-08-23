@@ -5,7 +5,13 @@ from uuid import uuid4
 
 from neo4j import Driver
 
-from app.domain.canonical_models import DrawingData, DrawingRegionData, PlateData, PlatePanelData
+from app.domain.canonical_models import (
+    DrawingData,
+    DrawingRegionData,
+    EvidenceLevel,
+    PlateData,
+    PlatePanelData,
+)
 from app.domain.reference_corpus import (
     DerivedArtifactData,
     ReferenceCorpusData,
@@ -14,16 +20,28 @@ from app.domain.reference_corpus import (
 )
 
 
-_ALLOWED_SOURCE_ROLES = {"plate_layout", "plate_link", "drawing_source"}
+_ALLOWED_SOURCE_ROLES = {"plate_layout", "plate_pdf", "plate_link", "drawing_source"}
 _ALLOWED_TRANSITIONS: dict[ReferenceCorpusStatus, set[ReferenceCorpusStatus]] = {
-    ReferenceCorpusStatus.STAGING: {ReferenceCorpusStatus.CONVERTING, ReferenceCorpusStatus.FAILED},
-    ReferenceCorpusStatus.CONVERTING: {ReferenceCorpusStatus.VALIDATING, ReferenceCorpusStatus.FAILED},
-    ReferenceCorpusStatus.VALIDATING: {ReferenceCorpusStatus.CANONICALIZING, ReferenceCorpusStatus.FAILED},
+    ReferenceCorpusStatus.STAGING: {
+        ReferenceCorpusStatus.CONVERTING,
+        ReferenceCorpusStatus.FAILED,
+    },
+    ReferenceCorpusStatus.CONVERTING: {
+        ReferenceCorpusStatus.VALIDATING,
+        ReferenceCorpusStatus.FAILED,
+    },
+    ReferenceCorpusStatus.VALIDATING: {
+        ReferenceCorpusStatus.CANONICALIZING,
+        ReferenceCorpusStatus.FAILED,
+    },
     ReferenceCorpusStatus.CANONICALIZING: {
         ReferenceCorpusStatus.GRAPH_VALIDATING,
         ReferenceCorpusStatus.FAILED,
     },
-    ReferenceCorpusStatus.GRAPH_VALIDATING: {ReferenceCorpusStatus.READY, ReferenceCorpusStatus.FAILED},
+    ReferenceCorpusStatus.GRAPH_VALIDATING: {
+        ReferenceCorpusStatus.READY,
+        ReferenceCorpusStatus.FAILED,
+    },
     ReferenceCorpusStatus.READY: set(),
     ReferenceCorpusStatus.FAILED: set(),
 }
@@ -32,9 +50,11 @@ _ALLOWED_TRANSITIONS: dict[ReferenceCorpusStatus, set[ReferenceCorpusStatus]] = 
 class ReferenceCorpusRepository:
     """Project-rooted persistence for immutable reference-corpus revisions.
 
-    The legacy CanonicalRepository continues to own DocumentVersion-based visual
-    persistence. This repository is deliberately separate so a new corpus build
-    cannot accidentally acquire legacy visual-PDF ownership edges.
+    Canonical identity and source provenance are corpus-scoped. Evidence is
+    explicitly graded; only an ``unresolved`` panel/region may omit a source
+    edge. This lets the Adobe-free path remain conservative without inventing a
+    JPG/AI relationship, while legacy/direct objects retain the stricter source
+    requirement.
     """
 
     def __init__(self, driver: Driver, database: str | None = None) -> None:
@@ -54,6 +74,19 @@ class ReferenceCorpusRepository:
             return ReferenceCorpusFailureCode(text)
         except ValueError:
             return text
+
+    @staticmethod
+    def _evidence(value: EvidenceLevel | str) -> str:
+        return value.value if isinstance(value, EvidenceLevel) else str(value)
+
+    @staticmethod
+    def _edge_status(value: EvidenceLevel | str) -> str:
+        evidence = ReferenceCorpusRepository._evidence(value)
+        if evidence in {EvidenceLevel.DIRECT.value, EvidenceLevel.DERIVED_VERIFIED.value}:
+            return "verified"
+        if evidence == EvidenceLevel.HEURISTIC.value:
+            return "candidate"
+        return "unresolved"
 
     @classmethod
     def _corpus_from_row(cls, row: Any) -> ReferenceCorpusData:
@@ -177,7 +210,13 @@ class ReferenceCorpusRepository:
             raise ValueError("READY reference corpus is immutable")
         return corpus
 
-    def attach_source(self, project_id: str, corpus_id: str, source_asset_id: str, role: str) -> None:
+    def attach_source(
+        self,
+        project_id: str,
+        corpus_id: str,
+        source_asset_id: str,
+        role: str,
+    ) -> None:
         if role not in _ALLOWED_SOURCE_ROLES:
             raise ValueError(f"unsupported reference corpus source role: {role}")
         self._require_mutable(project_id, corpus_id)
@@ -229,7 +268,12 @@ class ReferenceCorpusRepository:
         )
         return [dict(row) for row in records]
 
-    def _attached_source_ids(self, project_id: str, corpus_id: str, source_ids: Iterable[str]) -> set[str]:
+    def _attached_source_ids(
+        self,
+        project_id: str,
+        corpus_id: str,
+        source_ids: Iterable[str],
+    ) -> set[str]:
         wanted = sorted({item for item in source_ids if item})
         if not wanted:
             return set()
@@ -251,15 +295,23 @@ class ReferenceCorpusRepository:
             return set()
         return {str(item) for item in (records[0].get("ids") or [])}
 
-    def save_artifact(self, project_id: str, corpus_id: str, artifact: DerivedArtifactData) -> None:
+    def save_artifact(
+        self,
+        project_id: str,
+        corpus_id: str,
+        artifact: DerivedArtifactData,
+    ) -> None:
         self._require_mutable(project_id, corpus_id)
         if artifact.reference_corpus_id != corpus_id:
             raise ValueError("artifact reference corpus does not match corpus")
         if artifact.source_asset_id:
-            attached = self._attached_source_ids(project_id, corpus_id, [artifact.source_asset_id])
+            attached = self._attached_source_ids(
+                project_id, corpus_id, [artifact.source_asset_id]
+            )
             if artifact.source_asset_id not in attached:
-                raise ValueError("artifact source provenance is not attached to project corpus")
-
+                raise ValueError(
+                    "artifact source provenance is not attached to project corpus"
+                )
         payload = {
             "id": artifact.id,
             "referenceCorpusId": corpus_id,
@@ -324,9 +376,14 @@ class ReferenceCorpusRepository:
         if current.status == ReferenceCorpusStatus.READY:
             raise ValueError("READY reference corpus is immutable")
         if target not in _ALLOWED_TRANSITIONS[current.status]:
-            raise ValueError(f"invalid reference corpus status transition: {current.status.value}->{target.value}")
-
-        failure_value = failure_code.value if isinstance(failure_code, ReferenceCorpusFailureCode) else failure_code
+            raise ValueError(
+                f"invalid reference corpus status transition: {current.status.value}->{target.value}"
+            )
+        failure_value = (
+            failure_code.value
+            if isinstance(failure_code, ReferenceCorpusFailureCode)
+            else failure_code
+        )
         projection = self._corpus_projection("c")
         records, _, _ = self._driver.execute_query(
             f"""
@@ -358,7 +415,9 @@ class ReferenceCorpusRepository:
             raise ValueError("reference corpus status changed concurrently")
         return self._corpus_from_row(records[0])
 
-    def find_ready_by_build_identity(self, project_id: str, build_identity: str) -> ReferenceCorpusData | None:
+    def find_ready_by_build_identity(
+        self, project_id: str, build_identity: str
+    ) -> ReferenceCorpusData | None:
         projection = self._corpus_projection("c")
         records, _, _ = self._driver.execute_query(
             f"""
@@ -376,8 +435,9 @@ class ReferenceCorpusRepository:
         )
         return self._corpus_from_row(records[0]) if records else None
 
-    @staticmethod
-    def _plate_payload(plate: PlateData) -> dict[str, Any]:
+    @classmethod
+    def _plate_payload(cls, plate: PlateData) -> dict[str, Any]:
+        evidence = cls._evidence(plate.evidence_level)
         return {
             "id": plate.plate_id,
             "number": plate.number,
@@ -388,10 +448,15 @@ class ReferenceCorpusRepository:
             "raw_identifier": plate.raw_identifier,
             "source_kind": plate.source_kind,
             "reference_corpus_id": plate.reference_corpus_id,
+            "source_asset_id": plate.source_asset_id,
+            "evidence_level": evidence,
+            "evidence_method": plate.evidence_method,
+            "edge_status": cls._edge_status(evidence),
         }
 
-    @staticmethod
-    def _panel_payload(panel: PlatePanelData) -> dict[str, Any]:
+    @classmethod
+    def _panel_payload(cls, panel: PlatePanelData) -> dict[str, Any]:
+        evidence = cls._evidence(panel.evidence_level)
         return {
             "id": panel.panel_id,
             "plate_id": panel.plate_id,
@@ -403,10 +468,14 @@ class ReferenceCorpusRepository:
             "render_uri": panel.render_uri,
             "source_sha256": panel.source_sha256,
             "source_asset_id": panel.source_asset_id,
+            "evidence_level": evidence,
+            "evidence_method": panel.evidence_method,
+            "edge_status": cls._edge_status(evidence),
         }
 
-    @staticmethod
-    def _drawing_payload(drawing: DrawingData) -> dict[str, Any]:
+    @classmethod
+    def _drawing_payload(cls, drawing: DrawingData) -> dict[str, Any]:
+        evidence = cls._evidence(drawing.evidence_level)
         return {
             "id": drawing.drawing_id,
             "number": drawing.number,
@@ -417,10 +486,15 @@ class ReferenceCorpusRepository:
             "raw_identifier": drawing.raw_identifier,
             "source_kind": drawing.source_kind,
             "reference_corpus_id": drawing.reference_corpus_id,
+            "source_asset_id": drawing.source_asset_id,
+            "evidence_level": evidence,
+            "evidence_method": drawing.evidence_method,
+            "edge_status": cls._edge_status(evidence),
         }
 
-    @staticmethod
-    def _region_payload(region: DrawingRegionData) -> dict[str, Any]:
+    @classmethod
+    def _region_payload(cls, region: DrawingRegionData) -> dict[str, Any]:
+        evidence = cls._evidence(region.evidence_level)
         return {
             "id": region.region_id,
             "drawing_id": region.drawing_id,
@@ -432,7 +506,20 @@ class ReferenceCorpusRepository:
             "render_uri": region.render_uri,
             "source_sha256": region.source_sha256,
             "source_asset_id": region.source_asset_id,
+            "evidence_level": evidence,
+            "evidence_method": region.evidence_method,
+            "edge_status": cls._edge_status(evidence),
         }
+
+    @classmethod
+    def _validate_child_provenance(cls, item: PlatePanelData | DrawingRegionData) -> None:
+        evidence = cls._evidence(item.evidence_level)
+        if evidence == EvidenceLevel.UNRESOLVED.value:
+            if item.source_asset_id is not None:
+                raise ValueError("unresolved visual provenance cannot declare a source asset")
+            return
+        if item.source_asset_id is None:
+            raise ValueError("canonical visual provenance is incomplete")
 
     def save_canonical_visuals(
         self,
@@ -445,33 +532,43 @@ class ReferenceCorpusRepository:
         self._require_mutable(project_id, corpus_id)
         for visual in [*plates, *drawings]:
             if visual.reference_corpus_id != corpus_id:
-                raise ValueError("canonical visual reference corpus does not match corpus")
+                raise ValueError(
+                    "canonical visual reference corpus does not match corpus"
+                )
             if visual.document_version_id is not None:
-                raise ValueError("corpus canonical visual cannot use legacy DocumentVersion ownership")
+                raise ValueError(
+                    "corpus canonical visual cannot use legacy DocumentVersion ownership"
+                )
 
         panels = [panel for plate in plates for panel in plate.panels]
         regions = [region for drawing in drawings for region in drawing.regions]
-        provenance_ids = [item.source_asset_id for item in [*panels, *regions] if item.source_asset_id]
-        missing_identity = [item.id if hasattr(item, "id") else "visual" for item in []]
-        if any(panel.source_asset_id is None for panel in panels):
-            raise ValueError("plate panel provenance is incomplete")
-        if any(region.source_asset_id is None for region in regions):
-            raise ValueError("drawing region provenance is incomplete")
+        for item in [*panels, *regions]:
+            self._validate_child_provenance(item)
+
+        provenance_ids = [
+            item.source_asset_id
+            for item in [*plates, *drawings, *panels, *regions]
+            if item.source_asset_id
+        ]
         attached = self._attached_source_ids(project_id, corpus_id, provenance_ids)
         missing = sorted(set(provenance_ids) - attached)
         if missing:
-            raise ValueError("canonical visual provenance source is outside project corpus")
-        del missing_identity
+            raise ValueError(
+                "canonical visual provenance source is outside project corpus"
+            )
 
         if plates:
-            plate_payloads = [self._plate_payload(item) for item in plates]
+            payloads = [self._plate_payload(item) for item in plates]
             records, _, _ = self._driver.execute_query(
                 """
                 MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
                 WHERE c.projectId = $project_id AND c.status <> 'ready'
                 UNWIND $plates AS item
+                OPTIONAL MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
+                WITH c, source, item
+                WHERE item.source_asset_id IS NULL OR source IS NOT NULL
                 MERGE (plate:Plate {id: item.id})
-                WITH c, plate, item
+                WITH c, source, plate, item
                 WHERE plate.referenceCorpusId IS NULL OR plate.referenceCorpusId = $corpus_id
                 SET plate.number = item.number,
                     plate.physical_page = item.physical_page,
@@ -480,28 +577,41 @@ class ReferenceCorpusRepository:
                     plate.source_sha256 = item.source_sha256,
                     plate.raw_identifier = item.raw_identifier,
                     plate.source_kind = item.source_kind,
-                    plate.referenceCorpusId = $corpus_id
+                    plate.referenceCorpusId = $corpus_id,
+                    plate.sourceAssetId = item.source_asset_id,
+                    plate.evidenceLevel = item.evidence_level,
+                    plate.evidenceMethod = item.evidence_method
                 MERGE (c)-[:HAS_PLATE]->(plate)
+                FOREACH (_ IN CASE WHEN source IS NULL THEN [] ELSE [1] END |
+                    MERGE (plate)-[derived:DERIVED_FROM]->(source)
+                    SET derived.method = item.evidence_method,
+                        derived.status = item.edge_status,
+                        derived.referenceCorpusId = $corpus_id,
+                        derived.createdAt = coalesce(derived.createdAt, datetime()),
+                        source.provenanceStatus = item.edge_status
+                )
                 RETURN count(plate) AS saved
                 """,
                 project_id=project_id,
                 corpus_id=corpus_id,
-                plates=plate_payloads,
+                plates=payloads,
                 **self._query_config,
             )
             if not records or int(records[0]["saved"]) != len(plates):
                 raise ValueError("plate corpus identity conflicts with existing graph")
 
         if panels:
-            panel_payloads = [self._panel_payload(item) for item in panels]
+            payloads = [self._panel_payload(item) for item in panels]
             records, _, _ = self._driver.execute_query(
                 """
                 MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
                 WHERE c.projectId = $project_id AND c.status <> 'ready'
                 UNWIND $panels AS item
                 MATCH (c)-[:HAS_PLATE]->(plate:Plate {id: item.plate_id})
-                MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
-                WHERE source.projectId = $project_id
+                OPTIONAL MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
+                WITH c, plate, source, item
+                WHERE (item.evidence_level = 'unresolved' AND item.source_asset_id IS NULL)
+                   OR (item.evidence_level <> 'unresolved' AND item.source_asset_id IS NOT NULL AND source IS NOT NULL)
                 MERGE (panel:PlatePanel {id: item.id})
                 WITH c, plate, source, panel, item
                 WHERE panel.plate_id IS NULL OR panel.plate_id = item.plate_id
@@ -513,33 +623,42 @@ class ReferenceCorpusRepository:
                     panel.physical_page = item.physical_page,
                     panel.render_uri = item.render_uri,
                     panel.source_sha256 = item.source_sha256,
-                    panel.sourceAssetId = item.source_asset_id
+                    panel.sourceAssetId = item.source_asset_id,
+                    panel.evidenceLevel = item.evidence_level,
+                    panel.evidenceMethod = item.evidence_method
                 MERGE (plate)-[:HAS_PANEL]->(panel)
-                MERGE (panel)-[derived:DERIVED_FROM]->(source)
-                SET derived.method = 'adobe_manifest',
-                    derived.status = 'declared',
-                    derived.referenceCorpusId = $corpus_id,
-                    derived.createdAt = coalesce(derived.createdAt, datetime()),
-                    source.provenanceStatus = 'declared'
+                FOREACH (_ IN CASE WHEN source IS NULL THEN [] ELSE [1] END |
+                    MERGE (panel)-[derived:DERIVED_FROM]->(source)
+                    SET derived.method = item.evidence_method,
+                        derived.status = item.edge_status,
+                        derived.referenceCorpusId = $corpus_id,
+                        derived.createdAt = coalesce(derived.createdAt, datetime()),
+                        source.provenanceStatus = item.edge_status
+                )
                 RETURN count(panel) AS saved
                 """,
                 project_id=project_id,
                 corpus_id=corpus_id,
-                panels=panel_payloads,
+                panels=payloads,
                 **self._query_config,
             )
             if not records or int(records[0]["saved"]) != len(panels):
-                raise ValueError("plate panel provenance conflicts with existing graph")
+                raise ValueError(
+                    "plate panel provenance conflicts with existing graph"
+                )
 
         if drawings:
-            drawing_payloads = [self._drawing_payload(item) for item in drawings]
+            payloads = [self._drawing_payload(item) for item in drawings]
             records, _, _ = self._driver.execute_query(
                 """
                 MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
                 WHERE c.projectId = $project_id AND c.status <> 'ready'
                 UNWIND $drawings AS item
+                OPTIONAL MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
+                WITH c, source, item
+                WHERE item.source_asset_id IS NULL OR source IS NOT NULL
                 MERGE (drawing:Drawing {id: item.id})
-                WITH c, drawing, item
+                WITH c, source, drawing, item
                 WHERE drawing.referenceCorpusId IS NULL OR drawing.referenceCorpusId = $corpus_id
                 SET drawing.number = item.number,
                     drawing.physical_page = item.physical_page,
@@ -548,28 +667,43 @@ class ReferenceCorpusRepository:
                     drawing.source_sha256 = item.source_sha256,
                     drawing.raw_identifier = item.raw_identifier,
                     drawing.source_kind = item.source_kind,
-                    drawing.referenceCorpusId = $corpus_id
+                    drawing.referenceCorpusId = $corpus_id,
+                    drawing.sourceAssetId = item.source_asset_id,
+                    drawing.evidenceLevel = item.evidence_level,
+                    drawing.evidenceMethod = item.evidence_method
                 MERGE (c)-[:HAS_DRAWING]->(drawing)
+                FOREACH (_ IN CASE WHEN source IS NULL THEN [] ELSE [1] END |
+                    MERGE (drawing)-[derived:DERIVED_FROM]->(source)
+                    SET derived.method = item.evidence_method,
+                        derived.status = item.edge_status,
+                        derived.referenceCorpusId = $corpus_id,
+                        derived.createdAt = coalesce(derived.createdAt, datetime()),
+                        source.provenanceStatus = item.edge_status
+                )
                 RETURN count(drawing) AS saved
                 """,
                 project_id=project_id,
                 corpus_id=corpus_id,
-                drawings=drawing_payloads,
+                drawings=payloads,
                 **self._query_config,
             )
             if not records or int(records[0]["saved"]) != len(drawings):
-                raise ValueError("drawing corpus identity conflicts with existing graph")
+                raise ValueError(
+                    "drawing corpus identity conflicts with existing graph"
+                )
 
         if regions:
-            region_payloads = [self._region_payload(item) for item in regions]
+            payloads = [self._region_payload(item) for item in regions]
             records, _, _ = self._driver.execute_query(
                 """
                 MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
                 WHERE c.projectId = $project_id AND c.status <> 'ready'
                 UNWIND $regions AS item
                 MATCH (c)-[:HAS_DRAWING]->(drawing:Drawing {id: item.drawing_id})
-                MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
-                WHERE source.projectId = $project_id
+                OPTIONAL MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset {id: item.source_asset_id})
+                WITH c, drawing, source, item
+                WHERE (item.evidence_level = 'unresolved' AND item.source_asset_id IS NULL)
+                   OR (item.evidence_level <> 'unresolved' AND item.source_asset_id IS NOT NULL AND source IS NOT NULL)
                 MERGE (region:DrawingRegion {id: item.id})
                 WITH c, drawing, source, region, item
                 WHERE region.drawing_id IS NULL OR region.drawing_id = item.drawing_id
@@ -581,26 +715,34 @@ class ReferenceCorpusRepository:
                     region.physical_page = item.physical_page,
                     region.render_uri = item.render_uri,
                     region.source_sha256 = item.source_sha256,
-                    region.sourceAssetId = item.source_asset_id
+                    region.sourceAssetId = item.source_asset_id,
+                    region.evidenceLevel = item.evidence_level,
+                    region.evidenceMethod = item.evidence_method
                 MERGE (drawing)-[:HAS_REGION]->(region)
-                MERGE (region)-[derived:DERIVED_FROM]->(source)
-                SET derived.method = 'adobe_manifest',
-                    derived.status = 'declared',
-                    derived.referenceCorpusId = $corpus_id,
-                    derived.createdAt = coalesce(derived.createdAt, datetime()),
-                    source.provenanceStatus = 'declared'
+                FOREACH (_ IN CASE WHEN source IS NULL THEN [] ELSE [1] END |
+                    MERGE (region)-[derived:DERIVED_FROM]->(source)
+                    SET derived.method = item.evidence_method,
+                        derived.status = item.edge_status,
+                        derived.referenceCorpusId = $corpus_id,
+                        derived.createdAt = coalesce(derived.createdAt, datetime()),
+                        source.provenanceStatus = item.edge_status
+                )
                 RETURN count(region) AS saved
                 """,
                 project_id=project_id,
                 corpus_id=corpus_id,
-                regions=region_payloads,
+                regions=payloads,
                 **self._query_config,
             )
             if not records or int(records[0]["saved"]) != len(regions):
-                raise ValueError("drawing region provenance conflicts with existing graph")
+                raise ValueError(
+                    "drawing region provenance conflicts with existing graph"
+                )
 
     def _scalar_count(self, query: str, **params: Any) -> int:
-        records, _, _ = self._driver.execute_query(query, **params, **self._query_config)
+        records, _, _ = self._driver.execute_query(
+            query, **params, **self._query_config
+        )
         if not records:
             return 0
         return int(records[0].get("count") or 0)
@@ -637,32 +779,55 @@ class ReferenceCorpusRepository:
         cross_project_sources = self._scalar_count(
             """
             MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
-            MATCH (c)-[:USES_SOURCE]->(source:OriginalAsset)
+            MATCH (c)-[:HAS_PLATE|HAS_DRAWING]->(visual)
+            MATCH (visual)-[:DERIVED_FROM]->(source:OriginalAsset)
+            WHERE source.projectId <> $project_id
+            RETURN count(DISTINCT source) AS count
+            UNION ALL
+            MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
+            MATCH (c)-[:HAS_PLATE]->(:Plate)-[:HAS_PANEL]->(child:PlatePanel)-[:DERIVED_FROM]->(source:OriginalAsset)
+            WHERE source.projectId <> $project_id
+            RETURN count(DISTINCT source) AS count
+            UNION ALL
+            MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
+            MATCH (c)-[:HAS_DRAWING]->(:Drawing)-[:HAS_REGION]->(child:DrawingRegion)-[:DERIVED_FROM]->(source:OriginalAsset)
             WHERE source.projectId <> $project_id
             RETURN count(DISTINCT source) AS count
             """,
             **common,
         )
-        missing_panel_provenance = self._scalar_count(
+        bad_visual_provenance = self._scalar_count(
+            """
+            MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
+            MATCH (c)-[:HAS_PLATE|HAS_DRAWING]->(visual)
+            OPTIONAL MATCH (visual)-[:DERIVED_FROM]->(source:OriginalAsset)
+            WITH visual, collect(DISTINCT source) AS sources
+            WHERE (visual.sourceAssetId IS NOT NULL AND none(item IN sources WHERE item IS NOT NULL AND item.id = visual.sourceAssetId AND item.projectId = $project_id))
+               OR (visual.evidenceLevel = 'unresolved' AND visual.sourceAssetId IS NOT NULL)
+            RETURN count(DISTINCT visual) AS count
+            """,
+            **common,
+        )
+        bad_panel_provenance = self._scalar_count(
             """
             MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
             MATCH (c)-[:HAS_PLATE]->(:Plate)-[:HAS_PANEL]->(panel:PlatePanel)
             OPTIONAL MATCH (panel)-[:DERIVED_FROM]->(source:OriginalAsset)
             WITH panel, collect(DISTINCT source) AS sources
-            WHERE panel.sourceAssetId IS NULL
-               OR none(item IN sources WHERE item IS NOT NULL AND item.id = panel.sourceAssetId AND item.projectId = $project_id)
+            WHERE (panel.evidenceLevel = 'unresolved' AND (panel.sourceAssetId IS NOT NULL OR any(item IN sources WHERE item IS NOT NULL)))
+               OR (coalesce(panel.evidenceLevel, 'direct') <> 'unresolved' AND (panel.sourceAssetId IS NULL OR none(item IN sources WHERE item IS NOT NULL AND item.id = panel.sourceAssetId AND item.projectId = $project_id)))
             RETURN count(DISTINCT panel) AS count
             """,
             **common,
         )
-        missing_region_provenance = self._scalar_count(
+        bad_region_provenance = self._scalar_count(
             """
             MATCH (p:Project {id: $project_id})-[:HAS_REFERENCE_CORPUS]->(c:ReferenceCorpus {id: $corpus_id})
             MATCH (c)-[:HAS_DRAWING]->(:Drawing)-[:HAS_REGION]->(region:DrawingRegion)
             OPTIONAL MATCH (region)-[:DERIVED_FROM]->(source:OriginalAsset)
             WITH region, collect(DISTINCT source) AS sources
-            WHERE region.sourceAssetId IS NULL
-               OR none(item IN sources WHERE item IS NOT NULL AND item.id = region.sourceAssetId AND item.projectId = $project_id)
+            WHERE (region.evidenceLevel = 'unresolved' AND (region.sourceAssetId IS NOT NULL OR any(item IN sources WHERE item IS NOT NULL)))
+               OR (coalesce(region.evidenceLevel, 'direct') <> 'unresolved' AND (region.sourceAssetId IS NULL OR none(item IN sources WHERE item IS NOT NULL AND item.id = region.sourceAssetId AND item.projectId = $project_id)))
             RETURN count(DISTINCT region) AS count
             """,
             **common,
@@ -672,6 +837,7 @@ class ReferenceCorpusRepository:
             and artifact_count > 0
             and bad_visual_count == 0
             and cross_project_sources == 0
-            and missing_panel_provenance == 0
-            and missing_region_provenance == 0
+            and bad_visual_provenance == 0
+            and bad_panel_provenance == 0
+            and bad_region_provenance == 0
         )
