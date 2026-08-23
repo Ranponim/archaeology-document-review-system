@@ -91,6 +91,7 @@ class ProjectRepositoryPort(Protocol):
         plate_version_id: str | None = None,
         drawing_version_id: str | None = None,
         notes: str | None = None,
+        reference_corpus_id: str | None = None,
     ) -> ReviewRound: ...
 
     def list_review_rounds(self, project_id: str) -> list[ReviewRound]: ...
@@ -102,7 +103,6 @@ class ProjectRepositoryPort(Protocol):
     def approve_review_round(
         self, project_id: str, round_id: str
     ) -> ReviewRound: ...
-
 
 
 def get_file_store(request: Request) -> FileStore:
@@ -128,6 +128,11 @@ async def _run_repository(operation, *args):
     except AnalysisRunNotFoundError:
         raise
     except ReviewRoundNotFoundError:
+        raise
+    except ValueError:
+        # Repository validation errors are client input errors. Preserve them so
+        # the app-level ValueError handler returns a sanitized 400 instead of a
+        # misleading server_error/500.
         raise
     except Exception:  # noqa: BLE001 - sanitize adapter failures at the API boundary
         raise ServerOperationError from None
