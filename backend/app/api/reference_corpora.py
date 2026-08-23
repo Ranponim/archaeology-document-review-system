@@ -36,6 +36,7 @@ class ReferenceCorpusSourceResponse(ApiModel):
     id: str
     role: str
     original_name: str = Field(alias="originalName")
+    relative_path: str = Field(alias="relativePath")
     sha256: str
 
 
@@ -119,6 +120,7 @@ async def upload_reference_corpus_source(
     role: Annotated[str, Query()],
     service: Annotated[ReferenceCorpusService, Depends(get_reference_corpus_service)],
     file_store: Annotated[FileStore, Depends(get_file_store)],
+    relative_path: Annotated[str | None, Query(alias="relativePath")] = None,
 ) -> ReferenceCorpusSourceResponse:
     filename = file.filename or ""
     normalized_role = service.validate_source_role(role, filename)
@@ -136,11 +138,13 @@ async def upload_reference_corpus_source(
         corpus_id,
         stored,
         normalized_role,
+        relative_path=relative_path,
     )
     return ReferenceCorpusSourceResponse(
         id=asset.id,
         role=normalized_role,
         originalName=asset.original_name,
+        relativePath=asset.relative_path,
         sha256=asset.sha256,
     )
 
