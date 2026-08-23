@@ -36,7 +36,7 @@ from app.graph.review_project_repository import ReviewProjectRepository
 from app.graph.schema import ensure_schema
 from app.graph.source_asset_repository import SourceAssetRepository
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
-from app.services.adobe_conversion_client import SubprocessAdobeConversionClient
+from app.services.adobe_conversion_client import build_adobe_conversion_client
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.project_structure_service import ProjectStructureService
@@ -115,7 +115,7 @@ def create_app(
                 source_repository = SourceAssetRepository(driver)
                 app.state.reference_corpus_service = ReferenceCorpusService(
                     ReferenceCorpusRepository(driver),
-                    SubprocessAdobeConversionClient(),
+                    build_adobe_conversion_client(),
                     ReferenceCanonicalizer(),
                     source_asset_repository=source_repository,
                 )
