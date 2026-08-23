@@ -31,7 +31,7 @@ class PDFParser:
     HEADER_PATTERN_RIGHT = re.compile(r"^(.*?)\s*\|\s*(\d+)$")
     REFERENCE_PATTERN = re.compile(
         r"(?:【\s*)?"
-        r"(?P<label>원색\s*도판|도판|도면)"
+        r"(?P<label>원색\s*도판|도판|사진|도면|삽도)"
         r"\s*(?::\s*)?"
         r"(?P<numbers>"
         r"\d+(?:\s*[~\-]\s*\d+)?"
@@ -88,7 +88,7 @@ class PDFParser:
         refs: list[ReferenceData] = []
         for match in self.REFERENCE_PATTERN.finditer(text):
             label = re.sub(r"\s+", "", match.group("label"))
-            ref_type = "drawing" if label == "도면" else "plate"
+            ref_type = "drawing" if label in {"도면", "삽도"} else "plate"
             for number in self.expand_reference_numbers(match.group("numbers")):
                 refs.append(
                     ReferenceData(

@@ -112,6 +112,22 @@ def test_body_reference_parser_accepts_real_src_reference_forms():
     assert all(ref.evidence_method == "body_explicit_identifier" for ref in refs)
 
 
+def test_body_reference_parser_accepts_sapdo_alias_found_in_real_src():
+    parser = PDFParser()
+
+    refs = parser._extract_references("\u3010\uc0bd\ub3c4 4\u3011")
+
+    assert [(ref.ref_type, ref.number) for ref in refs] == [("drawing", "4")]
+
+
+def test_body_reference_parser_accepts_photo_alias_found_in_real_src():
+    parser = PDFParser()
+
+    refs = parser._extract_references("\uc0ac\uc9c4: 5")
+
+    assert [(ref.ref_type, ref.number) for ref in refs] == [("plate", "5")]
+
+
 def test_body_reference_parser_preserves_list_range_and_blank_caption_behavior():
     parser = PDFParser()
 
