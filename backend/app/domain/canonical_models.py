@@ -38,6 +38,7 @@ class ReferenceData:
     physical_page: int | None = None
     evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
     evidence_method: str | None = None
+    publication_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +119,7 @@ class DrawingData:
     source_asset_id: str | None = None
     evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
     evidence_method: str | None = None
+    publication_kind: str = "drawing"
 
 
 @dataclass(frozen=True, slots=True)
