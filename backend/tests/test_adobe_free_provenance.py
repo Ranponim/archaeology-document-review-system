@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
 import pymupdf
@@ -52,11 +53,25 @@ def _write_pattern_image(path: Path, variant: int) -> None:
 def _write_pdf_with_image(pdf_path: Path, image_path: Path) -> tuple[float, float, float, float]:
     doc = pymupdf.open()
     page = doc.new_page(width=200, height=200)
-    rect = pymupdf.Rect(20, 30, 180, 170)
-    page.insert_image(rect, filename=str(image_path))
+    page.insert_image(pymupdf.Rect(20, 30, 180, 170), filename=str(image_path))
     doc.save(pdf_path)
     doc.close()
-    return (0.1, 0.15, 0.9, 0.85)
+
+    # PyMuPDF preserves image aspect ratio inside the requested placement rect.
+    # PlateParser uses the actual embedded image rect, so the fixture must too.
+    doc = pymupdf.open(pdf_path)
+    try:
+        page = doc[0]
+        xref = page.get_images(full=True)[0][0]
+        rect = page.get_image_rects(xref)[0]
+        return (
+            rect.x0 / page.rect.width,
+            rect.y0 / page.rect.height,
+            rect.x1 / page.rect.width,
+            rect.y1 / page.rect.height,
+        )
+    finally:
+        doc.close()
 
 
 def test_canonical_models_expose_graded_evidence_metadata():
@@ -118,11 +133,27 @@ def test_body_reference_parser_preserves_list_range_and_blank_caption_behavior()
 def test_drawing_identity_resolver_prefers_internal_explicit_identifier(tmp_path):
     from app.services.drawing_identity_resolver import DrawingIdentityResolver
 
+    class ExplicitParser:
+        def parse(self, _source_path):
+            return SimpleNamespace(
+                drawings=[
+                    canonical_models.DrawingData(
+                        drawing_id="legacy-14",
+                        number="14",
+                        physical_page=1,
+                        title="북동 토층",
+                        raw_identifier="【도면 14】",
+                    )
+                ]
+            )
+
     source = tmp_path / "unknown.ai"
-    _write_pdf_like_ai(source, "【도면 14】 북동 토층")
+    _write_pdf_like_ai(source, "14")
     asset = _asset("ai1", "unknown.ai")
 
-    result = DrawingIdentityResolver().resolve(corpus_id="c1", asset=asset, source_path=source)
+    result = DrawingIdentityResolver(parser=ExplicitParser()).resolve(
+        corpus_id="c1", asset=asset, source_path=source
+    )
 
     assert result.unresolved_source_ids == ()
     assert len(result.drawings) == 1
@@ -138,7 +169,7 @@ def test_drawing_identity_resolver_uses_filename_only_as_heuristic(tmp_path):
     from app.services.drawing_identity_resolver import DrawingIdentityResolver
 
     source = tmp_path / "도면27. 토층.ai"
-    _write_pdf_like_ai(source, "토층 단면")
+    _write_pdf_like_ai(source, "section")
     asset = _asset("ai27", source.name)
 
     result = DrawingIdentityResolver().resolve(corpus_id="c1", asset=asset, source_path=source)
@@ -156,7 +187,7 @@ def test_drawing_identity_resolver_refuses_to_invent_number(tmp_path):
     from app.services.drawing_identity_resolver import DrawingIdentityResolver
 
     source = tmp_path / "north-section.ai"
-    _write_pdf_like_ai(source, "토층 단면")
+    _write_pdf_like_ai(source, "section")
     asset = _asset("ai-unresolved", source.name)
 
     result = DrawingIdentityResolver().resolve(corpus_id="c1", asset=asset, source_path=source)
