@@ -14,6 +14,10 @@ class ContextFact:
     source_kind: str
     source_node_id: str | None = None
     source_sha256: str | None = None
+    publication_kind: str | None = None
+    mention_context_id: str | None = None
+    consensus_status: str = "mention_local"
+    tie_breaker_class: str = "semantic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +25,7 @@ class NormalizedDrawingContext:
     raw_text: str
     tokens: tuple[str, ...]
     facts: tuple[ContextFact, ...]
+    publication_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +34,8 @@ class BodyDrawingContext:
     raw_texts: tuple[str, ...]
     source_node_ids: tuple[str, ...] = ()
     source_sha256: str | None = None
+    publication_kind: str = "drawing"
+    mention_context_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +45,8 @@ class DrawingSourceObservation:
     original_name: str
     raw_text: str = ""
     internal_numbers: tuple[str, ...] = ()
+    source_path: str = ""
+    publication_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +61,10 @@ class DrawingCandidateEvidence:
     supports: bool = True
     source_node_id: str | None = None
     source_sha256: str | None = None
+    publication_kind: str | None = None
+    mention_context_id: str | None = None
+    consensus_status: str = "mention_local"
+    tie_breaker_class: str = "semantic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +83,9 @@ class DrawingCandidateResult:
     evidence_families: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
     has_hard_contradiction: bool = False
+    publication_kind: str = "drawing"
+    tie_breaker_classes: tuple[str, ...] = ()
+    has_strong_contradiction: bool = False
 
 
 @dataclass(frozen=True, slots=True)
