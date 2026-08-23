@@ -23,6 +23,7 @@ from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
 from app.graph.client import create_driver
+from app.graph.drawing_evidence_repository import DrawingEvidenceRepository
 from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -37,14 +38,12 @@ from app.graph.schema import ensure_schema
 from app.graph.source_asset_repository import SourceAssetRepository
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.adobe_conversion_client import build_adobe_conversion_client
+from app.services.drawing_evidence_corpus_service import EvidenceGraphReferenceCorpusService
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.project_structure_service import ProjectStructureService
 from app.services.reference_canonicalizer import ReferenceCanonicalizer
-from app.services.reference_corpus_service import (
-    ReferenceCorpusNotFoundError,
-    ReferenceCorpusService,
-)
+from app.services.reference_corpus_service import ReferenceCorpusNotFoundError
 from app.services.visual_asset_service import (
     VisualAssetIncompleteError,
     VisualAssetNotFoundError,
@@ -113,11 +112,12 @@ def create_app(
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
                 source_repository = SourceAssetRepository(driver)
-                app.state.reference_corpus_service = ReferenceCorpusService(
+                app.state.reference_corpus_service = EvidenceGraphReferenceCorpusService(
                     ReferenceCorpusRepository(driver),
                     build_adobe_conversion_client(),
                     ReferenceCanonicalizer(),
                     source_asset_repository=source_repository,
+                    drawing_evidence_repository=DrawingEvidenceRepository(driver),
                 )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
