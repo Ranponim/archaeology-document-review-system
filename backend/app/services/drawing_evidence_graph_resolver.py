@@ -281,9 +281,7 @@ class DrawingEvidenceGraphResolver:
         all_candidates: list[DrawingCandidateResult] = []
         all_evidence: list[DrawingCandidateEvidence] = []
         all_facts: list[ContextFact] = [
-            fact
-            for context in normalized_body.values()
-            for fact in context.facts
+            fact for context in normalized_body.values() for fact in context.facts
         ]
         direct_claims: dict[str, list[tuple[DrawingSourceObservation, DrawingCandidateResult]]] = {}
         observation_by_source = {item.source_asset_id: item for item in observations}
@@ -369,7 +367,9 @@ class DrawingEvidenceGraphResolver:
                     body_context=normalized_body[number],
                     filename_number=filename_number,
                 )
-                if candidate.score > 0 or filename_number == number:
+                if filename_number == number:
+                    scored.append((candidate, evidence))
+                elif candidate.score > 0 and not candidate.has_hard_contradiction:
                     scored.append((candidate, evidence))
 
             if filename_number and filename_number not in body_by_number:
@@ -514,11 +514,7 @@ class DrawingEvidenceGraphResolver:
                 continue
             if candidate.candidate_id in promoted_candidate_ids:
                 final_candidates.append(
-                    replace(
-                        candidate,
-                        status="verified",
-                        evidence_level=EvidenceLevel.DERIVED_VERIFIED,
-                    )
+                    replace(candidate, status="verified", evidence_level=EvidenceLevel.DERIVED_VERIFIED)
                 )
             elif candidate.candidate_id in eligible_ids:
                 ambiguous_sources.add(candidate.source_asset_id)
@@ -526,11 +522,12 @@ class DrawingEvidenceGraphResolver:
             else:
                 final_candidates.append(candidate)
 
+        canonical_source_ids = {drawing.source_asset_id for drawing in canonical_drawings}
         for observation in observations:
             source_id = observation.source_asset_id
             if source_id in locked_sources:
                 continue
-            if source_id not in {drawing.source_asset_id for drawing in canonical_drawings} and source_id not in ambiguous_sources:
+            if source_id not in canonical_source_ids and source_id not in ambiguous_sources:
                 unresolved_sources.add(source_id)
 
         counts = {level.value: 0 for level in EvidenceLevel}
