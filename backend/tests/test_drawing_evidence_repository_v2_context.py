@@ -28,7 +28,9 @@ class ContextDriver:
 
 
 def test_v2_body_context_preserves_one_mention_per_reference_and_kind_namespace():
-    contexts = DrawingEvidenceRepository(ContextDriver()).list_body_drawing_contexts("p1")
+    contexts = DrawingEvidenceRepository(ContextDriver()).list_body_drawing_contexts(
+        "p1", resolver_version="v2"
+    )
 
     assert [(item.publication_kind, item.number) for item in contexts] == [
         ("drawing", "3"),
