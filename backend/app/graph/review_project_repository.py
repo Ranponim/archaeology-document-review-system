@@ -16,7 +16,9 @@ from app.graph.project_repository import (
 class ReviewProjectRepository(ProjectRepository):
     """Project repository semantics for ReviewRound execution.
 
-    New review rounds bind one body DocumentVersion and one immutable READY
+    A review round always binds one body DocumentVersion. Body-only rounds keep
+    text proofreading available before visual reference material is ready. New
+    graph-first visual rounds additionally bind one immutable READY
     ReferenceCorpus. Historical body+plate-PDF+drawing-PDF rounds remain
     readable/executable through an explicit legacy compatibility path.
     ReviewRound PRECEDES is the only review-order authority.
@@ -237,10 +239,11 @@ class ReviewProjectRepository(ProjectRepository):
         notes: str | None = None,
         reference_corpus_id: str | None = None,
     ) -> ReviewRound:
+        validated_body = self._validate_body(project_id, body_version_id)
+
         if reference_corpus_id is not None:
             if plate_version_id is not None or drawing_version_id is not None:
                 raise ValueError("mixed ReferenceCorpus and legacy visual PDF authority is not allowed")
-            validated_body = self._validate_body(project_id, body_version_id)
             self._validate_ready_corpus(project_id, reference_corpus_id)
             return self._create_corpus_review_round(
                 project_id,
@@ -249,21 +252,31 @@ class ReviewProjectRepository(ProjectRepository):
                 notes,
             )
 
-        requested = (
-            ("report_body", body_version_id),
+        # Body-only is a first-class text proofreading mode. It intentionally
+        # carries no visual authority; visual-reference rules are added only
+        # when a READY ReferenceCorpus is selected in a later round.
+        if plate_version_id is None and drawing_version_id is None:
+            return super().create_review_round(
+                project_id=project_id,
+                body_version_id=validated_body,
+                plate_version_id=None,
+                drawing_version_id=None,
+                notes=notes,
+            )
+
+        requested_visuals = (
             ("plate_book", plate_version_id),
             ("drawing_book", drawing_version_id),
         )
-        missing = [kind for kind, version_id in requested if not version_id]
+        missing = [kind for kind, version_id in requested_visuals if not version_id]
         if missing:
             raise ValueError(
-                "Legacy ReviewRound requires the complete canonical input set "
-                "(report_body + plate_book + drawing_book); missing: "
+                "Legacy visual-PDF ReviewRound requires both plate_book and drawing_book; missing: "
                 + ", ".join(missing)
             )
 
-        validated: dict[str, str] = {}
-        for kind, version_id in requested:
+        validated: dict[str, str] = {"report_body": validated_body}
+        for kind, version_id in requested_visuals:
             assert version_id is not None
             resolved = self.resolve_version_input(
                 project_id=project_id,
