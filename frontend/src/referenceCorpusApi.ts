@@ -28,6 +28,7 @@ export type ReferenceCorpusSource = {
   id: string;
   role: ReferenceCorpusSourceRole;
   originalName: string;
+  relativePath: string;
   sha256: string;
 };
 
@@ -57,11 +58,17 @@ export async function uploadReferenceCorpusSource(
   corpusId: string,
   role: ReferenceCorpusSourceRole,
   file: File,
+  relativePath?: string,
 ): Promise<ReferenceCorpusSource> {
   const body = new FormData();
   body.append('file', file);
+  const params = new URLSearchParams({ role });
+  const path = (relativePath || file.webkitRelativePath || file.name).replaceAll('\\', '/');
+  if (path) {
+    params.set('relativePath', path);
+  }
   const response = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/reference-corpora/${encodeURIComponent(corpusId)}/sources?role=${encodeURIComponent(role)}`,
+    `/api/projects/${encodeURIComponent(projectId)}/reference-corpora/${encodeURIComponent(corpusId)}/sources?${params.toString()}`,
     { method: 'POST', body },
   );
   return readJson<ReferenceCorpusSource>(response);
