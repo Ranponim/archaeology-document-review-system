@@ -8,12 +8,6 @@ from app.domain.canonical_models import (
     PlateData,
     PlatePanelData,
 )
-from app.domain.drawing_evidence import (
-    ContextFact,
-    DrawingCandidateEvidence,
-    DrawingCandidateResult,
-    DrawingEvidenceResolution,
-)
 from app.domain.reference_corpus import ReferenceCorpusStatus
 from app.graph.reference_corpus_repository import ReferenceCorpusRepository
 
@@ -24,21 +18,6 @@ class _CaptureDriver:
 
     def execute_query(self, query: str, **kwargs):
         self.calls.append((query, kwargs))
-        if "BODY_DRAWING_CONTEXT" in query:
-            return (
-                [
-                    {
-                        "number": "14",
-                        "source_id": "caption-14",
-                        "source_text": "도면 14. 2지점 S1 E1 북동 토층",
-                        "source_sha256": "body-sha",
-                        "neighbor_texts": ["2지점 조사", "S1 E1 북동부"],
-                        "neighbor_ids": ["block-1", "block-2"],
-                    }
-                ],
-                None,
-                None,
-            )
         if "UNWIND $plates" in query:
             return ([{"saved": len(kwargs["plates"])}], None, None)
         if "UNWIND $panels" in query:
@@ -49,12 +28,6 @@ class _CaptureDriver:
             return ([{"saved": len(kwargs["regions"])}], None, None)
         if "MERGE (c)-[rel:USES_SOURCE]" in query:
             return ([{"id": kwargs["source_asset_id"]}], None, None)
-        if "DRAWING_EVIDENCE_CANDIDATES" in query:
-            return ([{"saved": len(kwargs.get("candidates", []))}], None, None)
-        if "DRAWING_EVIDENCE_FACTS" in query:
-            return ([{"saved": len(kwargs.get("facts", []))}], None, None)
-        if "DRAWING_EVIDENCE_ITEMS" in query:
-            return ([{"saved": len(kwargs.get("evidence", []))}], None, None)
         return ([], None, None)
 
 
@@ -78,8 +51,6 @@ def test_reference_corpus_repository_exposes_build_contract():
         "validate_ready_graph",
         "get",
         "list_for_project",
-        "list_body_drawing_contexts",
-        "save_drawing_resolution_graph",
     }
     missing = sorted(
         name
@@ -199,95 +170,6 @@ def test_missing_source_is_rejected_unless_explicitly_unresolved():
         assert "provenance" in str(error)
     else:
         raise AssertionError("direct panel without source provenance must fail")
-
-
-def test_body_drawing_contexts_include_reference_caption_and_neighbor_text():
-    driver = _CaptureDriver()
-    repository = _MutableRepository(driver)
-
-    contexts = repository.list_body_drawing_contexts("p1")
-
-    assert len(contexts) == 1
-    context = contexts[0]
-    assert context.number == "14"
-    assert context.raw_texts == (
-        "도면 14. 2지점 S1 E1 북동 토층",
-        "2지점 조사",
-        "S1 E1 북동부",
-    )
-    assert context.source_node_ids == ("caption-14", "block-1", "block-2")
-    query = next(query for query, _ in driver.calls if "BODY_DRAWING_CONTEXT" in query)
-    assert "MATCH (p:Project" in query
-    assert "HAS_DOCUMENT" in query
-    assert "ref.ref_type = 'drawing'" in query
-
-
-def _resolution(level: EvidenceLevel) -> DrawingEvidenceResolution:
-    candidate = DrawingCandidateResult(
-        candidate_id="drawing-candidate:c1:ai14:14",
-        reference_corpus_id="c1",
-        source_asset_id="ai14",
-        source_sha256="ai-sha",
-        candidate_number="14",
-        status="verified" if level in {EvidenceLevel.DIRECT, EvidenceLevel.DERIVED_VERIFIED} else "candidate",
-        evidence_level=level,
-        score=0.91,
-        runner_up_score=0.4,
-        margin=0.51,
-        evidence_families=("identity", "semantic_content"),
-        evidence_ids=("e1",),
-    )
-    evidence = DrawingCandidateEvidence(
-        id="e1",
-        candidate_id=candidate.candidate_id,
-        family="semantic_content",
-        method="exact_grid",
-        value="S1E1",
-        normalized_value="S1E1",
-        score=0.22,
-        source_node_id="caption-14",
-        source_sha256="body-sha",
-    )
-    fact = ContextFact(
-        kind="grid",
-        value="S1 E1",
-        normalized_value="S1E1",
-        source_kind="body",
-        source_node_id="caption-14",
-        source_sha256="body-sha",
-    )
-    return DrawingEvidenceResolution(
-        candidates=(candidate,),
-        evidence=(evidence,),
-        context_facts=(fact,),
-    )
-
-
-def test_filename_heuristic_candidate_persists_reasoning_without_verified_target():
-    driver = _CaptureDriver()
-    repository = _MutableRepository(driver)
-
-    repository.save_drawing_resolution_graph("p1", "c1", _resolution(EvidenceLevel.HEURISTIC))
-
-    candidate_query = next(query for query, _ in driver.calls if "DRAWING_EVIDENCE_CANDIDATES" in query)
-    assert "PROPOSES" in candidate_query
-    assert "TARGETS" not in candidate_query
-    assert any("DRAWING_EVIDENCE_ITEMS" in query for query, _ in driver.calls)
-    assert any("DRAWING_EVIDENCE_FACTS" in query for query, _ in driver.calls)
-
-
-def test_derived_verified_candidate_persists_verified_target_relation():
-    driver = _CaptureDriver()
-    repository = _MutableRepository(driver)
-
-    repository.save_drawing_resolution_graph(
-        "p1", "c1", _resolution(EvidenceLevel.DERIVED_VERIFIED)
-    )
-
-    assert any(
-        "DRAWING_EVIDENCE_TARGETS" in query and "TARGETS" in query
-        for query, _ in driver.calls
-    )
 
 
 def test_ready_reference_corpus_is_terminal():
