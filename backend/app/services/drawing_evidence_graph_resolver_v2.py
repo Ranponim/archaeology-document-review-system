@@ -89,8 +89,9 @@ class DrawingEvidenceGraphResolverV2:
         )
         if context.publication_kind:
             return context.publication_kind
-        filename_kind, _ = self._filename_identity(observation.original_name)
-        return filename_kind
+        # Filename kind is intentionally excluded here. It is a weak
+        # tie-breaker and must never become a hard publication-kind authority.
+        return None
 
     @staticmethod
     def _candidate_id(corpus_id: str, source_id: str, kind: str, number: str) -> str:
