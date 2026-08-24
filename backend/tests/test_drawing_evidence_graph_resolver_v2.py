@@ -112,6 +112,30 @@ def test_v2_filename_and_path_are_tie_breakers_only_and_cannot_promote():
     assert result.diagnostics["filenameOnlyVerifiedCount"] == 0
 
 
+def test_v2_filename_kind_does_not_create_hard_kind_contradiction():
+    result = DrawingEvidenceGraphResolverV2().resolve_observations(
+        corpus_id="c1",
+        observations=[
+            obs(
+                "a",
+                "삽도44.ai",
+                "3지점 조선시대 2호 토광묘 평단면도 출토유물",
+            )
+        ],
+        body_contexts=[
+            body("44", "도면 44. 3지점 조선시대 2호 토광묘 평단면도 출토유물")
+        ],
+        include_filename_evidence=True,
+    )
+
+    drawing_candidate = next(
+        candidate
+        for candidate in result.candidates
+        if candidate.publication_kind == "drawing" and candidate.candidate_number == "44"
+    )
+    assert drawing_candidate.has_hard_contradiction is False
+
+
 def test_v2_global_assignment_allows_same_number_in_different_kinds():
     result = DrawingEvidenceGraphResolverV2().resolve_observations(
         corpus_id="c1",
