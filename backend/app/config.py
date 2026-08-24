@@ -8,6 +8,7 @@ OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY"
 LEGACY_AI_API_KEY_ENV = "AI_API_KEY"
 
 ALLOW_DEGRADED_MODE_ENV = "ALLOW_DEGRADED_MODE"
+DRAWING_EVIDENCE_RESOLVER_VERSION_ENV = "DRAWING_EVIDENCE_RESOLVER_VERSION"
 
 
 def get_allow_degraded_mode() -> bool:
@@ -26,6 +27,28 @@ def get_allow_degraded_mode() -> bool:
         "yes",
         "on",
     )
+
+
+def get_drawing_evidence_resolver_version() -> str:
+    """Select the drawing evidence resolver with a fail-closed rollout gate.
+
+    v1 remains the production default until the local `/src` v2 acceptance
+    metrics are reviewed. v2 is available only through an explicit opt-in.
+    """
+    raw = os.environ.get(DRAWING_EVIDENCE_RESOLVER_VERSION_ENV, "").strip().lower()
+    value = raw or "v1"
+    aliases = {
+        "v1": "v1",
+        "drawing-evidence-v1": "v1",
+        "v2": "v2",
+        "drawing-evidence-v2": "v2",
+    }
+    normalized = aliases.get(value)
+    if normalized is None:
+        raise ValueError(
+            "DRAWING_EVIDENCE_RESOLVER_VERSION must be v1 or v2"
+        )
+    return normalized
 
 
 def get_openrouter_api_key() -> str:
