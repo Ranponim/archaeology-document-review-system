@@ -30,19 +30,42 @@ class DrawingEvidenceRepository:
 
     @staticmethod
     def _context_id(corpus_id: str, fact: ContextFact) -> str:
-        payload = "\0".join(
-            (
-                corpus_id,
-                fact.kind,
-                fact.normalized_value,
-                fact.source_kind,
-                fact.source_node_id or "",
-                fact.source_sha256 or "",
+        parts = [
+            corpus_id,
+            fact.kind,
+            fact.normalized_value,
+            fact.source_kind,
+            fact.source_node_id or "",
+            fact.source_sha256 or "",
+        ]
+        if (
+            fact.publication_kind
+            or fact.mention_context_id
+            or fact.consensus_status != "mention_local"
+            or fact.tie_breaker_class != "semantic"
+        ):
+            parts.extend(
+                [
+                    fact.publication_kind or "",
+                    fact.mention_context_id or "",
+                    fact.consensus_status,
+                    fact.tie_breaker_class,
+                ]
             )
-        ).encode("utf-8")
+        payload = "\0".join(parts).encode("utf-8")
         return "context-entity:" + hashlib.sha256(payload).hexdigest()[:32]
 
-    def list_body_drawing_contexts(self, project_id: str) -> list[BodyDrawingContext]:
+    @staticmethod
+    def _publication_kind(reference_text: str, source_text: str) -> str:
+        evidence = f"{reference_text}\n{source_text}"
+        return "illustration" if "삽도" in evidence else "drawing"
+
+    def list_body_drawing_contexts(
+        self,
+        project_id: str,
+        *,
+        resolver_version: str = "v1",
+    ) -> list[BodyDrawingContext]:
         records, _, _ = self._driver.execute_query(
             """
             // BODY_DRAWING_CONTEXT
@@ -67,6 +90,7 @@ class DrawingEvidenceRepository:
             RETURN toString(ref.number) AS number,
                    source.id AS source_id,
                    coalesce(source.raw_text, source.normalized_text, source.text, ref.raw_text, '') AS source_text,
+                   coalesce(ref.raw_text, '') AS reference_text,
                    v.sha256 AS source_sha256,
                    [row IN neighbors | row.text] AS neighbor_texts,
                    [row IN neighbors | row.id] AS neighbor_ids
@@ -76,27 +100,67 @@ class DrawingEvidenceRepository:
             **self._query_config,
         )
 
-        grouped: dict[str, dict[str, Any]] = {}
+        if resolver_version != "v2":
+            grouped: dict[str, dict[str, Any]] = {}
+            for record in records:
+                number = str(record.get("number") or "").strip()
+                if not number:
+                    continue
+                item = grouped.setdefault(
+                    number,
+                    {"texts": [], "ids": [], "sha": record.get("source_sha256")},
+                )
+                source_text = str(record.get("source_text") or "").strip()
+                source_id = record.get("source_id")
+                if source_text and source_text not in item["texts"]:
+                    item["texts"].append(source_text)
+                    item["ids"].append(str(source_id) if source_id else "")
+                for neighbor_id, neighbor_text in zip(
+                    record.get("neighbor_ids") or [], record.get("neighbor_texts") or []
+                ):
+                    text = str(neighbor_text or "").strip()
+                    if text and text not in item["texts"]:
+                        item["texts"].append(text)
+                        item["ids"].append(str(neighbor_id) if neighbor_id else "")
+
+            return [
+                BodyDrawingContext(
+                    number=number,
+                    raw_texts=tuple(item["texts"]),
+                    source_node_ids=tuple(item["ids"]),
+                    source_sha256=str(item["sha"]) if item["sha"] else None,
+                )
+                for number, item in sorted(grouped.items())
+            ]
+
+        grouped_v2: dict[tuple[str, str], dict[str, Any]] = {}
         for record in records:
             number = str(record.get("number") or "").strip()
             if not number:
                 continue
-            item = grouped.setdefault(
-                number,
-                {"texts": [], "ids": [], "sha": record.get("source_sha256")},
-            )
             source_text = str(record.get("source_text") or "").strip()
-            source_id = record.get("source_id")
-            if source_text and source_text not in item["texts"]:
-                item["texts"].append(source_text)
-                item["ids"].append(str(source_id) if source_id else "")
-            for neighbor_id, neighbor_text in zip(
-                record.get("neighbor_ids") or [], record.get("neighbor_texts") or []
-            ):
-                text = str(neighbor_text or "").strip()
-                if text and text not in item["texts"]:
-                    item["texts"].append(text)
-                    item["ids"].append(str(neighbor_id) if neighbor_id else "")
+            reference_text = str(record.get("reference_text") or "").strip()
+            publication_kind = self._publication_kind(reference_text, source_text)
+            key = (publication_kind, number)
+            item = grouped_v2.setdefault(
+                key,
+                {
+                    "texts": [],
+                    "ids": [],
+                    "sha": record.get("source_sha256"),
+                },
+            )
+            source_id = str(record.get("source_id") or "")
+            parts = [source_text] if source_text else []
+            parts.extend(
+                str(text or "").strip()
+                for text in (record.get("neighbor_texts") or [])
+                if str(text or "").strip()
+            )
+            mention_text = "\n".join(dict.fromkeys(parts))
+            if mention_text and source_id not in item["ids"]:
+                item["texts"].append(mention_text)
+                item["ids"].append(source_id)
 
         return [
             BodyDrawingContext(
@@ -104,8 +168,10 @@ class DrawingEvidenceRepository:
                 raw_texts=tuple(item["texts"]),
                 source_node_ids=tuple(item["ids"]),
                 source_sha256=str(item["sha"]) if item["sha"] else None,
+                publication_kind=publication_kind,
+                mention_context_ids=tuple(item["ids"]),
             )
-            for number, item in sorted(grouped.items())
+            for (publication_kind, number), item in sorted(grouped_v2.items())
         ]
 
     def save_resolution(
@@ -129,6 +195,9 @@ class DrawingEvidenceRepository:
                 "margin": float(item.margin),
                 "evidence_families": list(item.evidence_families),
                 "has_hard_contradiction": bool(item.has_hard_contradiction),
+                "has_strong_contradiction": bool(item.has_strong_contradiction),
+                "publication_kind": item.publication_kind,
+                "tie_breaker_classes": list(item.tie_breaker_classes),
             }
             for item in resolution.candidates
         ]
@@ -145,6 +214,7 @@ class DrawingEvidenceRepository:
                     candidate.sourceAssetId = row.source_asset_id,
                     candidate.sourceSha256 = row.source_sha256,
                     candidate.candidateNumber = row.candidate_number,
+                    candidate.publicationKind = row.publication_kind,
                     candidate.status = row.status,
                     candidate.evidenceLevel = row.evidence_level,
                     candidate.resolverVersion = row.resolver_version,
@@ -152,7 +222,9 @@ class DrawingEvidenceRepository:
                     candidate.runnerUpScore = row.runner_up_score,
                     candidate.margin = row.margin,
                     candidate.evidenceFamilies = row.evidence_families,
+                    candidate.tieBreakerClasses = row.tie_breaker_classes,
                     candidate.hasHardContradiction = row.has_hard_contradiction,
+                    candidate.hasStrongContradiction = row.has_strong_contradiction,
                     candidate.updatedAt = datetime(),
                     candidate.createdAt = coalesce(candidate.createdAt, datetime())
                 MERGE (c)-[:HAS_DRAWING_CANDIDATE]->(candidate)
@@ -174,6 +246,10 @@ class DrawingEvidenceRepository:
                 "source_kind": fact.source_kind,
                 "source_node_id": fact.source_node_id,
                 "source_sha256": fact.source_sha256,
+                "publication_kind": fact.publication_kind,
+                "mention_context_id": fact.mention_context_id,
+                "consensus_status": fact.consensus_status,
+                "tie_breaker_class": fact.tie_breaker_class,
             }
             for fact in resolution.context_facts
         ]
@@ -191,6 +267,10 @@ class DrawingEvidenceRepository:
                     fact.sourceKind = row.source_kind,
                     fact.sourceNodeId = row.source_node_id,
                     fact.sourceSha256 = row.source_sha256,
+                    fact.publicationKind = row.publication_kind,
+                    fact.mentionContextId = row.mention_context_id,
+                    fact.consensusStatus = row.consensus_status,
+                    fact.tieBreakerClass = row.tie_breaker_class,
                     fact.updatedAt = datetime(),
                     fact.createdAt = coalesce(fact.createdAt, datetime())
                 MERGE (c)-[:HAS_CONTEXT_ENTITY]->(fact)
@@ -224,6 +304,10 @@ class DrawingEvidenceRepository:
                 "supports": bool(item.supports),
                 "source_node_id": item.source_node_id,
                 "source_sha256": item.source_sha256,
+                "publication_kind": item.publication_kind,
+                "mention_context_id": item.mention_context_id,
+                "consensus_status": item.consensus_status,
+                "tie_breaker_class": item.tie_breaker_class,
             }
             for item in resolution.evidence
         ]
@@ -244,6 +328,10 @@ class DrawingEvidenceRepository:
                     ev.supports = row.supports,
                     ev.sourceNodeId = row.source_node_id,
                     ev.sourceSha256 = row.source_sha256,
+                    ev.publicationKind = row.publication_kind,
+                    ev.mentionContextId = row.mention_context_id,
+                    ev.consensusStatus = row.consensus_status,
+                    ev.tieBreakerClass = row.tie_breaker_class,
                     ev.updatedAt = datetime(),
                     ev.createdAt = coalesce(ev.createdAt, datetime())
                 MERGE (c)-[:HAS_RESOLUTION_EVIDENCE]->(ev)
@@ -277,6 +365,8 @@ class DrawingEvidenceRepository:
                 "number": item.candidate_number,
                 "level": self._level(item.evidence_level),
                 "source_asset_id": item.source_asset_id,
+                "publication_kind": item.publication_kind,
+                "resolver_version": item.resolver_version,
             }
             for item in resolution.candidates
             if self._level(item.evidence_level)
@@ -291,9 +381,16 @@ class DrawingEvidenceRepository:
                 UNWIND $verified AS row
                 MATCH (c)-[:HAS_DRAWING_CANDIDATE]->(candidate:DrawingCandidate {id: row.candidate_id})
                 MATCH (c)-[:USES_SOURCE]->(asset:OriginalAsset {id: row.source_asset_id})
-                MERGE (drawing:Drawing {id: 'drawing:' + $corpus_id + ':' + row.number})
+                WITH c, candidate, asset, row,
+                     CASE
+                       WHEN row.resolver_version = 'drawing-evidence-v2'
+                       THEN 'drawing:' + $corpus_id + ':' + row.publication_kind + ':' + row.number
+                       ELSE 'drawing:' + $corpus_id + ':' + row.number
+                     END AS drawing_id
+                MERGE (drawing:Drawing {id: drawing_id})
                 SET drawing.referenceCorpusId = $corpus_id,
                     drawing.number = row.number,
+                    drawing.publicationKind = row.publication_kind,
                     drawing.sourceAssetId = row.source_asset_id,
                     drawing.evidenceLevel = row.level,
                     drawing.sourceKind = 'drawing_ai'
