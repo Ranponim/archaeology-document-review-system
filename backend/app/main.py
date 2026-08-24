@@ -22,6 +22,7 @@ from app.api.review_round_runs import router as review_round_runs_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
+from app.config import get_drawing_evidence_resolver_version
 from app.graph.client import create_driver
 from app.graph.drawing_evidence_repository import DrawingEvidenceRepository
 from app.graph.production_review_repository import ProductionReviewRepository
@@ -118,6 +119,7 @@ def create_app(
                     ReferenceCanonicalizer(),
                     source_asset_repository=source_repository,
                     drawing_evidence_repository=DrawingEvidenceRepository(driver),
+                    drawing_evidence_resolver_version=get_drawing_evidence_resolver_version(),
                 )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
