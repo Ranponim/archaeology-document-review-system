@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.domain.canonical_models import EvidenceLevel
 from app.services.drawing_evidence_graph_resolver import DrawingEvidenceGraphResolver
+from app.services.drawing_evidence_graph_resolver_v2 import DrawingEvidenceGraphResolverV2
 from app.services.drawing_source_observer import DrawingSourceObserver
 from app.services.reference_corpus_service import ReferenceCorpusService
 
@@ -20,7 +21,26 @@ class _NoopDrawingIdentityResolver:
 
 
 class EvidenceGraphReferenceCorpusService(ReferenceCorpusService):
-    """Reference-corpus service with corpus-wide drawing evidence resolution."""
+    """Reference-corpus service with corpus-wide drawing evidence resolution.
+
+    v1 remains the production default until the local `/src` v2 acceptance
+    metrics satisfy the design thresholds. v2 must be requested explicitly.
+    """
+
+    @staticmethod
+    def _build_drawing_evidence_resolver(version: str):
+        normalized = str(version or "v1").strip().lower()
+        if normalized in {"v1", "drawing-evidence-v1"}:
+            return DrawingEvidenceGraphResolver()
+        if normalized in {"v2", "drawing-evidence-v2"}:
+            return DrawingEvidenceGraphResolverV2()
+        raise ValueError(f"Unsupported drawing evidence resolver version: {version}")
+
+    def _body_context_mode(self) -> str:
+        version = str(
+            getattr(self._drawing_evidence_resolver, "resolver_version", "drawing-evidence-v1")
+        ).strip().lower()
+        return "v2" if version == "drawing-evidence-v2" else "v1"
 
     def __init__(
         self,
@@ -29,7 +49,8 @@ class EvidenceGraphReferenceCorpusService(ReferenceCorpusService):
         canonicalizer,
         *,
         drawing_evidence_repository,
-        drawing_evidence_resolver: DrawingEvidenceGraphResolver | None = None,
+        drawing_evidence_resolver=None,
+        drawing_evidence_resolver_version: str = "v1",
         drawing_source_observer: DrawingSourceObserver | None = None,
         **kwargs,
     ) -> None:
@@ -37,9 +58,19 @@ class EvidenceGraphReferenceCorpusService(ReferenceCorpusService):
         super().__init__(repository, converter, canonicalizer, **kwargs)
         self._drawing_evidence_repository = drawing_evidence_repository
         self._drawing_evidence_resolver = (
-            drawing_evidence_resolver or DrawingEvidenceGraphResolver()
+            drawing_evidence_resolver
+            if drawing_evidence_resolver is not None
+            else self._build_drawing_evidence_resolver(drawing_evidence_resolver_version)
         )
         self._drawing_source_observer = drawing_source_observer or DrawingSourceObserver()
+
+    def _list_body_contexts(self, project_id: str):
+        if self._body_context_mode() == "v2":
+            return self._drawing_evidence_repository.list_body_drawing_contexts(
+                project_id,
+                resolver_version="v2",
+            )
+        return self._drawing_evidence_repository.list_body_drawing_contexts(project_id)
 
     def _adobe_free_visuals(
         self,
@@ -58,16 +89,25 @@ class EvidenceGraphReferenceCorpusService(ReferenceCorpusService):
             if str(row.get("role") or "") != "drawing_source":
                 continue
             asset = self._asset_from_row({**row, "project_id": project_id})
-            observations.append(
-                self._drawing_source_observer.observe(
-                    asset,
-                    self._source_path(corpus_id, asset),
-                )
+            observation = self._drawing_source_observer.observe(
+                asset,
+                self._source_path(corpus_id, asset),
             )
+            # Keep relative path as weak evidence for v2 without changing the
+            # observer's content/filename separation contract.
+            if self._body_context_mode() == "v2" and not observation.source_path:
+                try:
+                    from dataclasses import replace
 
-        body_contexts = self._drawing_evidence_repository.list_body_drawing_contexts(
-            project_id
-        )
+                    observation = replace(
+                        observation,
+                        source_path=str(asset.relative_path or asset.original_name or ""),
+                    )
+                except TypeError:
+                    pass
+            observations.append(observation)
+
+        body_contexts = self._list_body_contexts(project_id)
         resolution = self._drawing_evidence_resolver.resolve_observations(
             corpus_id=corpus_id,
             observations=observations,
