@@ -11,6 +11,7 @@ from app.domain.drawing_evidence import (
     ContextFact,
     DrawingEvidenceResolution,
 )
+from app.domain.drawing_evidence_v3 import BodyDrawingEvidencePacket
 
 
 class DrawingEvidenceRepository:
@@ -173,6 +174,112 @@ class DrawingEvidenceRepository:
             )
             for (publication_kind, number), item in sorted(grouped_v2.items())
         ]
+
+    def list_body_drawing_v3_contexts(
+        self,
+        project_id: str,
+    ) -> list[BodyDrawingEvidencePacket]:
+        records, _, _ = self._driver.execute_query(
+            """
+            // BODY_DRAWING_V3_CONTEXT
+            MATCH (p:Project {id: $project_id})-[:HAS_DOCUMENT]->(d:Document)-[:HAS_VERSION]->(v:DocumentVersion)
+            WHERE coalesce(d.kind, 'report_body') = 'report_body'
+            WITH p, d, v
+            ORDER BY coalesce(v.createdAt, datetime({epochMillis: 0})) DESC, v.id DESC
+            WITH p, d, head(collect(v)) AS v
+            MATCH (v)-[:HAS_PAGE]->(page:Page)
+            MATCH (page)-[:HAS_BLOCK|HAS_CAPTION]->(source)-[:REFERENCES]->(ref:Reference)
+            WHERE ref.ref_type = 'drawing'
+            OPTIONAL MATCH (page)-[:HAS_BLOCK]->(neighbor:TextBlock)
+            WITH ref, source, page, v, neighbor,
+                 CASE
+                   WHEN source:TextBlock THEN abs(coalesce(neighbor.order, 0) - coalesce(source.order, 0))
+                   ELSE coalesce(neighbor.order, 999999)
+                 END AS distance
+            ORDER BY distance ASC, coalesce(neighbor.order, 999999) ASC, neighbor.id ASC
+            WITH ref, source, page, v,
+                 [row IN collect({id: neighbor.id, text: coalesce(neighbor.normalized_text, neighbor.text, '')})
+                  WHERE row.id IS NOT NULL AND row.id <> source.id AND trim(row.text) <> ''][..4] AS neighbors
+            RETURN toString(ref.number) AS number,
+                   source.id AS source_id,
+                   coalesce(source.raw_text, source.normalized_text, source.text, ref.raw_text, '') AS source_text,
+                   coalesce(ref.raw_text, '') AS reference_text,
+                   v.sha256 AS source_sha256,
+                   v.id AS document_version_id,
+                   coalesce(page.physical_page, page.physicalPage, page.number, page.page_number) AS physical_page,
+                   coalesce(source.bbox, source.bounds) AS source_bbox,
+                   [row IN neighbors | row.text] AS neighbor_texts,
+                   [row IN neighbors | row.id] AS neighbor_ids
+            ORDER BY number, physical_page, source_id
+            """,
+            project_id=project_id,
+            **self._query_config,
+        )
+
+        contexts: list[BodyDrawingEvidencePacket] = []
+        for record in records:
+            number = str(record.get("number") or "").strip()
+            if not number:
+                continue
+            source_text = str(record.get("source_text") or "").strip()
+            reference_text = str(record.get("reference_text") or "").strip()
+            publication_kind = self._publication_kind(reference_text, source_text)
+            source_id = str(record.get("source_id") or "").strip()
+            parts = [source_text] if source_text else []
+            parts.extend(
+                str(text or "").strip()
+                for text in (record.get("neighbor_texts") or [])
+                if str(text or "").strip()
+            )
+            mention_text = "\n".join(dict.fromkeys(parts))
+
+            raw_bbox = record.get("source_bbox")
+            bbox: tuple[float, float, float, float] | None = None
+            if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) == 4:
+                try:
+                    bbox = tuple(float(value) for value in raw_bbox)  # type: ignore[assignment]
+                except (TypeError, ValueError):
+                    bbox = None
+
+            raw_page = record.get("physical_page")
+            physical_page: int | None = None
+            if raw_page is not None:
+                try:
+                    physical_page = int(raw_page)
+                except (TypeError, ValueError):
+                    physical_page = None
+
+            contexts.append(
+                BodyDrawingEvidencePacket(
+                    publication_kind=publication_kind,
+                    number=number,
+                    raw_texts=(mention_text,) if mention_text else (),
+                    source_node_ids=(source_id,) if source_id else (),
+                    source_sha256=(
+                        str(record.get("source_sha256"))
+                        if record.get("source_sha256")
+                        else None
+                    ),
+                    document_version_id=(
+                        str(record.get("document_version_id"))
+                        if record.get("document_version_id")
+                        else None
+                    ),
+                    physical_page=physical_page,
+                    source_bbox=bbox,
+                    visual_regions=(),
+                )
+            )
+
+        return sorted(
+            contexts,
+            key=lambda item: (
+                item.publication_kind,
+                item.number,
+                item.physical_page if item.physical_page is not None else 2**31,
+                item.source_node_ids[0] if item.source_node_ids else "",
+            ),
+        )
 
     def save_resolution(
         self,
