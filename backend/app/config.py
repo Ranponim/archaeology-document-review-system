@@ -11,6 +11,7 @@ OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 ALLOW_DEGRADED_MODE_ENV = "ALLOW_DEGRADED_MODE"
 DRAWING_EVIDENCE_RESOLVER_VERSION_ENV = "DRAWING_EVIDENCE_RESOLVER_VERSION"
+DRAWING_EVIDENCE_V3_AUTO_PROMOTE_ENV = "DRAWING_EVIDENCE_V3_AUTO_PROMOTE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,10 +91,10 @@ def get_allow_degraded_mode() -> bool:
 
 
 def get_drawing_evidence_resolver_version() -> str:
-    """Select the drawing evidence resolver with a fail-closed rollout gate.
+    """Select the drawing evidence resolver with an explicit rollout gate.
 
-    v1 remains the production default until the local `/src` v2 acceptance
-    metrics are reviewed. v2 is available only through an explicit opt-in.
+    v1 remains the production default. v2 and v3 require explicit opt-in; v3
+    additionally defaults to shadow persistence with auto-promotion disabled.
     """
     raw = os.environ.get(DRAWING_EVIDENCE_RESOLVER_VERSION_ENV, "").strip().lower()
     value = raw or "v1"
@@ -102,13 +103,25 @@ def get_drawing_evidence_resolver_version() -> str:
         "drawing-evidence-v1": "v1",
         "v2": "v2",
         "drawing-evidence-v2": "v2",
+        "v3": "v3",
+        "drawing-evidence-v3": "v3",
     }
     normalized = aliases.get(value)
     if normalized is None:
         raise ValueError(
-            "DRAWING_EVIDENCE_RESOLVER_VERSION must be v1 or v2"
+            "DRAWING_EVIDENCE_RESOLVER_VERSION must be v1, v2, or v3"
         )
     return normalized
+
+
+def get_drawing_evidence_v3_auto_promote() -> bool:
+    """Return the explicit v3 promotion gate; safe default is shadow-only."""
+    return os.environ.get(DRAWING_EVIDENCE_V3_AUTO_PROMOTE_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def get_openrouter_api_key() -> str:
