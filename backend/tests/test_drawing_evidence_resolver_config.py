@@ -1,6 +1,6 @@
 import pytest
 
-from app.config import get_drawing_evidence_resolver_version
+from app.config import CodexDrawingResolverConfig, get_drawing_evidence_resolver_version
 
 
 def test_drawing_evidence_resolver_defaults_to_v1(monkeypatch):
@@ -17,3 +17,43 @@ def test_unknown_drawing_evidence_resolver_version_fails_closed(monkeypatch):
     monkeypatch.setenv("DRAWING_EVIDENCE_RESOLVER_VERSION", "latest")
     with pytest.raises(ValueError, match="DRAWING_EVIDENCE_RESOLVER_VERSION"):
         get_drawing_evidence_resolver_version()
+
+
+def test_codex_drawing_resolver_config_loads_explicit_environment(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "key-123")
+    monkeypatch.setenv("DRAWING_CODEX_MODEL", "gpt-5.3-codex")
+    monkeypatch.setenv("DRAWING_CODEX_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("DRAWING_CODEX_AUTO_CONFIDENCE", "0.97")
+    monkeypatch.setenv("DRAWING_CODEX_MAX_CANDIDATES", "12")
+    monkeypatch.setenv("DRAWING_CODEX_MAX_EXPANSIONS", "1")
+
+    config = CodexDrawingResolverConfig.from_env()
+
+    assert config.api_key == "key-123"
+    assert config.model == "gpt-5.3-codex"
+    assert config.timeout_seconds == 45.0
+    assert config.auto_confidence == 0.97
+    assert config.max_candidates == 12
+    assert config.max_expansions == 1
+
+
+def test_codex_drawing_resolver_config_requires_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        CodexDrawingResolverConfig.from_env()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("DRAWING_CODEX_TIMEOUT_SECONDS", "0"),
+        ("DRAWING_CODEX_AUTO_CONFIDENCE", "1.5"),
+        ("DRAWING_CODEX_MAX_CANDIDATES", "0"),
+        ("DRAWING_CODEX_MAX_EXPANSIONS", "-1"),
+    ],
+)
+def test_codex_drawing_resolver_config_rejects_unsafe_values(monkeypatch, name, value):
+    monkeypatch.setenv("OPENAI_API_KEY", "key-123")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError):
+        CodexDrawingResolverConfig.from_env()
