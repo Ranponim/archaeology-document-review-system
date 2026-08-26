@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assets import router as assets_router
+from app.api.drawing_reviews import router as drawing_reviews_router
 from app.api.project_structure import router as project_structure_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
@@ -27,7 +28,11 @@ from app.config import (
     get_drawing_evidence_v3_auto_promote,
 )
 from app.graph.client import create_driver
-from app.graph.drawing_evidence_repository_v3 import DrawingEvidenceRepositoryV3
+from app.graph.drawing_evidence_repository_v3 import (
+    DrawingEvidenceRepositoryV3,
+    DrawingReviewConflictError,
+    DrawingReviewNotFoundError,
+)
 from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -178,6 +183,14 @@ def create_app(
     async def missing_candidate(request: Request, _error: CandidateNotFoundError):
         return _error_response(request, 404)
 
+    @application.exception_handler(DrawingReviewNotFoundError)
+    async def missing_drawing_review(request: Request, _error: DrawingReviewNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(DrawingReviewConflictError)
+    async def drawing_review_conflict(request: Request, _error: DrawingReviewConflictError):
+        return _error_response(request, 409)
+
     @application.exception_handler(ReviewRoundNotFoundError)
     async def missing_review_round(request: Request, _error: ReviewRoundNotFoundError):
         return _error_response(request, 404)
@@ -222,6 +235,7 @@ def create_app(
     application.include_router(project_structure_router)
     application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
+    application.include_router(drawing_reviews_router)
     application.include_router(run_diagnostics_router)
     application.include_router(assets_router)
 
