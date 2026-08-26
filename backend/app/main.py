@@ -22,9 +22,12 @@ from app.api.review_round_runs import router as review_round_runs_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
-from app.config import get_drawing_evidence_resolver_version
+from app.config import (
+    get_drawing_evidence_resolver_version,
+    get_drawing_evidence_v3_auto_promote,
+)
 from app.graph.client import create_driver
-from app.graph.drawing_evidence_repository import DrawingEvidenceRepository
+from app.graph.drawing_evidence_repository_v3 import DrawingEvidenceRepositoryV3
 from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -113,13 +116,20 @@ def create_app(
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
                 source_repository = SourceAssetRepository(driver)
+                drawing_repository = DrawingEvidenceRepositoryV3(driver)
+                app.state.drawing_evidence_repository = drawing_repository
+                project_repo = app.state.project_repository
+                if not hasattr(project_repo, "resolve_version_input"):
+                    project_repo = ReviewProjectRepository(driver)
                 app.state.reference_corpus_service = EvidenceGraphReferenceCorpusService(
                     ReferenceCorpusRepository(driver),
                     build_adobe_conversion_client(),
                     ReferenceCanonicalizer(),
                     source_asset_repository=source_repository,
-                    drawing_evidence_repository=DrawingEvidenceRepository(driver),
+                    drawing_evidence_repository=drawing_repository,
                     drawing_evidence_resolver_version=get_drawing_evidence_resolver_version(),
+                    drawing_evidence_v3_auto_promote=get_drawing_evidence_v3_auto_promote(),
+                    project_repository=project_repo,
                 )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
@@ -143,6 +153,7 @@ def create_app(
     application.state.visual_asset_service = injected_visual_service
     application.state.project_structure_service = project_structure_service
     application.state.reference_corpus_service = reference_corpus_service
+    application.state.drawing_evidence_repository = None
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
