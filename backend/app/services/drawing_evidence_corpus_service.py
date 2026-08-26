@@ -283,6 +283,7 @@ class EvidenceGraphReferenceCorpusService(ReferenceCorpusService):
             corpus_id,
             resolution,
             auto_promote=self._drawing_evidence_v3_auto_promote,
+            sources=tuple(sources),
         )
         return resolution
 
