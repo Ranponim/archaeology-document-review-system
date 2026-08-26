@@ -14,8 +14,18 @@ class FakeDrawingEvidenceRepository:
         assert project_id == "project-1"
         return []
 
-    def save_v3_resolution(self, project_id, corpus_id, resolution, *, auto_promote):
-        self.saved.append((project_id, corpus_id, resolution, auto_promote))
+    def save_v3_resolution(
+        self,
+        project_id,
+        corpus_id,
+        resolution,
+        *,
+        auto_promote,
+        sources=(),
+    ):
+        self.saved.append(
+            (project_id, corpus_id, resolution, auto_promote, tuple(sources))
+        )
 
 
 class FakeObserver:
@@ -107,3 +117,9 @@ def test_v3_batch_processes_every_drawing_source_and_persists_shadow(tmp_path):
     assert result.diagnostics["resolver_version"] == "drawing-evidence-v3"
     assert len(repo.saved) == 1
     assert repo.saved[0][3] is False
+    persisted_sources = repo.saved[0][4]
+    assert [source.source_asset_id for source in persisted_sources] == [
+        "asset-1",
+        "asset-2",
+    ]
+    assert all(source.facts for source in persisted_sources)
