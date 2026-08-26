@@ -1,6 +1,10 @@
 import pytest
 
-from app.config import CodexDrawingResolverConfig, get_drawing_evidence_resolver_version
+from app.config import (
+    CodexDrawingResolverConfig,
+    get_drawing_evidence_resolver_version,
+    get_drawing_evidence_v3_auto_promote,
+)
 
 
 def test_drawing_evidence_resolver_defaults_to_v1(monkeypatch):
@@ -11,6 +15,22 @@ def test_drawing_evidence_resolver_defaults_to_v1(monkeypatch):
 def test_drawing_evidence_resolver_can_explicitly_select_v2(monkeypatch):
     monkeypatch.setenv("DRAWING_EVIDENCE_RESOLVER_VERSION", "v2")
     assert get_drawing_evidence_resolver_version() == "v2"
+
+
+@pytest.mark.parametrize("value", ["v3", "drawing-evidence-v3"])
+def test_drawing_evidence_resolver_can_explicitly_select_v3(monkeypatch, value):
+    monkeypatch.setenv("DRAWING_EVIDENCE_RESOLVER_VERSION", value)
+    assert get_drawing_evidence_resolver_version() == "v3"
+
+
+def test_v3_auto_promote_defaults_false(monkeypatch):
+    monkeypatch.delenv("DRAWING_EVIDENCE_V3_AUTO_PROMOTE", raising=False)
+    assert get_drawing_evidence_v3_auto_promote() is False
+
+
+def test_v3_auto_promote_requires_explicit_true(monkeypatch):
+    monkeypatch.setenv("DRAWING_EVIDENCE_V3_AUTO_PROMOTE", "true")
+    assert get_drawing_evidence_v3_auto_promote() is True
 
 
 def test_unknown_drawing_evidence_resolver_version_fails_closed(monkeypatch):
