@@ -2,86 +2,49 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Provide a fast human-review workflow for v3 `REVIEW_REQUIRED` drawing identities, persist the reviewer’s decision as gold provenance, and allow a human-approved target to become canonical without weakening Codex/deterministic safety rules.
+**Goal:** Give reviewers a fast, auditable workflow for v3 `REVIEW_REQUIRED` identities, persist human decisions as gold provenance, and allow only an explicit human-selected candidate to become human-verified canonical evidence.
 
-**Architecture:** The backend exposes a small drawing-review API backed by the v3 Neo4j provenance created by the Core plan. The frontend adds a review panel to the existing Graph-first project detail page showing the source render, Codex choice, alternative candidate crops/captions, evidence highlights, and three explicit actions: approve a candidate, choose another candidate, or mark none. Human decisions persist separately from Codex decisions and become gold feedback.
-
-**Tech Stack:** FastAPI/Pydantic, Neo4j repository, React/TypeScript, existing frontend API helpers, Vitest/Testing Library, pytest.
+**Architecture:** The backend exposes two v3 drawing-review endpoints backed by `DrawingEvidenceRepository`. It follows the existing API pattern: `/api/v1/projects` prefix, `Request.app.state` lazy repository construction, async route functions, and `run_in_threadpool` for synchronous Neo4j methods. The frontend follows existing `graphFirstReviewApi.ts` fetch/error conventions and mounts one comparison panel in `GraphFirstProjectDetailPage`.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-codex-first-drawing-evidence-v3-design.md`
+**Dependency:** Core plan through Task 6: `docs/superpowers/plans/2026-08-26-codex-first-drawing-evidence-v3-core.md`.
 
-## Global Constraints
+## Constraints
 
-- This plan depends on `docs/superpowers/plans/2026-08-26-codex-first-drawing-evidence-v3-core.md` through Task 6; do not implement the UI against invented backend data.
-- Human review is required only for v3 review cases; do not change existing proofreading-review semantics.
-- Human approval is explicit and auditable; no page load or candidate highlight can mutate canonical identity.
-- `approve/choose` may create a human-verified TARGETS relation only after the selected candidate exists in the persisted v3 candidate set.
-- `none` must never create TARGETS.
-- Store the original Codex decision unchanged; human resolution is a separate node/event linked to it.
-- Human feedback records algorithm/resolver version, Codex model/run ID, selected/rejected candidate IDs, reviewer label, and timestamp.
-- Review UI must show images and concise evidence, not require the reviewer to understand Neo4j internals.
-- v3 automatic production rollout remains separately gated; human review does not imply `DRAWING_EVIDENCE_V3_AUTO_PROMOTE=true`.
+- Do not change existing proofreading review semantics.
+- No UI selection/highlight mutates graph state; only an explicit action POST does.
+- `approve` and `choose` require a candidate already connected to that source's persisted v3 Codex decision.
+- `none` creates no TARGETS.
+- Original `CodexDecision` is immutable; human review is a separate `HumanDrawingResolution` event.
+- Human resolution records resolver/model/run snapshot, selected/rejected candidates, reviewer, and timestamp.
+- Human `approve/choose` final status is exactly `HUMAN_VERIFIED`; human `none` is exactly `HUMAN_UNRESOLVED`.
+- Review UI shows source/candidate images, captions and concise evidence; raw graph IDs are secondary detail only.
+- Human review does not enable v3 automatic production promotion.
 
----
+## Files
 
-## File Structure
+Backend:
+- Create `backend/app/api/drawing_review_contract.py`
+- Create `backend/app/api/drawing_reviews.py`
+- Modify `backend/app/graph/drawing_evidence_repository.py`
+- Modify `backend/app/main.py`
+- Test `backend/tests/test_drawing_reviews_api.py`
+- Extend `backend/tests/test_drawing_evidence_repository_v3.py`
 
-### Backend
-
-- Create: `backend/app/api/drawing_review_contract.py` — Pydantic request/response schemas.
-- Create: `backend/app/api/drawing_reviews.py` — GET review queue and POST resolution endpoints.
-- Modify: `backend/app/graph/drawing_evidence_repository.py` — query review cases and persist `HumanDrawingResolution`/human-verified TARGETS.
-- Modify: `backend/app/main.py` — register router.
-- Create: `backend/tests/test_drawing_reviews_api.py` — API contract and mutation tests.
-- Extend: `backend/tests/test_drawing_evidence_repository_v3.py` — persistence safety tests.
-
-### Frontend
-
-- Create: `frontend/src/drawingReviewApi.ts` — typed review API calls.
-- Create: `frontend/src/drawingReviewApi.test.ts` — request/response contract tests.
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.tsx` — review queue and candidate comparison UI.
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.test.tsx` — behavior tests.
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.css` — compact side-by-side review layout.
-- Modify: `frontend/src/pages/GraphFirstProjectDetailPage.tsx` — mount review panel in project detail flow.
-- Extend: `frontend/src/pages/ProjectDetailPage.test.tsx` or add `frontend/src/pages/GraphFirstProjectDetailPage.test.tsx` for integration coverage.
+Frontend:
+- Create `frontend/src/drawingReviewApi.ts`
+- Create `frontend/src/drawingReviewApi.test.ts`
+- Create `frontend/src/components/DrawingIdentityReviewPanel.tsx`
+- Create `frontend/src/components/DrawingIdentityReviewPanel.test.tsx`
+- Create `frontend/src/components/DrawingIdentityReviewPanel.css`
+- Modify `frontend/src/pages/GraphFirstProjectDetailPage.tsx`
+- Create `frontend/src/pages/GraphFirstProjectDetailPage.test.tsx`
 
 ---
 
-### Task 1: Define drawing review API contracts
+### Task 1: Define exact drawing-review API contracts
 
-**Files:**
-- Create: `backend/app/api/drawing_review_contract.py`
-- Test: `backend/tests/test_drawing_reviews_api.py`
-
-**Interfaces:**
-- Produces `DrawingReviewCaseResponse`, `DrawingReviewCandidateResponse`, `DrawingReviewResolveRequest`, and `DrawingReviewResolveResponse`.
-- Review action is one of `approve`, `choose`, `none`.
-
-- [ ] **Step 1: Write failing schema tests**
-
-```python
-from app.api.drawing_review_contract import DrawingReviewResolveRequest
-
-
-def test_review_resolution_requires_candidate_for_approve_or_choose():
-    req = DrawingReviewResolveRequest(action="approve", candidate_id="candidate:drawing:52", reviewer="human")
-    assert req.candidate_id == "candidate:drawing:52"
-
-
-def test_review_none_accepts_null_candidate():
-    req = DrawingReviewResolveRequest(action="none", candidate_id=None, reviewer="human")
-    assert req.candidate_id is None
-```
-
-Add validation tests that `approve`/`choose` with null candidate fail and `none` with a candidate fails.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd backend && pytest -q tests/test_drawing_reviews_api.py`
-
-Expected: module import failure.
-
-- [ ] **Step 3: Implement explicit Pydantic models**
+- [ ] Write RED Pydantic tests in `backend/tests/test_drawing_reviews_api.py` for these exact schemas:
 
 ```python
 class DrawingReviewCandidateResponse(BaseModel):
@@ -108,333 +71,126 @@ class DrawingReviewResolveRequest(BaseModel):
     action: Literal["approve", "choose", "none"]
     candidate_id: str | None = None
     reviewer: str = "human"
+
+class DrawingReviewResolveResponse(BaseModel):
+    source_asset_id: str
+    action: Literal["approve", "choose", "none"]
+    candidate_id: str | None
+    final_status: Literal["HUMAN_VERIFIED", "HUMAN_UNRESOLVED"]
 ```
 
-Use `model_validator` to enforce the candidate/action rules.
-
-- [ ] **Step 4: Run schema tests**
-
-Run: `cd backend && pytest -q tests/test_drawing_reviews_api.py -k contract`
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/api/drawing_review_contract.py backend/tests/test_drawing_reviews_api.py
-git commit -m "feat: add drawing review API contracts"
-```
+- [ ] Add `model_validator` tests: approve/choose without candidate → 422 contract failure; none with candidate → failure; none with null → valid.
+- [ ] Run `cd backend && pytest -q tests/test_drawing_reviews_api.py -k contract`; verify RED, implement `backend/app/api/drawing_review_contract.py`, rerun GREEN.
+- [ ] Commit `feat: add drawing review API contracts`.
 
 ---
 
-### Task 2: Query review cases and persist human gold resolutions
+### Task 2: Query pending v3 reviews and persist immutable human resolutions
 
-**Files:**
-- Modify: `backend/app/graph/drawing_evidence_repository.py`
-- Test: `backend/tests/test_drawing_evidence_repository_v3.py`
+**Repository methods:**
+- `list_v3_review_cases(project_id: str) -> list[dict]`
+- `resolve_v3_review(project_id: str, source_asset_id: str, action: str, candidate_id: str | None, reviewer: str) -> dict`
 
-**Interfaces:**
-- Produces `list_v3_review_cases(project_id: str) -> list[dict]`.
-- Produces `resolve_v3_review(project_id: str, source_asset_id: str, action: str, candidate_id: str | None, reviewer: str) -> dict`.
-
-- [ ] **Step 1: Write failing repository tests**
-
-Test fixture contains one `CodexDecision(finalStatus="REVIEW_REQUIRED")` with three candidates. Assert list returns source + Codex metadata + three candidates. Mutation tests assert:
-
-```python
-result = repo.resolve_v3_review(
-    "project-1", "asset-1", action="choose",
-    candidate_id="candidate:drawing:53", reviewer="reviewer-1",
-)
-assert result["final_status"] == "HUMAN_VERIFIED"
-```
-
-Also assert `candidate:drawing:999` is rejected and `action="none"` creates no TARGETS.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd backend && pytest -q tests/test_drawing_evidence_repository_v3.py -k human`
-
-Expected: methods missing.
-
-- [ ] **Step 3: Implement review queue query**
-
-Query only the latest unresolved/review-required v3 decision per source in the project. Return persisted source visual reference, source text/metadata, Codex candidate/confidence/summary, candidate IDs/numbers/kinds, crop references, and evidence/contradiction summaries. Keep candidate ordering stable: Codex-selected first when present, then local score descending.
-
-- [ ] **Step 4: Implement immutable human resolution event**
-
-Persist:
+- [ ] Write RED repository tests with one latest `CodexDecision(finalStatus="REVIEW_REQUIRED")` and three persisted candidates. Assert queue returns source image/text, Codex selection/confidence/summary, candidates/crops, evidence and contradiction summaries.
+- [ ] Assert stable order: Codex-selected candidate first when present, remaining candidates by local score descending.
+- [ ] Mutation RED tests:
+  - `choose(candidate:drawing:53)` → `HUMAN_VERIFIED` and exactly one human-verified TARGETS.
+  - `approve` only accepts the Codex-selected persisted candidate.
+  - unknown/not-submitted candidate raises a dedicated `DrawingReviewConflictError`.
+  - `none` → `HUMAN_UNRESOLVED`, records rejection, creates zero TARGETS.
+- [ ] Implement graph shape:
 
 ```text
 (OriginalAsset)-[:HAS_HUMAN_RESOLUTION]->(HumanDrawingResolution)
 (HumanDrawingResolution)-[:REVIEWS]->(CodexDecision)
-(HumanDrawingResolution)-[:SELECTED]->(DrawingCandidate)   # approve/choose only
-(HumanDrawingResolution)-[:REJECTED]->(DrawingCandidate)   # alternatives
+(HumanDrawingResolution)-[:SELECTED]->(DrawingCandidate)   # approve/choose
+(HumanDrawingResolution)-[:REJECTED]->(DrawingCandidate)   # rejected alternatives
 ```
 
-Properties include `action`, `reviewer`, `resolverVersion="drawing-evidence-v3"`, Codex run/model snapshot, and `createdAt`. For `approve/choose`, verify the selected candidate is connected to the source’s submitted v3 decision before creating a human-verified TARGETS relation. For `none`, record all candidates rejected and create no TARGETS.
-
-- [ ] **Step 5: Run repository tests**
-
-Run: `cd backend && pytest -q tests/test_drawing_evidence_repository_v3.py`
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add backend/app/graph/drawing_evidence_repository.py backend/tests/test_drawing_evidence_repository_v3.py
-git commit -m "feat: persist human drawing resolutions"
-```
+- [ ] Store `action`, `reviewer`, `resolverVersion="drawing-evidence-v3"`, Codex run/model snapshot, `createdAt`, selected/rejected candidate IDs. Preserve the original Codex node unchanged.
+- [ ] Latest human resolution removes the source from pending queue; never delete historical Codex/human nodes.
+- [ ] Run `cd backend && pytest -q tests/test_drawing_evidence_repository_v3.py`; commit `feat: persist human drawing resolutions`.
 
 ---
 
-### Task 3: Expose review queue and resolution endpoints
+### Task 3: Expose API using the repository pattern already used by `reviews.py`
 
-**Files:**
-- Create: `backend/app/api/drawing_reviews.py`
-- Modify: `backend/app/main.py`
-- Test: `backend/tests/test_drawing_reviews_api.py`
+**Exact endpoints:**
+- GET `/api/v1/projects/{project_id}/drawing-reviews`
+- POST `/api/v1/projects/{project_id}/drawing-reviews/{source_asset_id}/resolve`
 
-**Interfaces:**
-- GET `/projects/{project_id}/drawing-reviews` -> `list[DrawingReviewCaseResponse]`.
-- POST `/projects/{project_id}/drawing-reviews/{source_asset_id}/resolve` with `DrawingReviewResolveRequest` -> `DrawingReviewResolveResponse`.
-
-- [ ] **Step 1: Write failing endpoint tests**
-
-Use FastAPI TestClient with dependency-injected fake repository. Assert GET returns the queue. Assert POST calls repository with exact project/source/action/candidate/reviewer. Assert invalid candidate repository error maps to HTTP 409, missing review case to 404, malformed action to 422.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd backend && pytest -q tests/test_drawing_reviews_api.py`
-
-Expected: routes missing.
-
-- [ ] **Step 3: Implement router**
+- [ ] Write RED TestClient tests using `app.dependency_overrides[get_drawing_evidence_repository] = lambda: fake_repo`.
+- [ ] In `backend/app/api/drawing_reviews.py`, define:
 
 ```python
-router = APIRouter(prefix="/projects/{project_id}/drawing-reviews", tags=["drawing-reviews"])
+router = APIRouter(prefix="/api/v1/projects", tags=["drawing-reviews"])
 
-@router.get("", response_model=list[DrawingReviewCaseResponse])
-def list_drawing_reviews(project_id: str, repository=Depends(get_drawing_evidence_repository)):
-    return repository.list_v3_review_cases(project_id)
-
-@router.post("/{source_asset_id}/resolve", response_model=DrawingReviewResolveResponse)
-def resolve_drawing_review(project_id: str, source_asset_id: str, request: DrawingReviewResolveRequest, repository=Depends(get_drawing_evidence_repository)):
-    return repository.resolve_v3_review(project_id, source_asset_id, request.action, request.candidate_id, request.reviewer)
+def get_drawing_evidence_repository(request: Request):
+    repo = getattr(request.app.state, "drawing_evidence_repository", None)
+    if repo is None:
+        driver = getattr(request.app.state, "neo4j_driver", None)
+        if driver is not None:
+            repo = DrawingEvidenceRepository(driver)
+            request.app.state.drawing_evidence_repository = repo
+    return repo
 ```
 
-Register the router in `main.py` using the project’s existing API registration style.
-
-- [ ] **Step 4: Run backend API tests**
-
-Run: `cd backend && pytest -q tests/test_drawing_reviews_api.py tests/test_drawing_evidence_repository_v3.py`
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/api/drawing_reviews.py backend/app/main.py backend/tests/test_drawing_reviews_api.py
-git commit -m "feat: expose drawing identity review API"
-```
+- [ ] Implement async routes. First call existing `get_project_repository` / `_run_repository(project_repository.get_project, project_id)` to enforce project ownership, matching `backend/app/api/reviews.py`. Call synchronous drawing repository methods with `run_in_threadpool`.
+- [ ] If drawing repository is not configured, raise existing `ServerOperationError`.
+- [ ] Add dedicated exceptions `DrawingReviewNotFoundError` and `DrawingReviewConflictError`; in `main.py` map them to 404 and 409 using existing `_error_response` convention.
+- [ ] POST maps repository result to `DrawingReviewResolveResponse`; malformed request remains FastAPI 422.
+- [ ] Import/register `drawing_reviews_router` in `main.py` beside existing review routers. No second API prefix.
+- [ ] Run `cd backend && pytest -q tests/test_drawing_reviews_api.py tests/test_drawing_evidence_repository_v3.py`; commit `feat: expose drawing identity review API`.
 
 ---
 
-### Task 4: Add typed frontend review API
+### Task 4: Add typed frontend API using existing fetch conventions
 
-**Files:**
-- Create: `frontend/src/drawingReviewApi.ts`
-- Create: `frontend/src/drawingReviewApi.test.ts`
-
-**Interfaces:**
-- Produces TypeScript types mirroring backend responses.
-- Produces `fetchDrawingReviews(projectId: string): Promise<DrawingReviewCase[]>`.
-- Produces `resolveDrawingReview(projectId: string, sourceAssetId: string, input: DrawingReviewResolutionInput): Promise<DrawingReviewResolution>`.
-
-- [ ] **Step 1: Write failing fetch tests**
-
-```ts
-it('loads drawing review cases', async () => {
-  mockFetchJson([{ source_asset_id: 'asset-1', candidates: [] }])
-  const rows = await fetchDrawingReviews('project-1')
-  expect(rows[0].source_asset_id).toBe('asset-1')
-})
-
-it('posts an explicit human choice', async () => {
-  await resolveDrawingReview('project-1', 'asset-1', {
-    action: 'choose', candidate_id: 'candidate:drawing:53', reviewer: 'human'
-  })
-  expect(lastRequest.method).toBe('POST')
-})
-```
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd frontend && npm test -- --run src/drawingReviewApi.test.ts`
-
-Expected: module missing.
-
-- [ ] **Step 3: Implement API functions using existing project fetch/error conventions**
-
-Keep wire names in backend snake_case unless the existing API layer explicitly maps them; do not silently rename only this endpoint. Encode project/source IDs with `encodeURIComponent`.
-
-- [ ] **Step 4: Run frontend API tests**
-
-Run: `cd frontend && npm test -- --run src/drawingReviewApi.test.ts`
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add frontend/src/drawingReviewApi.ts frontend/src/drawingReviewApi.test.ts
-git commit -m "feat: add drawing review frontend API"
-```
+- [ ] Write RED `frontend/src/drawingReviewApi.test.ts` for GET and POST URLs under `/api/v1/projects/...`, URL encoding, JSON body and error propagation.
+- [ ] Implement `frontend/src/drawingReviewApi.ts` with a private `readJson<T>()` matching `graphFirstReviewApi.ts` behavior.
+- [ ] Wire types in snake_case to match backend response exactly; do not create a one-off rename layer.
+- [ ] Export:
+  - `fetchDrawingReviews(projectId): Promise<DrawingReviewCase[]>`
+  - `resolveDrawingReview(projectId, sourceAssetId, input): Promise<DrawingReviewResolution>`
+- [ ] POST body: `{action, candidate_id, reviewer}`.
+- [ ] Run `cd frontend && npm test -- --run src/drawingReviewApi.test.ts`; commit `feat: add drawing review frontend API`.
 
 ---
 
-### Task 5: Build the fast candidate comparison panel
+### Task 5: Build the candidate comparison panel
 
-**Files:**
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.tsx`
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.test.tsx`
-- Create: `frontend/src/components/DrawingIdentityReviewPanel.css`
+**Component:** `DrawingIdentityReviewPanel({projectId})`.
 
-**Interfaces:**
-- Props: `{ projectId: string }`.
-- Loads queue via `fetchDrawingReviews`.
-- Mutations via `resolveDrawingReview`.
-- After successful resolution, remove the resolved source from the local queue and show the next case.
-
-- [ ] **Step 1: Write RED component tests**
-
-Test behaviors:
-
-```tsx
-expect(screen.getByText('Codex 98%')).toBeInTheDocument()
-expect(screen.getByRole('button', { name: /도면 52 승인/ })).toBeInTheDocument()
-expect(screen.getByRole('button', { name: /모두 아님/ })).toBeInTheDocument()
-```
-
-Click a non-Codex candidate and assert POST action=`choose`; click Codex-selected candidate and assert action=`approve`; click 모두 아님 and assert action=`none`, candidate null. Assert no mutation fires merely by selecting/highlighting a card.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd frontend && npm test -- --run src/components/DrawingIdentityReviewPanel.test.tsx`
-
-Expected: component missing.
-
-- [ ] **Step 3: Implement review-first layout**
-
-Layout requirements:
-
-- top: source name, source render, short extracted source text;
-- summary: Codex selection/confidence/rationale;
-- horizontal candidate cards: image, `도면/삽도 + number`, caption, key support chips, contradiction chips;
-- explicit action button inside each candidate card;
-- separate `모두 아님` button;
-- loading/error/empty states;
-- do not expose raw Neo4j IDs as the primary visual label, but retain them in accessible/details text.
-
-- [ ] **Step 4: Add restrained CSS for 3-column desktop and single-column narrow layout**
-
-Use existing app typography/spacing conventions. Candidate crops use `object-fit: contain`; do not crop the reviewer’s evidence image in CSS.
-
-- [ ] **Step 5: Run component tests**
-
-Run: `cd frontend && npm test -- --run src/components/DrawingIdentityReviewPanel.test.tsx`
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add frontend/src/components/DrawingIdentityReviewPanel.tsx frontend/src/components/DrawingIdentityReviewPanel.test.tsx frontend/src/components/DrawingIdentityReviewPanel.css
-git commit -m "feat: add drawing identity review panel"
-```
+- [ ] Write RED component tests with mocked API:
+  - source image/text appears;
+  - `Codex 98%` and short rationale appear;
+  - candidate image, `도면/삽도 + number`, caption, support/contradiction chips appear;
+  - Codex candidate button sends `approve`;
+  - different candidate sends `choose`;
+  - `모두 아님` sends `none` with null candidate;
+  - merely highlighting/focusing a card sends no mutation;
+  - successful mutation removes current source and advances queue;
+  - loading/error/empty states are explicit.
+- [ ] Implement `DrawingIdentityReviewPanel.tsx` and CSS. Desktop candidate comparison is 3-column when space permits; narrow screens stack. Images use `object-fit: contain` so evidence is not visually cropped.
+- [ ] Keep raw candidate/source IDs in details/accessibility text, not as the primary display label.
+- [ ] Run `cd frontend && npm test -- --run src/components/DrawingIdentityReviewPanel.test.tsx`; commit `feat: add drawing identity review panel`.
 
 ---
 
-### Task 6: Integrate the review panel into the Graph-first project detail flow
+### Task 6: Integrate exactly into `GraphFirstProjectDetailPage`
 
-**Files:**
-- Modify: `frontend/src/pages/GraphFirstProjectDetailPage.tsx`
-- Add or Modify test: `frontend/src/pages/ProjectDetailPage.test.tsx` or `frontend/src/pages/GraphFirstProjectDetailPage.test.tsx`
-
-**Interfaces:**
-- Existing project detail route remains unchanged.
-- v3 review panel appears as a clearly labeled section/tab only when a `projectId` exists.
-
-- [ ] **Step 1: Write failing integration test**
-
-Render the Graph-first project page with project `project-1`, mock one drawing review case, and assert the page exposes `도면 ID 검수` plus the review panel. Mock empty queue and assert a compact `검수할 도면 없음` state rather than hiding system status entirely.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run: `cd frontend && npm test -- --run src/pages/ProjectDetailPage.test.tsx`
-
-Expected: review section missing.
-
-- [ ] **Step 3: Mount `DrawingIdentityReviewPanel projectId={projectId}` in the existing project detail composition**
-
-Do not duplicate project loading or routing logic. Keep the review panel isolated so existing graph/proofreading sections do not re-render on candidate selection except where the current page architecture naturally does so.
-
-- [ ] **Step 4: Run page and full frontend tests**
-
-Run: `cd frontend && npm test -- --run`
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add frontend/src/pages/GraphFirstProjectDetailPage.tsx frontend/src/pages/ProjectDetailPage.test.tsx frontend/src/pages/GraphFirstProjectDetailPage.test.tsx
-git commit -m "feat: integrate drawing identity review workflow"
-```
-
-Only add whichever test file actually exists/is created; do not stage a nonexistent path.
+- [ ] Create `frontend/src/pages/GraphFirstProjectDetailPage.test.tsx` (do not reuse/modify the legacy `ProjectDetailPage.test.tsx` for this new flow).
+- [ ] RED test renders `GraphFirstProjectDetailPage` with project `project-1`; mock one review and assert a labeled `도면 ID 검수` section contains the comparison panel.
+- [ ] Empty queue test asserts `검수할 도면 없음` so review state is visible rather than silently absent.
+- [ ] Modify `GraphFirstProjectDetailPage.tsx` to import/mount `<DrawingIdentityReviewPanel projectId={project.id} />` within the existing Graph-first project detail composition. Do not duplicate routing/project loading.
+- [ ] Run the new page test, then `cd frontend && npm test -- --run`; commit `feat: integrate drawing identity review workflow`.
 
 ---
 
 ### Task 7: Verify human-review provenance end to end
 
-**Files:**
-- Modify only for regression fixes discovered by tests.
-
-**Interfaces:**
-- No new interfaces; proves backend/frontend/Neo4j behavior.
-
-- [ ] **Step 1: Run focused backend tests**
-
-```powershell
-cd backend
-pytest -q `
-  tests/test_drawing_reviews_api.py `
-  tests/test_drawing_evidence_repository_v3.py
-cd ..
-```
-
-Expected: PASS.
-
-- [ ] **Step 2: Run full frontend tests**
-
-```powershell
-cd frontend
-npm test -- --run
-cd ..
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Run Neo4j E2E with one review case**
-
-Create/persist a v3 `REVIEW_REQUIRED` case, GET it through the API, POST a `choose` resolution, then query Neo4j and assert: original CodexDecision still exists unchanged; HumanDrawingResolution exists; selected candidate gets one human-verified target; alternatives are rejected; the source disappears from the pending review queue.
-
-- [ ] **Step 4: Run repository CI jobs and verify all green**
-
-Required jobs: `backend-hermetic`, `frontend`, `neo4j-e2e`.
-
-- [ ] **Step 5: Keep rollout and merge gates unchanged**
-
-Do not enable v3 auto-promotion or merge PR #47/PR #1 without explicit approval. Human-review functionality may be exercised while v3 remains shadow mode.
+- [ ] Backend focused: `cd backend && pytest -q tests/test_drawing_reviews_api.py tests/test_drawing_evidence_repository_v3.py`.
+- [ ] Frontend full: `cd frontend && npm test -- --run`.
+- [ ] Neo4j E2E fixture: persist one v3 `REVIEW_REQUIRED`; GET through API; POST `choose`; query graph and assert original CodexDecision unchanged, one HumanDrawingResolution exists, selected candidate has one human-verified target, alternatives recorded rejected, source absent from pending queue.
+- [ ] Required repository CI jobs all green: `backend-hermetic`, `frontend`, `neo4j-e2e`.
+- [ ] Do not set v3 auto-promote, change production default, or merge PR #47/PR #1 without explicit approval.
