@@ -385,6 +385,7 @@ class DrawingEvidenceRepositoryV3(DrawingEvidenceRepository):
                     decision.sourceAssetId = row.source_asset_id,
                     decision.runId = row.run_id,
                     decision.model = row.model,
+                    decision.candidateId = row.candidate_id,
                     decision.verdict = row.verdict,
                     decision.confidence = row.confidence,
                     decision.reasonCodes = row.reason_codes,
