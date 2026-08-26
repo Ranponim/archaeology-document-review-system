@@ -1,14 +1,74 @@
 import os
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "").strip() or "/data")
 
 OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY"
 LEGACY_AI_API_KEY_ENV = "AI_API_KEY"
+OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 ALLOW_DEGRADED_MODE_ENV = "ALLOW_DEGRADED_MODE"
 DRAWING_EVIDENCE_RESOLVER_VERSION_ENV = "DRAWING_EVIDENCE_RESOLVER_VERSION"
+
+
+@dataclass(frozen=True, slots=True)
+class CodexDrawingResolverConfig:
+    api_key: str
+    model: str = "gpt-5.3-codex"
+    base_url: str = "https://api.openai.com/v1/responses"
+    timeout_seconds: float = 60.0
+    auto_confidence: float = 0.95
+    max_candidates: int = 10
+    max_expansions: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.api_key.strip():
+            raise ValueError("OPENAI_API_KEY is required for drawing-evidence-v3")
+        if not self.model.strip():
+            raise ValueError("DRAWING_CODEX_MODEL must not be empty")
+        if self.timeout_seconds <= 0:
+            raise ValueError("DRAWING_CODEX_TIMEOUT_SECONDS must be positive")
+        if not 0.0 <= self.auto_confidence <= 1.0:
+            raise ValueError("DRAWING_CODEX_AUTO_CONFIDENCE must be between 0 and 1")
+        if self.max_candidates <= 0:
+            raise ValueError("DRAWING_CODEX_MAX_CANDIDATES must be positive")
+        if self.max_expansions < 0:
+            raise ValueError("DRAWING_CODEX_MAX_EXPANSIONS must be non-negative")
+
+    @classmethod
+    def from_env(cls) -> "CodexDrawingResolverConfig":
+        api_key = os.environ.get(OPENAI_API_KEY_ENV, "").strip()
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required for drawing-evidence-v3")
+        try:
+            timeout_seconds = float(
+                os.environ.get("DRAWING_CODEX_TIMEOUT_SECONDS", "60").strip() or "60"
+            )
+            auto_confidence = float(
+                os.environ.get("DRAWING_CODEX_AUTO_CONFIDENCE", "0.95").strip()
+                or "0.95"
+            )
+            max_candidates = int(
+                os.environ.get("DRAWING_CODEX_MAX_CANDIDATES", "10").strip() or "10"
+            )
+            max_expansions = int(
+                os.environ.get("DRAWING_CODEX_MAX_EXPANSIONS", "1").strip() or "1"
+            )
+        except ValueError as exc:
+            raise ValueError("Invalid drawing Codex numeric configuration") from exc
+        return cls(
+            api_key=api_key,
+            model=(
+                os.environ.get("DRAWING_CODEX_MODEL", "gpt-5.3-codex").strip()
+                or "gpt-5.3-codex"
+            ),
+            timeout_seconds=timeout_seconds,
+            auto_confidence=auto_confidence,
+            max_candidates=max_candidates,
+            max_expansions=max_expansions,
+        )
 
 
 def get_allow_degraded_mode() -> bool:
