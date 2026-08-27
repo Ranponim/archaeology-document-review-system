@@ -111,10 +111,9 @@ class DrawingEvidenceResolverV3:
 
         should_expand = (
             self._max_expansions > 0
-            and (
-                decision is None
-                or decision.verdict in {"ambiguous", "none"}
-            )
+            and last_error is None
+            and decision is not None
+            and decision.verdict in {"ambiguous", "none"}
         )
         if should_expand:
             for _ in range(self._max_expansions):
