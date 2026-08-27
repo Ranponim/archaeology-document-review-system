@@ -20,6 +20,8 @@ class CodexDrawingResolverConfig:
     model: str = "gpt-5.3-codex"
     base_url: str = "https://api.openai.com/v1/responses"
     timeout_seconds: float = 60.0
+    reasoning_effort: str = "high"
+    turn_timeout_seconds: float = 180.0
     auto_confidence: float = 0.95
     max_candidates: int = 10
     max_expansions: int = 1
@@ -29,6 +31,10 @@ class CodexDrawingResolverConfig:
             raise ValueError("DRAWING_CODEX_MODEL must not be empty")
         if self.timeout_seconds <= 0:
             raise ValueError("DRAWING_CODEX_TIMEOUT_SECONDS must be positive")
+        if not self.reasoning_effort.strip():
+            raise ValueError("DRAWING_CODEX_REASONING_EFFORT must not be empty")
+        if self.turn_timeout_seconds <= 0:
+            raise ValueError("DRAWING_CODEX_TURN_TIMEOUT_SECONDS must be positive")
         if not 0.0 <= self.auto_confidence <= 1.0:
             raise ValueError("DRAWING_CODEX_AUTO_CONFIDENCE must be between 0 and 1")
         if self.max_candidates <= 0:
@@ -45,6 +51,10 @@ class CodexDrawingResolverConfig:
         try:
             timeout_seconds = float(
                 os.environ.get("DRAWING_CODEX_TIMEOUT_SECONDS", "60").strip() or "60"
+            )
+            turn_timeout_seconds = float(
+                os.environ.get("DRAWING_CODEX_TURN_TIMEOUT_SECONDS", "180").strip()
+                or "180"
             )
             auto_confidence = float(
                 os.environ.get("DRAWING_CODEX_AUTO_CONFIDENCE", "0.95").strip()
@@ -65,6 +75,11 @@ class CodexDrawingResolverConfig:
                 or "gpt-5.3-codex"
             ),
             timeout_seconds=timeout_seconds,
+            reasoning_effort=(
+                os.environ.get("DRAWING_CODEX_REASONING_EFFORT", "high").strip()
+                or "high"
+            ),
+            turn_timeout_seconds=turn_timeout_seconds,
             auto_confidence=auto_confidence,
             max_candidates=max_candidates,
             max_expansions=max_expansions,
