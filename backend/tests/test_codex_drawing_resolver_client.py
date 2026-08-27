@@ -314,3 +314,32 @@ def test_client_raises_typed_error_after_two_malformed_responses(tmp_path):
     with pytest.raises(CodexDrawingDecisionError):
         client.resolve(source, (candidate,))
     assert calls == 2
+
+
+def test_client_uses_injected_openai_sdk_responses_client(tmp_path):
+    source = _source(tmp_path)
+    candidate = _candidate(tmp_path)
+
+    class Responses:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return _response_text(_valid_payload(candidate), response_id="sdk-resp-1")
+
+    class OpenAISdkClient:
+        def __init__(self):
+            self.responses = Responses()
+
+    sdk_client = OpenAISdkClient()
+    client = CodexDrawingResolverClient(_config(), openai_client=sdk_client)
+
+    decision = client.resolve(source, (candidate,))
+
+    assert decision.run_id == "sdk-resp-1"
+    assert len(sdk_client.responses.calls) == 1
+    request = sdk_client.responses.calls[0]
+    assert request["model"] == "gpt-5.3-codex"
+    assert request["store"] is False
+    assert request["text"]["format"]["type"] == "json_schema"

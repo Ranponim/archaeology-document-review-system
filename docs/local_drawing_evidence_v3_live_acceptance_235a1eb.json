@@ -1,0 +1,98 @@
+{
+  "acceptance_status": "BLOCKED",
+  "acceptance_decision": "not_accepted",
+  "reason": "Live evaluator failed before the first HTTP request because OPENAI_API_KEY was absent.",
+  "pr": 47,
+  "branch": "feature/adobe-free-provenance-20260823",
+  "head_sha": "235a1eb9085aefa4325ad0747b1e19a8a50c9c4b",
+  "remote_head_sha": "235a1eb9085aefa4325ad0747b1e19a8a50c9c4b",
+  "source_root_requested": "D:/Coding/archaeology-document-review-system/src",
+  "source_root_resolved": "D:/Coding/archaeology-document-review-system/src",
+  "source_root_read_only": true,
+  "source_ai_files": 56,
+  "gold": {
+    "template": "docs/local_drawing_evidence_v3_gold_template.json",
+    "template_sha256": "C028638622724150390945520E2BFC115299FF6E3E294F014C447F5FD5396DB4",
+    "rows": 56,
+    "template_known_rows": 0,
+    "template_unknown_rows": 56,
+    "manual_review_artifact": "docs/local_drawing_evidence_v3_manual_review.json",
+    "manual_review_artifact_sha256": "92044EB2EC5EF8F4A3BB4324CA1F2CA297B343F31BEA26DE3F7BC1E476B55E73",
+    "manual_review_rows_reviewed": 56,
+    "manual_review_single_identity_verified": 50,
+    "manual_review_unresolved": 6,
+    "manual_review_external_human_signoff": false,
+    "filename_only_truth_used": false,
+    "metrics_denominator_available": false
+  },
+  "live_codex": {
+    "requested": true,
+    "evaluator_mode": "--live-codex",
+    "resolver": "CodexDrawingResolverClient",
+    "endpoint": "https://api.openai.com/v1/responses",
+    "model": "gpt-5.3-codex",
+    "evaluator_process_attempted": true,
+    "api_calls_completed": 0,
+    "api_key_present_process": false,
+    "api_key_present_user": false,
+    "api_key_present_machine": false,
+    "failure": {
+      "exception": "ValueError",
+      "message": "OPENAI_API_KEY is required for drawing-evidence-v3",
+      "exit_code": 1,
+      "failure_stage": "CodexDrawingResolverConfig.from_env before resolver construction/HTTP",
+      "reproduction_log": "docs/local_drawing_evidence_v3_live_acceptance_attempt_235a1eb.log",
+      "reproduction_log_sha256": "2BD1464E4EDCF7D44F4480DC687D0423694A34DC2C6D2B798DB6AADAF5C388F4"
+    }
+  },
+  "command": "python tools/evaluate_drawing_evidence_v3.py --source-root src --gold docs/local_drawing_evidence_v3_gold_template.json --output-json docs/local_drawing_evidence_v3_live_acceptance_attempt_235a1eb.json --output-report docs/local_drawing_evidence_v3_live_acceptance_attempt_235a1eb.md --live-codex --render-dir docs/local_drawing_evidence_v3_live_acceptance_render_235a1eb",
+  "environment": {
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "powershell": "5.1.26100.9168",
+    "python": "3.13.3",
+    "docker": "28.0.4",
+    "node": "22.23.1",
+    "npm": "11.18.0",
+    "codex_cli_login": "Logged in using ChatGPT",
+    "adobe_used": false,
+    "com_used": false,
+    "extendscript_used": false
+  },
+  "metrics": {
+    "recall_at_10": null,
+    "codex_top1_accuracy": null,
+    "auto_coverage": null,
+    "auto_precision": null,
+    "review_rate": null,
+    "unresolved_rate": null,
+    "metric_status": "not_measured",
+    "denominator": 0,
+    "reason": "No human-verified rows in the evaluator gold template and no live Codex decisions. Null is intentional; these are not zero scores."
+  },
+  "safety_counters": {
+    "invalid_response_count": null,
+    "hard_contradiction_promoted_count": null,
+    "filename_only_promoted_count": null,
+    "kind_collision_count": null,
+    "api_unsafe_promotion_count": null,
+    "status": "not_measured",
+    "reason": "No live decisions were produced. Contract safety was covered separately by deterministic tests, not counted as live acceptance."
+  },
+  "unresolved_manual_review_sources": [
+    "환경 도면/도면16. 구석기시대발굴조사지역 출토유물.ai",
+    "환경 도면/도면18. 1지점-유구편집본 수정.ai",
+    "환경 도면/도면21. 2지점 유구+유물 편집.ai",
+    "환경 도면/도면23. 3지점-유구편집본.ai",
+    "환경 도면/도면25. 4지점 유구+유물편집.ai",
+    "환경 도면/도면27. 5지점-유구편집본.ai"
+  ],
+  "acceptance_gates": {
+    "recall_at_10_ge_99_percent": "not_measured",
+    "auto_coverage_75_to_85_percent": "not_measured",
+    "auto_precision_ge_99_percent": "not_measured",
+    "review_rate_le_25_percent": "not_measured",
+    "all_live_safety_counters_zero": "not_measured",
+    "v3_accepted": false
+  },
+  "code_change": false
+}

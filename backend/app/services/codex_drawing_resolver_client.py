@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import httpx
+from openai import OpenAI, OpenAIError
 
 from app.config import CodexDrawingResolverConfig
 from app.domain.drawing_evidence_v3 import (
@@ -51,9 +52,25 @@ class CodexDrawingResolverClient:
         config: CodexDrawingResolverConfig,
         *,
         http_client: httpx.Client | None = None,
+        openai_client: Any | None = None,
     ) -> None:
         self._config = config
-        self._http = http_client or httpx.Client()
+        if openai_client is not None and http_client is not None:
+            raise ValueError("provide openai_client or http_client, not both")
+        self._openai = openai_client or OpenAI(
+            api_key=config.api_key,
+            base_url=self._sdk_base_url(config.base_url),
+            timeout=config.timeout_seconds,
+            max_retries=0,
+            http_client=http_client,
+        )
+
+    @staticmethod
+    def _sdk_base_url(endpoint: str) -> str:
+        value = endpoint.rstrip("/")
+        if value.endswith("/responses"):
+            return value[: -len("/responses")]
+        return value
 
     @staticmethod
     def _mime_type(path: Path) -> str:
@@ -282,6 +299,22 @@ class CodexDrawingResolverClient:
             summary=summary,
         )
 
+    @staticmethod
+    def _response_payload(response: Any) -> dict[str, Any]:
+        if isinstance(response, dict):
+            return response
+        model_dump = getattr(response, "model_dump", None)
+        if callable(model_dump):
+            payload = model_dump()
+            if isinstance(payload, dict):
+                return payload
+        to_dict = getattr(response, "to_dict", None)
+        if callable(to_dict):
+            payload = to_dict()
+            if isinstance(payload, dict):
+                return payload
+        raise CodexDrawingDecisionError("Responses API payload must be an object")
+
     def resolve(
         self,
         source: DrawingSourceEvidencePacket,
@@ -291,27 +324,14 @@ class CodexDrawingResolverClient:
         last_error: Exception | None = None
         for attempt in range(2):
             try:
-                response = self._http.post(
-                    self._config.base_url,
-                    headers={
-                        "Authorization": f"Bearer {self._config.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    timeout=self._config.timeout_seconds,
-                )
-                response.raise_for_status()
-                response_payload = response.json()
-                if not isinstance(response_payload, dict):
-                    raise CodexDrawingDecisionError(
-                        "Responses API payload must be an object"
-                    )
+                response = self._openai.responses.create(**payload)
+                response_payload = self._response_payload(response)
                 return self._parse_decision(
                     response_payload,
                     candidates=candidates,
                     source=source,
                 )
-            except (httpx.HTTPError, ValueError, CodexDrawingDecisionError) as exc:
+            except (OpenAIError, ValueError, CodexDrawingDecisionError) as exc:
                 last_error = exc
                 if attempt == 0:
                     continue
