@@ -127,3 +127,30 @@ def test_filename_and_sequence_signals_are_marked_weak():
     ]
     assert filename_evidence
     assert all(evidence.weak for evidence in filename_evidence)
+
+
+def test_sparse_ai_text_uses_semantic_filename_only_to_retrieve_correct_target():
+    generator = DrawingCandidateGeneratorV3()
+    filename = "【도면  】1지점 고려시대 1호 석곽묘 평·입단면도 및 출토유물.ai"
+    source = source_packet(
+        "",
+        original_name=filename,
+        source_path=f"본문 도면/1지점/{filename}",
+    )
+    distractors = [
+        body(str(number), "1지점 고려시대 1호 옹관묘 평·입단면도 및 출토유물")
+        for number in range(21, 31)
+    ]
+    correct = body("35", "1지점 고려시대 1호 석곽묘 평·입단면도 및 출토유물")
+
+    rows = generator.generate(source, [*distractors, correct], limit=10)
+
+    assert any(row.number == "35" for row in rows)
+    correct_row = next(row for row in rows if row.number == "35")
+    filename_semantic = [
+        evidence
+        for evidence in correct_row.evidence
+        if evidence.method.startswith("filename_semantic_")
+    ]
+    assert filename_semantic
+    assert all(evidence.weak for evidence in filename_semantic)
