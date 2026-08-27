@@ -57,10 +57,13 @@ def test_codex_drawing_resolver_config_loads_explicit_environment(monkeypatch):
     assert config.max_expansions == 1
 
 
-def test_codex_drawing_resolver_config_requires_api_key(monkeypatch):
+def test_codex_drawing_resolver_config_allows_sdk_auth_without_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-        CodexDrawingResolverConfig.from_env()
+
+    config = CodexDrawingResolverConfig.from_env()
+
+    assert config.api_key == ""
+    assert config.model == "gpt-5.3-codex"
 
 
 @pytest.mark.parametrize(
