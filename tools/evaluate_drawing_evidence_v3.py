@@ -66,7 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--live-codex",
         action="store_true",
-        help="Call OpenAI Responses API. Intended only for local /src acceptance.",
+        help="Call the configured live Codex resolver. Intended only for local /src acceptance.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Process only the first N discovered AI sources; useful for live smoke tests.",
     )
     parser.add_argument("--body-pdf", type=Path, default=None)
     parser.add_argument("--render-dir", type=Path, default=None)
@@ -248,6 +254,13 @@ def discover_ai_files(source_root: Path) -> list[Path]:
     )
 
 
+def discover_limited_ai_files(source_root: Path, *, limit: int | None) -> list[Path]:
+    if limit is not None and limit <= 0:
+        raise ValueError("limit must be positive")
+    paths = discover_ai_files(source_root)
+    return paths if limit is None else paths[:limit]
+
+
 def _publication_kind(text: str) -> str | None:
     value = str(text or "")
     if re.search(r"삽도\s*\d", value):
@@ -379,13 +392,21 @@ def build_body_packets(body_pdf: Path, render_dir: Path) -> list[BodyDrawingEvid
     return packets
 
 
-def build_source_packets(source_root: Path, render_dir: Path) -> list[DrawingSourceEvidencePacket]:
+def build_source_packets(
+    source_root: Path,
+    render_dir: Path,
+    *,
+    limit: int | None = None,
+) -> list[DrawingSourceEvidencePacket]:
     observer = DrawingSourceObserver()
     normalizer = DrawingContextNormalizer()
     extractor = DrawingVisualExtractor()
     packets = []
     root = source_root.resolve()
-    for index, path in enumerate(discover_ai_files(root), start=1):
+    for index, path in enumerate(
+        discover_limited_ai_files(root, limit=limit),
+        start=1,
+    ):
         relative = path.relative_to(root).as_posix()
         source_id = f"local-v3-ai:{index:03d}:{hashlib.sha256(relative.encode('utf-8')).hexdigest()[:12]}"
         sha = _sha256(path)
@@ -488,12 +509,17 @@ def resolution_rows(source_root: Path, sources, resolution) -> list[dict]:
     return rows
 
 
+def _print_codex_progress(message: str) -> None:
+    print(f"[codex-sdk] {message}", flush=True)
+
+
 def evaluate_live(
     source_root: Path,
     gold_path: Path,
     *,
     body_pdf: Path | None,
     render_dir: Path,
+    source_limit: int | None = None,
 ) -> tuple[dict, list[dict]]:
     root = source_root.resolve()
     body = body_pdf.resolve() if body_pdf else discover_latest_body_pdf(root)
@@ -505,10 +531,19 @@ def evaluate_live(
     render_dir.mkdir(parents=True, exist_ok=True)
 
     bodies = build_body_packets(body, render_dir / "body")
-    sources = build_source_packets(root, render_dir / "source")
+    sources = build_source_packets(root, render_dir / "source", limit=source_limit)
     config = CodexDrawingResolverConfig.from_env()
+    print(
+        f"[acceptance] sources={len(sources)} model={config.model} "
+        f"effort={config.reasoning_effort} "
+        f"timeout={config.turn_timeout_seconds:g}s",
+        flush=True,
+    )
     generator = DrawingCandidateGeneratorV3(DrawingContextNormalizer())
-    client = CodexDrawingResolverClient(config)
+    client = CodexDrawingResolverClient(
+        config,
+        progress_callback=_print_codex_progress,
+    )
     resolver = DrawingEvidenceResolverV3(
         generator,
         client,
@@ -533,6 +568,9 @@ def evaluate_live(
         "source_root_read_only": True,
         "live_codex": True,
         "model": config.model,
+        "reasoning_effort": config.reasoning_effort,
+        "turn_timeout_seconds": config.turn_timeout_seconds,
+        "source_limit": source_limit,
         "ai_files": len(sources),
         "body_packets": len(bodies),
     }
@@ -597,6 +635,7 @@ def main() -> int:
             args.gold,
             body_pdf=args.body_pdf,
             render_dir=render_dir,
+            source_limit=args.limit,
         )
         metrics["rows"] = rows
     else:
