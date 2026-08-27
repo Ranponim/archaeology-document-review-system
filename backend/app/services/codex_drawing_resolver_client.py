@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -25,6 +25,7 @@ class CodexDrawingResolverClient:
         *,
         http_client: httpx.Client | None = None,
         openai_client: Any | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ):
         if config.api_key.strip() or openai_client is not None or http_client is not None:
             return OpenAIResponsesDrawingResolverClient(
@@ -37,7 +38,12 @@ class CodexDrawingResolverClient:
             CodexSdkDrawingResolverClient,
         )
 
-        return CodexSdkDrawingResolverClient(model=config.model)
+        return CodexSdkDrawingResolverClient(
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            turn_timeout_seconds=config.turn_timeout_seconds,
+            progress_callback=progress_callback,
+        )
 
 
 __all__ = [
