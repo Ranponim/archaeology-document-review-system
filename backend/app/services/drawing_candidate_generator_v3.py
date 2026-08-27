@@ -41,6 +41,8 @@ _FAMILY_BY_KIND = {
 }
 _STRONG_NEGATIVE_KINDS = ("period", "map_type", "year")
 _FILENAME_IDENTIFIER = re.compile(r"(도면|삽도)\s*(\d+(?:-\d+)?)", re.IGNORECASE)
+_FILENAME_SEMANTIC_KINDS = ("site_point", "grid", "period", "drawing_type", "map_type", "year")
+_FILENAME_SEMANTIC_SCALE = 0.5
 _GENERIC_TOKENS = {"도면", "삽도", "도", "제", "및"}
 
 
@@ -93,6 +95,17 @@ class DrawingCandidateGeneratorV3:
             for feature_type in feature_types
             for feature_number in feature_numbers
         }
+
+    @staticmethod
+    def _exact_feature_pairs(facts: tuple[ContextFact, ...]) -> set[tuple[str, str]]:
+        pairs: set[tuple[str, str]] = set()
+        for fact in facts:
+            if fact.kind != "feature":
+                continue
+            match = re.fullmatch(r"(\d+)호:(.+)", fact.normalized_value)
+            if match:
+                pairs.add((match.group(2), match.group(1)))
+        return pairs
 
     @staticmethod
     def _dedupe_facts(facts: list[ContextFact]) -> tuple[ContextFact, ...]:
@@ -206,6 +219,14 @@ class DrawingCandidateGeneratorV3:
         source_values = self._fact_values(source_facts)
         source_tokens = self._lexical_tokens(source_normalized.tokens)
         filename_kind, filename_number = self._filename_identity(source.original_name)
+        filename_context = self._normalizer.normalize(
+            Path(source.original_name).stem,
+            source_kind="filename",
+            source_node_id=source.source_asset_id,
+            source_sha256=source.source_sha256,
+        )
+        filename_values = self._fact_values(filename_context.facts)
+        filename_feature_pairs = self._exact_feature_pairs(filename_context.facts)
         path_context = self._normalizer.normalize(
             source.source_path,
             source_kind="path",
@@ -313,6 +334,35 @@ class DrawingCandidateGeneratorV3:
                         family="lexical_support",
                         method="normalized_token_overlap",
                         value=" ".join(sorted(shared_tokens)),
+                    )
+                )
+
+            for kind in _FILENAME_SEMANTIC_KINDS:
+                shared = filename_values.get(kind, set()) & body_values.get(kind, set())
+                for value in sorted(shared):
+                    score += WEIGHTS[kind] * _FILENAME_SEMANTIC_SCALE
+                    evidence.append(
+                        self._evidence(
+                            candidate_id,
+                            family="weak_filename_semantic",
+                            method=f"filename_semantic_exact_{kind}",
+                            value=value,
+                            weak=True,
+                        )
+                    )
+
+            body_exact_feature_pairs = self._exact_feature_pairs(body_facts)
+            for feature_type, feature_number in sorted(
+                filename_feature_pairs & body_exact_feature_pairs
+            ):
+                score += WEIGHTS["feature_pair"] * _FILENAME_SEMANTIC_SCALE
+                evidence.append(
+                    self._evidence(
+                        candidate_id,
+                        family="weak_filename_semantic",
+                        method="filename_semantic_feature_pair",
+                        value=f"{feature_type}:{feature_number}",
+                        weak=True,
                     )
                 )
 
