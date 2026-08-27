@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -182,7 +183,11 @@ class DrawingEvidenceRepositoryV3(DrawingEvidenceRepository):
                         "considered_candidate_ids": [
                             candidate.candidate_id for candidate in result.candidates
                         ],
-                        "diagnostics": dict(result.diagnostics),
+                        "diagnostics": json.dumps(
+                            dict(result.diagnostics),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                        ),
                     }
                 )
                 support_citations.extend(
@@ -394,7 +399,7 @@ class DrawingEvidenceRepositoryV3(DrawingEvidenceRepository):
                     decision.citedContradictionIds = row.cited_contradiction_ids,
                     decision.finalStatus = row.final_status,
                     decision.resolverVersion = 'drawing-evidence-v3',
-                    decision.diagnostics = toString(row.diagnostics),
+                    decision.diagnostics = row.diagnostics,
                     decision.updatedAt = datetime(),
                     decision.createdAt = coalesce(decision.createdAt, datetime())
                 MERGE (asset)-[:HAS_CODEX_DECISION]->(decision)
