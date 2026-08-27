@@ -203,15 +203,10 @@ def test_ambiguous_first_pass_expands_once_to_top20_and_uses_second_decision():
     assert len(client.calls) == 2
 
 
-def test_repeated_typed_client_error_fails_closed_to_review_after_one_expansion():
+def test_typed_transport_error_fails_closed_without_candidate_expansion():
     row = candidate()
     generator = FakeGenerator([row], [row])
-    client = FakeClient(
-        [
-            CodexDrawingDecisionError("bad response"),
-            CodexDrawingDecisionError("still bad"),
-        ]
-    )
+    client = FakeClient([CodexDrawingDecisionError("turn timed out")])
     resolver = DrawingEvidenceResolverV3(generator, client, max_expansions=1)
 
     result = resolver.resolve_observations("corpus-1", [source()], [])
@@ -219,8 +214,9 @@ def test_repeated_typed_client_error_fails_closed_to_review_after_one_expansion(
     item = result.source_results[0]
     assert item.status == "REVIEW_REQUIRED"
     assert item.decision is None
-    assert len(client.calls) == 2
-    assert len(generator.expand_calls) == 1
+    assert item.diagnostics["codex_error"] == "turn timed out"
+    assert len(client.calls) == 1
+    assert len(generator.expand_calls) == 0
 
 
 def test_auto_requires_two_cited_families_and_at_least_one_nonweak_support():
