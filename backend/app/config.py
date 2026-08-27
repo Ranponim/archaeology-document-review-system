@@ -16,7 +16,7 @@ DRAWING_EVIDENCE_V3_AUTO_PROMOTE_ENV = "DRAWING_EVIDENCE_V3_AUTO_PROMOTE"
 
 @dataclass(frozen=True, slots=True)
 class CodexDrawingResolverConfig:
-    api_key: str
+    api_key: str = ""
     model: str = "gpt-5.3-codex"
     base_url: str = "https://api.openai.com/v1/responses"
     timeout_seconds: float = 60.0
@@ -25,8 +25,6 @@ class CodexDrawingResolverConfig:
     max_expansions: int = 1
 
     def __post_init__(self) -> None:
-        if not self.api_key.strip():
-            raise ValueError("OPENAI_API_KEY is required for drawing-evidence-v3")
         if not self.model.strip():
             raise ValueError("DRAWING_CODEX_MODEL must not be empty")
         if self.timeout_seconds <= 0:
@@ -40,9 +38,10 @@ class CodexDrawingResolverConfig:
 
     @classmethod
     def from_env(cls) -> "CodexDrawingResolverConfig":
+        # OPENAI_API_KEY is optional for local acceptance. When absent,
+        # CodexDrawingResolverClient selects the Codex SDK and reuses the
+        # existing local Codex/ChatGPT authentication session.
         api_key = os.environ.get(OPENAI_API_KEY_ENV, "").strip()
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is required for drawing-evidence-v3")
         try:
             timeout_seconds = float(
                 os.environ.get("DRAWING_CODEX_TIMEOUT_SECONDS", "60").strip() or "60"
