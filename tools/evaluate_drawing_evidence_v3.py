@@ -498,6 +498,17 @@ def resolution_rows(source_root: Path, sources, resolution) -> list[dict]:
                 "selected_target": list(target_key) if target_key else None,
                 "codex_confidence": decision.confidence if decision else None,
                 "codex_summary": decision.summary if decision else None,
+                "auto_gate_reason": result.diagnostics.get("auto_gate_reason"),
+                "cited_support_ids": list(result.diagnostics.get("cited_support_ids") or []),
+                "cited_support_families": list(
+                    result.diagnostics.get("cited_support_families") or []
+                ),
+                "cited_nonweak_count": int(
+                    result.diagnostics.get("cited_nonweak_count") or 0
+                ),
+                "cited_contradiction_ids": list(
+                    result.diagnostics.get("cited_contradiction_ids") or []
+                ),
             }
         )
     duplicate_targets = {key for key, count in auto_target_counts.items() if count > 1}
