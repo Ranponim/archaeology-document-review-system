@@ -10,6 +10,7 @@ from app.domain.drawing_evidence_v3 import (
     DrawingSourceEvidencePacket,
     DrawingV3Resolution,
     DrawingV3SourceResult,
+    drawing_visual_support_id,
 )
 from app.services.codex_drawing_resolver_client import CodexDrawingDecisionError
 
@@ -50,6 +51,22 @@ class DrawingEvidenceResolverV3:
             None,
         )
 
+    @staticmethod
+    def _allowed_visual_support_ids(
+        source: DrawingSourceEvidencePacket,
+        candidate: DrawingCandidatePacket,
+    ) -> set[str]:
+        return {
+            drawing_visual_support_id(
+                source.source_asset_id,
+                source_region.region_id,
+                candidate.candidate_id,
+                candidate_region.region_id,
+            )
+            for source_region in source.visual_regions
+            for candidate_region in candidate.visual_regions
+        }
+
     def _final_evaluation(
         self,
         source: DrawingSourceEvidencePacket,
@@ -59,6 +76,9 @@ class DrawingEvidenceResolverV3:
         diagnostics: dict[str, object] = {
             "auto_gate_reason": "decision_missing",
             "cited_support_ids": list(decision.cited_support_ids) if decision else [],
+            "cited_visual_support_ids": (
+                list(decision.cited_visual_support_ids) if decision else []
+            ),
             "cited_contradiction_ids": (
                 list(decision.cited_contradiction_ids) if decision else []
             ),
@@ -88,6 +108,11 @@ class DrawingEvidenceResolverV3:
             diagnostics["auto_gate_reason"] = "cited_contradiction"
             return "REVIEW_REQUIRED", diagnostics
 
+        allowed_visual_support_ids = self._allowed_visual_support_ids(source, candidate)
+        if not set(decision.cited_visual_support_ids) <= allowed_visual_support_ids:
+            diagnostics["auto_gate_reason"] = "invalid_visual_support"
+            return "REVIEW_REQUIRED", diagnostics
+
         evidence_by_id = {item.id: item for item in source.evidence}
         evidence_by_id.update({item.id: item for item in candidate.evidence})
         cited = []
@@ -98,11 +123,17 @@ class DrawingEvidenceResolverV3:
                 return "REVIEW_REQUIRED", diagnostics
             cited.append(item)
 
-        families = sorted({item.family for item in cited})
+        families = {item.family for item in cited}
         nonweak_count = sum(not item.weak for item in cited)
-        diagnostics["cited_support_families"] = families
+        if decision.cited_visual_support_ids:
+            families.add("visual_signature")
+            # Multiple crops of the same source/candidate pair must not inflate
+            # evidence strength. A validated visual family contributes once.
+            nonweak_count += 1
+        sorted_families = sorted(families)
+        diagnostics["cited_support_families"] = sorted_families
         diagnostics["cited_nonweak_count"] = nonweak_count
-        if len(families) < 2:
+        if len(sorted_families) < 2:
             diagnostics["auto_gate_reason"] = "insufficient_support_families"
             return "REVIEW_REQUIRED", diagnostics
         if nonweak_count == 0:
@@ -187,11 +218,20 @@ class DrawingEvidenceResolverV3:
             return 0
         evidence_by_id = {item.id: item for item in source.evidence}
         evidence_by_id.update({item.id: item for item in candidate.evidence})
-        return sum(
+        count = sum(
             1
             for evidence_id in result.decision.cited_support_ids
             if (item := evidence_by_id.get(evidence_id)) is not None and not item.weak
         )
+        allowed_visual_support_ids = DrawingEvidenceResolverV3._allowed_visual_support_ids(
+            source, candidate
+        )
+        if (
+            result.decision.cited_visual_support_ids
+            and set(result.decision.cited_visual_support_ids) <= allowed_visual_support_ids
+        ):
+            count += 1
+        return count
 
     def _apply_assignment_conflicts(
         self,
