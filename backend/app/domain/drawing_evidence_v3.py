@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from typing import Literal
 
 from app.domain.drawing_evidence import ContextFact
@@ -27,6 +28,19 @@ class DrawingVisualRegion:
     bbox: tuple[float, float, float, float] | None
     confidence: float
     source_sha256: str | None = None
+
+
+def drawing_visual_support_id(
+    source_asset_id: str,
+    source_region_id: str,
+    candidate_id: str,
+    candidate_region_id: str,
+) -> str:
+    """Return the closed-world support ID for one submitted visual pair."""
+    payload = "\0".join(
+        (source_asset_id, source_region_id, candidate_id, candidate_region_id)
+    ).encode("utf-8")
+    return "drawing-v3-visual-support:" + hashlib.sha256(payload).hexdigest()[:32]
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +95,7 @@ class CodexDrawingDecision:
     cited_contradiction_ids: tuple[str, ...]
     reason_codes: tuple[str, ...]
     summary: str
+    cited_visual_support_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
