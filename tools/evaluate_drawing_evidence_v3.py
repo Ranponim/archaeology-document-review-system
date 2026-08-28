@@ -500,6 +500,9 @@ def resolution_rows(source_root: Path, sources, resolution) -> list[dict]:
                 "codex_summary": decision.summary if decision else None,
                 "auto_gate_reason": result.diagnostics.get("auto_gate_reason"),
                 "cited_support_ids": list(result.diagnostics.get("cited_support_ids") or []),
+                "cited_visual_support_ids": list(
+                    result.diagnostics.get("cited_visual_support_ids") or []
+                ),
                 "cited_support_families": list(
                     result.diagnostics.get("cited_support_families") or []
                 ),
