@@ -154,14 +154,14 @@ def test_visual_support_id_outside_selected_candidate_fails_closed():
     assert item.diagnostics["auto_gate_reason"] == "invalid_visual_support"
 
 
-def test_visual_support_alone_is_not_enough_for_auto_verification():
+def test_validated_visual_support_is_sufficient_for_auto_verification():
     source = _source()
     candidate = _candidate(weak_semantic=False)
     visual_support_id = _visual_support_id(source, candidate)
 
     item = _resolve(source, candidate, visual_support_ids=(visual_support_id,))
 
-    assert item.status == "REVIEW_REQUIRED"
-    assert item.diagnostics["auto_gate_reason"] == "insufficient_support_families"
+    assert item.status == "AUTO_VERIFIED"
+    assert item.diagnostics["auto_gate_reason"] == "auto_verified"
     assert item.diagnostics["cited_support_families"] == ["visual_signature"]
     assert item.diagnostics["cited_nonweak_count"] == 1
