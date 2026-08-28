@@ -125,7 +125,8 @@ class DrawingEvidenceResolverV3:
 
         families = {item.family for item in cited}
         nonweak_count = sum(not item.weak for item in cited)
-        if decision.cited_visual_support_ids:
+        has_validated_visual = bool(decision.cited_visual_support_ids)
+        if has_validated_visual:
             families.add("visual_signature")
             # Multiple crops of the same source/candidate pair must not inflate
             # evidence strength. A validated visual family contributes once.
@@ -133,6 +134,15 @@ class DrawingEvidenceResolverV3:
         sorted_families = sorted(families)
         diagnostics["cited_support_families"] = sorted_families
         diagnostics["cited_nonweak_count"] = nonweak_count
+
+        # A closed-world visual citation is already validated against the
+        # selected source/candidate image pair above. Once confidence and
+        # contradiction gates have passed, that material visual comparison is
+        # sufficient strong evidence by itself. Text-only decisions retain the
+        # conservative independent-family requirement below.
+        if has_validated_visual:
+            diagnostics["auto_gate_reason"] = "auto_verified"
+            return "AUTO_VERIFIED", diagnostics
         if len(sorted_families) < 2:
             diagnostics["auto_gate_reason"] = "insufficient_support_families"
             return "REVIEW_REQUIRED", diagnostics
