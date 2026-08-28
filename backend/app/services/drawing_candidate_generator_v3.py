@@ -420,7 +420,7 @@ class DrawingCandidateGeneratorV3:
                     visual_regions=visual_regions,
                     local_score=round(score, 6),
                     evidence=tuple(evidence),
-                    hard_contradiction=False,
+                    hard_contradiction=bool(strong_contradictions),
                     strong_contradiction_ids=tuple(strong_contradictions),
                 )
             )
