@@ -81,6 +81,17 @@ def test_explicit_publication_kind_and_site_contradictions_are_hard_filters():
     assert [row.number for row in rows] == ["9"]
 
 
+def test_strong_period_contradiction_marks_candidate_hard():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet("조선시대 평단면")
+
+    rows = generator.generate(source, [body("35", "고려시대 평단면")])
+
+    assert len(rows) == 1
+    assert rows[0].strong_contradiction_ids
+    assert rows[0].hard_contradiction is True
+
+
 def test_top10_keeps_best_semantic_target_and_top20_is_duplicate_free_superset():
     generator = DrawingCandidateGeneratorV3()
     source = source_packet("2지점 조선시대 1호 토광묘 평단면 A-A'")
