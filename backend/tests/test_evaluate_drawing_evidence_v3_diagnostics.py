@@ -45,6 +45,7 @@ def test_resolution_rows_preserves_auto_gate_diagnostics(tmp_path):
         diagnostics={
             "auto_gate_reason": "weak_support_only",
             "cited_support_ids": ["ev:filename"],
+            "cited_visual_support_ids": ["drawing-v3-visual-support:test"],
             "cited_support_families": ["weak_filename_semantic"],
             "cited_nonweak_count": 0,
             "cited_contradiction_ids": [],
@@ -56,6 +57,7 @@ def test_resolution_rows_preserves_auto_gate_diagnostics(tmp_path):
 
     assert row["auto_gate_reason"] == "weak_support_only"
     assert row["cited_support_ids"] == ["ev:filename"]
+    assert row["cited_visual_support_ids"] == ["drawing-v3-visual-support:test"]
     assert row["cited_support_families"] == ["weak_filename_semantic"]
     assert row["cited_nonweak_count"] == 0
     assert row["cited_contradiction_ids"] == []
