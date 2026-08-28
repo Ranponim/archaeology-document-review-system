@@ -15,6 +15,7 @@ from app.domain.drawing_evidence_v3 import (
     DrawingSourceEvidencePacket,
     DrawingV3Evidence,
     DrawingVisualRegion,
+    drawing_visual_support_id,
 )
 
 
@@ -29,6 +30,7 @@ _DECISION_SCHEMA = {
         "candidate_id": {"type": ["string", "null"]},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "cited_support_ids": {"type": "array", "items": {"type": "string"}},
+        "cited_visual_support_ids": {"type": "array", "items": {"type": "string"}},
         "cited_contradiction_ids": {"type": "array", "items": {"type": "string"}},
         "reason_codes": {"type": "array", "items": {"type": "string"}},
         "summary": {"type": "string"},
@@ -38,6 +40,7 @@ _DECISION_SCHEMA = {
         "candidate_id",
         "confidence",
         "cited_support_ids",
+        "cited_visual_support_ids",
         "cited_contradiction_ids",
         "reason_codes",
         "summary",
@@ -107,6 +110,55 @@ class CodexDrawingResolverClient:
             for item in evidence
         ]
 
+    @staticmethod
+    def _visual_support_options(
+        source: DrawingSourceEvidencePacket,
+        candidate: DrawingCandidatePacket,
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "id": drawing_visual_support_id(
+                    source.source_asset_id,
+                    source_region.region_id,
+                    candidate.candidate_id,
+                    candidate_region.region_id,
+                ),
+                "source_region_id": source_region.region_id,
+                "candidate_region_id": candidate_region.region_id,
+            }
+            for source_region in source.visual_regions
+            for candidate_region in candidate.visual_regions
+        ]
+
+    @staticmethod
+    def _image_order(
+        source: DrawingSourceEvidencePacket,
+        candidates: tuple[DrawingCandidatePacket, ...],
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        attachment_index = 1
+        for region in source.visual_regions:
+            rows.append(
+                {
+                    "attachment_index": attachment_index,
+                    "role": "source",
+                    "source_region_id": region.region_id,
+                }
+            )
+            attachment_index += 1
+        for candidate in candidates:
+            for region in candidate.visual_regions:
+                rows.append(
+                    {
+                        "attachment_index": attachment_index,
+                        "role": "candidate",
+                        "candidate_id": candidate.candidate_id,
+                        "candidate_region_id": region.region_id,
+                    }
+                )
+                attachment_index += 1
+        return rows
+
     def _prompt(
         self,
         source: DrawingSourceEvidencePacket,
@@ -118,13 +170,20 @@ class CodexDrawingResolverClient:
                 "Return match only when one submitted candidate is sufficiently supported.",
                 "Return ambiguous when multiple submitted candidates remain plausible.",
                 "Return none when no submitted candidate is supported.",
-                "Never invent candidate IDs or evidence IDs.",
+                "Never invent candidate IDs, evidence IDs, or visual support IDs.",
                 "Filename/path/sequence evidence is weak and cannot be sole identity authority.",
+                "cited_visual_support_ids may contain only supplied visual_support_options for the selected candidate.",
+                "Cite visual support only after inspecting both referenced submitted images and finding material agreement in geometry, layout, or depicted content; image presence alone is not support.",
+                "For ambiguous or none, cited_visual_support_ids must be empty.",
             ],
+            "image_order": self._image_order(source, candidates),
             "source": {
                 "source_asset_id": source.source_asset_id,
                 "publication_kind": source.publication_kind,
                 "raw_text": source.raw_text,
+                "visual_region_ids": [
+                    region.region_id for region in source.visual_regions
+                ],
                 "facts": [
                     {
                         "kind": fact.kind,
@@ -142,6 +201,12 @@ class CodexDrawingResolverClient:
                     "number": candidate.number,
                     "captions": list(candidate.raw_texts),
                     "local_rank_score": candidate.local_score,
+                    "visual_region_ids": [
+                        region.region_id for region in candidate.visual_regions
+                    ],
+                    "visual_support_options": self._visual_support_options(
+                        source, candidate
+                    ),
                     "facts": [
                         {
                             "kind": fact.kind,
@@ -246,9 +311,13 @@ class CodexDrawingResolverClient:
             raise CodexDrawingDecisionError("invalid verdict")
         candidate_id = parsed.get("candidate_id")
         submitted_candidate_ids = {candidate.candidate_id for candidate in candidates}
+        selected_candidate: DrawingCandidatePacket | None = None
         if verdict == "match":
             if not isinstance(candidate_id, str) or candidate_id not in submitted_candidate_ids:
                 raise CodexDrawingDecisionError("invented or invalid candidate id")
+            selected_candidate = next(
+                candidate for candidate in candidates if candidate.candidate_id == candidate_id
+            )
         elif candidate_id is not None:
             raise CodexDrawingDecisionError(
                 "ambiguous/none decision must not select a candidate"
@@ -262,6 +331,12 @@ class CodexDrawingResolverClient:
             raise CodexDrawingDecisionError("invalid confidence")
 
         support_ids = self._string_tuple(parsed, "cited_support_ids")
+        visual_value = parsed.get("cited_visual_support_ids", [])
+        if not isinstance(visual_value, list) or not all(
+            isinstance(item, str) for item in visual_value
+        ):
+            raise CodexDrawingDecisionError("invalid cited_visual_support_ids")
+        visual_support_ids = tuple(visual_value)
         contradiction_ids = self._string_tuple(parsed, "cited_contradiction_ids")
         reason_codes = self._string_tuple(parsed, "reason_codes")
         submitted_evidence_ids = {
@@ -276,6 +351,21 @@ class CodexDrawingResolverClient:
             raise CodexDrawingDecisionError("invented support evidence id")
         if not set(contradiction_ids) <= submitted_evidence_ids:
             raise CodexDrawingDecisionError("invented contradiction evidence id")
+
+        if verdict != "match":
+            if visual_support_ids:
+                raise CodexDrawingDecisionError(
+                    "ambiguous/none decision must not cite visual support"
+                )
+        elif selected_candidate is not None:
+            allowed_visual_ids = {
+                row["id"]
+                for row in self._visual_support_options(source, selected_candidate)
+            }
+            if not set(visual_support_ids) <= allowed_visual_ids:
+                raise CodexDrawingDecisionError(
+                    "invented or invalid visual support id"
+                )
 
         summary = parsed.get("summary")
         if not isinstance(summary, str):
@@ -297,6 +387,7 @@ class CodexDrawingResolverClient:
             cited_contradiction_ids=contradiction_ids,
             reason_codes=reason_codes,
             summary=summary,
+            cited_visual_support_ids=visual_support_ids,
         )
 
     @staticmethod
