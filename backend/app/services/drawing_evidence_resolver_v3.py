@@ -50,28 +50,43 @@ class DrawingEvidenceResolverV3:
             None,
         )
 
-    def _final_status(
+    def _final_evaluation(
         self,
         source: DrawingSourceEvidencePacket,
         candidates: tuple[DrawingCandidatePacket, ...],
         decision: CodexDrawingDecision | None,
-    ) -> str:
+    ) -> tuple[str, dict[str, object]]:
+        diagnostics: dict[str, object] = {
+            "auto_gate_reason": "decision_missing",
+            "cited_support_ids": list(decision.cited_support_ids) if decision else [],
+            "cited_contradiction_ids": (
+                list(decision.cited_contradiction_ids) if decision else []
+            ),
+            "cited_support_families": [],
+            "cited_nonweak_count": 0,
+        }
         if decision is None:
-            return "REVIEW_REQUIRED"
+            return "REVIEW_REQUIRED", diagnostics
         if decision.verdict == "none":
-            return "UNRESOLVED"
+            diagnostics["auto_gate_reason"] = "verdict_none"
+            return "UNRESOLVED", diagnostics
         if decision.verdict != "match":
-            return "REVIEW_REQUIRED"
+            diagnostics["auto_gate_reason"] = "verdict_not_match"
+            return "REVIEW_REQUIRED", diagnostics
 
         candidate = self._selected_candidate(decision, candidates)
         if candidate is None:
-            return "REVIEW_REQUIRED"
+            diagnostics["auto_gate_reason"] = "selected_candidate_missing"
+            return "REVIEW_REQUIRED", diagnostics
         if candidate.hard_contradiction:
-            return "REVIEW_REQUIRED"
+            diagnostics["auto_gate_reason"] = "hard_contradiction"
+            return "REVIEW_REQUIRED", diagnostics
         if decision.confidence < self._auto_confidence:
-            return "REVIEW_REQUIRED"
+            diagnostics["auto_gate_reason"] = "confidence_below_threshold"
+            return "REVIEW_REQUIRED", diagnostics
         if decision.cited_contradiction_ids:
-            return "REVIEW_REQUIRED"
+            diagnostics["auto_gate_reason"] = "cited_contradiction"
+            return "REVIEW_REQUIRED", diagnostics
 
         evidence_by_id = {item.id: item for item in source.evidence}
         evidence_by_id.update({item.id: item for item in candidate.evidence})
@@ -79,14 +94,22 @@ class DrawingEvidenceResolverV3:
         for evidence_id in decision.cited_support_ids:
             item = evidence_by_id.get(evidence_id)
             if item is None or not item.supports:
-                return "REVIEW_REQUIRED"
+                diagnostics["auto_gate_reason"] = "invalid_support_evidence"
+                return "REVIEW_REQUIRED", diagnostics
             cited.append(item)
-        families = {item.family for item in cited}
+
+        families = sorted({item.family for item in cited})
+        nonweak_count = sum(not item.weak for item in cited)
+        diagnostics["cited_support_families"] = families
+        diagnostics["cited_nonweak_count"] = nonweak_count
         if len(families) < 2:
-            return "REVIEW_REQUIRED"
-        if not any(not item.weak for item in cited):
-            return "REVIEW_REQUIRED"
-        return "AUTO_VERIFIED"
+            diagnostics["auto_gate_reason"] = "insufficient_support_families"
+            return "REVIEW_REQUIRED", diagnostics
+        if nonweak_count == 0:
+            diagnostics["auto_gate_reason"] = "weak_support_only"
+            return "REVIEW_REQUIRED", diagnostics
+        diagnostics["auto_gate_reason"] = "auto_verified"
+        return "AUTO_VERIFIED", diagnostics
 
     def _resolve_one(
         self,
@@ -137,7 +160,7 @@ class DrawingEvidenceResolverV3:
                 break
 
         selected = self._selected_candidate(decision, candidates)
-        status = self._final_status(source, candidates, decision)
+        status, gate_diagnostics = self._final_evaluation(source, candidates, decision)
         return DrawingV3SourceResult(
             source_asset_id=source.source_asset_id,
             status=status,
@@ -150,6 +173,7 @@ class DrawingEvidenceResolverV3:
                 "expansion_count": expansion_count,
                 "codex_error": last_error,
                 "assignment_conflict": False,
+                **gate_diagnostics,
             },
         )
 
@@ -225,6 +249,7 @@ class DrawingEvidenceResolverV3:
                         "assignment_conflict": True,
                         "assignment_target": f"{target[0]}:{target[1]}",
                         "assignment_winner_source_asset_id": results[winner].source_asset_id,
+                        "auto_gate_reason": "assignment_conflict",
                     }
                 )
                 updated[index] = replace(
