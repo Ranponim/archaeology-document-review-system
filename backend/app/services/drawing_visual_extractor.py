@@ -9,6 +9,10 @@ from app.domain.drawing_evidence_v3 import DrawingVisualRegion
 
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_KOREAN_DRAWING_REF_RE = re.compile(r"(?:도면|삽도)\s*:?\s*\d+")
+_FIGURE_CAPTION_RE = re.compile(
+    r"^\s*(?:【\s*)?(?:도면|삽도)\s*:?\s*\d+(?:\s*】)?(?:\s*[.:·\-]|\s|$)"
+)
 
 
 class DrawingVisualExtractor:
@@ -71,6 +75,13 @@ class DrawingVisualExtractor:
             clip = pymupdf.Rect(*bbox) & page.rect
             if clip.is_empty or clip.width <= 0 or clip.height <= 0:
                 raise ValueError("body bbox produced an empty crop")
+
+            anchor_text = (page.get_text("text", clip=clip) or "").strip()
+            if _KOREAN_DRAWING_REF_RE.search(anchor_text) and not _FIGURE_CAPTION_RE.match(
+                anchor_text
+            ):
+                raise ValueError("body bbox is a narrative drawing reference, not a figure caption")
+
             pixmap = page.get_pixmap(matrix=self._matrix, clip=clip, alpha=False)
             target = target_dir / f"{self._safe_name(region_id)}.png"
             pixmap.save(str(target))
