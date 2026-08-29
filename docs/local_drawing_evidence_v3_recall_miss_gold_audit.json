@@ -1,0 +1,299 @@
+{
+  "audit_version": "v1",
+  "audit_head": "2656d189cec72300c9ef3c1b01a936ce50887a7d",
+  "acceptance_baseline": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d.json",
+  "acceptance_metrics": {
+    "gold_known": 50,
+    "recall_at_10": 0.84,
+    "recall_at_10_miss_count": 8,
+    "miss_source_indices_1_based": [7, 25, 30, 36, 50, 51, 52, 53]
+  },
+  "corpus": {
+    "source_root": "D:/Coding/archaeology-document-review-system/src",
+    "source_root_read_only": true,
+    "body_pdf": "D:/Coding/archaeology-document-review-system/src/완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산017-1번지 유적-본문-3차 교정.pdf",
+    "body_pdf_sha256": "32ec1e2f02e3b088b0b014ca0294823caec8531850d5b68e3ad99d16cfcc8e60",
+    "body_packet_count": 828,
+    "indd": "D:/Coding/archaeology-document-review-system/src/도판(사진들)/논산 산노리 도판 V2.indd",
+    "indd_sha256": "e0a0c268660eea8aea924d9afcd7925212c861a890c97aeb4ee2341d6451d75d",
+    "indd_direct_extraction": "unavailable: no Adobe InDesign executable was installed/discoverable in this environment; the audit therefore uses the actual body PDF and the rendered AI originals"
+  },
+  "method": {
+    "ai_originals": "The actual .ai files under source_root were rendered and compared against the matching body-PDF figure/caption renders.",
+    "body_pdf": "The actual body PDF was parsed into 828 packets; caption/figure pages and visual regions were used for comparison.",
+    "retrieval_diagnostic": "Pre-filter ranking was measured with a diagnostic no-early-filter subclass only; production source and resolver policy were not changed.",
+    "no_weight_or_top_n_change": true,
+    "gold_template_modified": false
+  },
+  "cases": [
+    {
+      "source_index_1_based": 7,
+      "acceptance_row_index_0_based": 6,
+      "source": "본문 도면/2지점/【도면  】2지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+      "source_sha256": "8708984ce138dbdeb4f2d16ea156118404d1e50e2d980ae1f8a903e0171333d5",
+      "gold": ["drawing", "54"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-007-10d3f2368188.png",
+        "body_pages": [20, 120],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p120_b27.png",
+        "body_caption": "【도면 54】 2지점 조선시대 2호 토광묘 평·단면도 및 출토유물",
+        "visual_findings": "The burial plan/sections, artifact layout and labels 50/51 match the body figure. The nearby 25호/26호 labels are internal/context features of the source artwork, not the drawing identity."
+      },
+      "retrieval_diagnostic": {
+        "classification": "generated_then_hard_filtered",
+        "pre_filter_rank": 1,
+        "pre_filter_score": 15.987288,
+        "post_filter_rank": null,
+        "post_filter_score": null,
+        "post_filter_survivor_count": 45,
+        "filter_reason": "disjoint_feature_pair",
+        "filter_detail": {
+          "source_feature_pairs": [["토광묘", "25"], ["토광묘", "26"]],
+          "gold_body_feature_pair": ["토광묘", "2"]
+        },
+        "evidence": [
+          "nonweak lexical overlap",
+          "weak filename site_point=2",
+          "weak filename period=조선시대",
+          "weak filename drawing_type=단면/평단면/평면",
+          "weak filename feature_pair=토광묘:2",
+          "weak path site_point=2"
+        ],
+        "contradiction": "The hard filter treated contextual 25/26호 feature labels as a disjoint identity contradiction against the body anchor 2호."
+      },
+      "retrieval_tdd_target": true
+    },
+    {
+      "source_index_1_based": 25,
+      "acceptance_row_index_0_based": 24,
+      "source": "환경 도면/도면12. 조사대상지역 유구현황도(12,000).ai",
+      "source_sha256": "fcb6fc67c578ad22a2af0424a82117846701b83a62f4bb1197b5add18a3f3c48",
+      "gold": ["drawing", "12"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-025-e4604c01cd6c.png",
+        "body_pages": [19, 44],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p44_b19.png",
+        "body_caption": "【도면 12】 조사 지역 유구현황도(S=1/2,000)",
+        "visual_findings": "The excavation-area boundaries, road/shoreline geometry, coordinate box, north arrow, legend and scale match the body drawing 12."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 11,
+        "pre_filter_score": 2.12037,
+        "post_filter_rank": 11,
+        "post_filter_score": 2.12037,
+        "post_filter_survivor_count": 142,
+        "filter_reason": null,
+        "evidence": [
+          "nonweak lexical_support: 구석기시대/논산/병암리/산노리/유물산포지",
+          "weak filename drawing_type=현황",
+          "weak filename identity=drawing:12"
+        ],
+        "contradiction": null
+      },
+      "retrieval_tdd_target": true
+    },
+    {
+      "source_index_1_based": 30,
+      "acceptance_row_index_0_based": 29,
+      "source": "환경 도면/도면17. 1지점-유구현황도(15-22)800.ai",
+      "source_sha256": "4a2baae19251bbbe10c1a9b6075139ad34ad493c36e6785cf24f9a305792ff05",
+      "gold": ["drawing", "23"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-030-f03b54346c65.png",
+        "body_pages": [19, 68],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p68_b50.png",
+        "body_caption": "【도면 23】 1지점 유구현황도(S=1/800)",
+        "visual_findings": "The 1지점 heading, excavation boundary, plotted features, coordinates, north arrow, legend and S=1/800 scale match the body drawing 23."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 15,
+        "pre_filter_score": 13.945122,
+        "post_filter_rank": 15,
+        "post_filter_score": 13.945122,
+        "post_filter_survivor_count": 52,
+        "filter_reason": null,
+        "evidence": [
+          "nonweak exact_site_point=1",
+          "nonweak lexical_support",
+          "weak filename site_point=1",
+          "weak filename drawing_type=현황",
+          "weak path site_point=1"
+        ],
+        "contradiction": null
+      },
+      "retrieval_tdd_target": true
+    },
+    {
+      "source_index_1_based": 36,
+      "acceptance_row_index_0_based": 35,
+      "source": "환경 도면/도면22. 3지점-유구현황도(15-22)500.ai",
+      "source_sha256": "9eb54162fdb79665d6377a0ec3aaebfac92225a43bdc117a5723312a7fd6568e",
+      "gold": ["drawing", "64"],
+      "gold_audit": "rejected_gold",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-036-1eb9332753d2.png",
+        "body_pages": [21, 144],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p144_b58.png",
+        "body_caption": "【도면 64】 2지점 유구현황도(S=1/500)",
+        "visual_findings": "The AI original explicitly says 3지점 and shows a different site boundary/layout. The proposed body gold explicitly says 2지점. The body PDF has no 3지점 유구현황도 caption; its site-map sequence contains 1지점, 2지점, 2지점, 4지점 and 5지점 maps. The source and drawing 64 are not the same figure.",
+        "audit_action": "Do not use this case as a retrieval TDD target. Treat the former verified gold as disputed/unmatched for this body PDF; do not silently replace it with drawing 64."
+      },
+      "retrieval_diagnostic": {
+        "classification": "generated_then_hard_filtered",
+        "pre_filter_rank": 53,
+        "pre_filter_score": 2.128571,
+        "post_filter_rank": null,
+        "post_filter_score": null,
+        "post_filter_survivor_count": 51,
+        "filter_reason": "disjoint_site_point",
+        "filter_detail": {
+          "source_site_point": ["3"],
+          "gold_body_site_point": ["2"]
+        },
+        "evidence": [
+          "nonweak lexical overlap",
+          "weak filename drawing_type=현황"
+        ],
+        "contradiction": "The site-point contradiction is real for the proposed drawing 64 gold; it is also evidence that the gold assignment is wrong for the actual source."
+      },
+      "retrieval_tdd_target": false
+    },
+    {
+      "source_index_1_based": 50,
+      "acceptance_row_index_0_based": 49,
+      "source": "환경 도면/삽도2-1. 항공지도-1968(15-10).ai",
+      "source_sha256": "82daaa67aabcd3642b0e972a5d94bb6463ad009af3e913cfc417b7852e4ab321",
+      "gold": ["illustration", "2"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-050-928f78519481.png",
+        "body_pages": [23, 40],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p40_b9.png",
+        "body_caption": "【삽도 2】 조사 지역 일대 연도별 항공사진",
+        "panel": "1968 top-left",
+        "visual_findings": "The grayscale aerial panel, survey-area circle and 조사대상지역 label are identical to the 1968 panel in body illustration 2."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 134,
+        "pre_filter_score": 0.0,
+        "post_filter_rank": 134,
+        "post_filter_score": 0.0,
+        "post_filter_survivor_count": 142,
+        "filter_reason": null,
+        "evidence": [],
+        "contradiction": "none; the zero score is an extraction/tie-break problem, not a hard contradiction",
+        "top10": "drawing 1..10; illustration 2 is generated but tied at score 0 and ordered later"
+      },
+      "retrieval_tdd_target": true,
+      "retrieval_tdd_type": "illustration_panel"
+    },
+    {
+      "source_index_1_based": 51,
+      "acceptance_row_index_0_based": 50,
+      "source": "환경 도면/삽도2-2. 항공지도-1989(15-10).ai",
+      "source_sha256": "b644cbf33fad0312ef96193aac4045708398acfdb195f4b29af0ff56aafb98ef",
+      "gold": ["illustration", "2"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-051-f76d9a861ba1.png",
+        "body_pages": [23, 40],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p40_b9.png",
+        "body_caption": "【삽도 2】 조사 지역 일대 연도별 항공사진",
+        "panel": "1989 top-right",
+        "visual_findings": "The 1989 grayscale aerial panel, water/shoreline geometry, survey-area circle and label are identical to the top-right panel in body illustration 2."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 134,
+        "pre_filter_score": 0.0,
+        "post_filter_rank": 134,
+        "post_filter_score": 0.0,
+        "post_filter_survivor_count": 142,
+        "filter_reason": null,
+        "evidence": [],
+        "contradiction": "none; the zero score is an extraction/tie-break problem, not a hard contradiction",
+        "top10": "drawing 1..10; illustration 2 is generated but tied at score 0 and ordered later"
+      },
+      "retrieval_tdd_target": true,
+      "retrieval_tdd_type": "illustration_panel"
+    },
+    {
+      "source_index_1_based": 52,
+      "acceptance_row_index_0_based": 51,
+      "source": "환경 도면/삽도2-3. 항공지도-2007(15-10).ai",
+      "source_sha256": "20ab0dc97a1d7462fe24f21309135940a3a4aa96c7e4d0e9ddd13cea7b550021",
+      "gold": ["illustration", "2"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-052-68967ff75566.png",
+        "body_pages": [23, 40],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p40_b9.png",
+        "body_caption": "【삽도 2】 조사 지역 일대 연도별 항공사진",
+        "panel": "2007 bottom-left",
+        "visual_findings": "The 2007 grayscale aerial panel, shoreline/fields, survey-area circle and label are identical to the bottom-left panel in body illustration 2."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 134,
+        "pre_filter_score": 0.0,
+        "post_filter_rank": 134,
+        "post_filter_score": 0.0,
+        "post_filter_survivor_count": 142,
+        "filter_reason": null,
+        "evidence": [],
+        "contradiction": "none; the zero score is an extraction/tie-break problem, not a hard contradiction",
+        "top10": "drawing 1..10; illustration 2 is generated but tied at score 0 and ordered later"
+      },
+      "retrieval_tdd_target": true,
+      "retrieval_tdd_type": "illustration_panel"
+    },
+    {
+      "source_index_1_based": 53,
+      "acceptance_row_index_0_based": 52,
+      "source": "환경 도면/삽도2-4. 항공지도-2012(15-10).ai",
+      "source_sha256": "99532c6141fb5f80e7330dd22f3d9038f1c977bebbfe1f62ddaa000bc5b39b6d",
+      "gold": ["illustration", "2"],
+      "gold_audit": "confirmed",
+      "direct_comparison": {
+        "source_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_source3/source-local-v3-ai-053-1225a7b920f7.png",
+        "body_pages": [23, 40],
+        "body_render": "docs/local_drawing_evidence_v3_luna_manual50_acceptance_4d33e6d_render/diagnostic_body3/body-local-v3-body_p40_b9.png",
+        "body_caption": "【삽도 2】 조사 지역 일대 연도별 항공사진",
+        "panel": "2012 bottom-right",
+        "visual_findings": "The 2012 color aerial panel, island/shoreline/road geometry, survey-area circle and label are identical to the bottom-right panel in body illustration 2."
+      },
+      "retrieval_diagnostic": {
+        "classification": "alive_rank_11_plus",
+        "pre_filter_rank": 134,
+        "pre_filter_score": 0.0,
+        "post_filter_rank": 134,
+        "post_filter_score": 0.0,
+        "post_filter_survivor_count": 142,
+        "filter_reason": null,
+        "evidence": [],
+        "contradiction": "none; the zero score is an extraction/tie-break problem, not a hard contradiction",
+        "top10": "drawing 1..10; illustration 2 is generated but tied at score 0 and ordered later"
+      },
+      "retrieval_tdd_target": true,
+      "retrieval_tdd_type": "illustration_panel"
+    }
+  ],
+  "summary": {
+    "audited_misses": 8,
+    "gold_confirmed": 7,
+    "gold_rejected_or_disputed": 1,
+    "retrieval_tdd_targets": [7, 25, 30, 50, 51, 52, 53],
+    "retrieval_tdd_excluded": [36],
+    "confirmed_target_types": {
+      "feature_context_filter": [7],
+      "ordinary_drawing_ranking": [25, 30],
+      "illustration_panel": [50, 51, 52, 53]
+    }
+  }
+}

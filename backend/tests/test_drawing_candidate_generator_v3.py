@@ -227,3 +227,82 @@ def test_neighboring_context_cannot_create_hard_feature_match_for_anchor():
     )
 
     assert rows == ()
+
+
+def test_multiple_source_feature_pairs_are_context_and_do_not_hard_filter_target():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet(
+        "2지점 조선시대 25호 토광묘 및 26호 토광묘 평·단면도 및 출토유물",
+        original_name="도면 54.ai",
+        source_path="본문 도면/2지점/도면 54.ai",
+    )
+
+    rows = generator.generate(
+        source,
+        [
+            body("54", "2지점 조선시대 2호 토광묘 평·단면도 및 출토유물"),
+        ],
+    )
+
+    assert rows
+    assert rows[0].number == "54"
+
+
+def test_semantic_filename_map_type_retrieves_confirmed_map_before_contextual_labels():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet(
+        "1지점",
+        original_name="도면17. 1지점-유구현황도(15-22)800.ai",
+        source_path="환경 도면/도면17. 1지점-유구현황도(15-22)800.ai",
+    )
+    distractors = [
+        body(
+            str(number),
+            "1지점 조선시대 1호 토광묘 평·단면도",
+        )
+        for number in range(1, 13)
+    ]
+    target = body("23", "1지점 유구현황도(S=1/800)")
+
+    rows = generator.generate(source, [*distractors, target], limit=10)
+
+    assert any((row.publication_kind, row.number) == ("drawing", "23") for row in rows)
+    target = next(row for row in rows if row.number == "23")
+    map_evidence = [
+        evidence
+        for evidence in target.evidence
+        if evidence.method == "filename_semantic_exact_map_type"
+    ]
+    assert map_evidence
+    assert all(evidence.weak for evidence in map_evidence)
+
+
+def test_illustration_panel_filename_uses_parent_identity_for_retrieval():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet(
+        "",
+        publication_kind=None,
+        original_name="삽도2-1. 항공지도-1968(15-10).ai",
+        source_path="환경 도면/삽도2-1. 항공지도-1968(15-10).ai",
+    )
+    bodies = [
+        body(str(number), f"도면 {number}. 일반 도면")
+        for number in range(1, 21)
+    ]
+    bodies.append(
+        body(
+            "2",
+            "삽도 2. 조사 지역 일대 연도별 항공사진",
+            publication_kind="illustration",
+        )
+    )
+
+    rows = generator.generate(source, bodies, limit=10)
+
+    assert rows
+    assert (rows[0].publication_kind, rows[0].number) == ("illustration", "2")
+    identity_evidence = [
+        evidence for evidence in rows[0].evidence if evidence.method == "filename_identity"
+    ]
+    assert identity_evidence
+    assert all(evidence.weak for evidence in identity_evidence)

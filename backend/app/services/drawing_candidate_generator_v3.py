@@ -71,10 +71,16 @@ class DrawingCandidateGeneratorV3:
 
     def _filename_identity(self, original_name: str) -> tuple[str | None, str | None]:
         matches = list(_FILENAME_IDENTIFIER.finditer(Path(original_name).stem))
-        identities = {
-            (self._kind_from_label(match.group(1)), match.group(2))
-            for match in matches
-        }
+        identities = set()
+        for match in matches:
+            kind = self._kind_from_label(match.group(1))
+            number = match.group(2)
+            # 삽도2-1 ... 삽도2-4 are panels of canonical 삽도 2, not
+            # independent publication identities. Keep the panel suffix out of
+            # the weak identity hint; panel/year evidence remains weak below.
+            if kind == "illustration" and "-" in number:
+                number = number.split("-", 1)[0]
+            identities.add((kind, number))
         if len(identities) != 1:
             return None, None
         return next(iter(identities))
@@ -247,6 +253,7 @@ class DrawingCandidateGeneratorV3:
         path_values = self._fact_values(path_context.facts)
 
         rows: list[DrawingCandidatePacket] = []
+        filename_map_type_matches: dict[str, bool] = {}
         for (
             publication_kind,
             number,
@@ -265,11 +272,23 @@ class DrawingCandidateGeneratorV3:
                 continue
             source_pairs = self._feature_pairs(source_facts, source_values)
             body_pairs = self._feature_pairs(body_facts, body_values)
-            if source_pairs and body_pairs and source_pairs.isdisjoint(body_pairs):
+            # Multiple feature pairs in one AI drawing commonly come from
+            # labels/context inside a composite figure. Only a single explicit
+            # source pair is authoritative enough for a hard retrieval filter;
+            # resolver safety still sees all candidate evidence downstream.
+            if (
+                len(source_pairs) == 1
+                and body_pairs
+                and source_pairs.isdisjoint(body_pairs)
+            ):
                 continue
 
             candidate_id = self._candidate_id(
                 source.source_asset_id, publication_kind, number
+            )
+            filename_map_type_matches[candidate_id] = bool(
+                filename_values.get("map_type", set())
+                & body_values.get("map_type", set())
             )
             evidence: list[DrawingV3Evidence] = []
             strong_contradictions: list[str] = []
@@ -466,6 +485,7 @@ class DrawingCandidateGeneratorV3:
 
         rows.sort(
             key=lambda row: (
+                -int(filename_map_type_matches.get(row.candidate_id, False)),
                 -row.local_score,
                 row.publication_kind,
                 int(row.number) if row.number.isdigit() else 2**31,

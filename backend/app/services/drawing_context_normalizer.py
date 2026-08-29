@@ -27,7 +27,9 @@ _FEATURE_TYPE_PATTERN = re.compile(
     r"토광묘|옹관묘|석곽묘|석관묘|주거지|수혈|구상유구|분구묘|구덩이|건물지|주혈|묘|유구"
 )
 _CONTENT_TYPE_PATTERN = re.compile(r"출토\s*유물")
-_MAP_TYPE_PATTERN = re.compile(r"위성지도|항공지도|주변유적분포도|유적분포도|분포도|해동지도|광여도")
+_MAP_TYPE_PATTERN = re.compile(
+    r"유구현황도|위성지도|항공지도|주변유적분포도|유적분포도|분포도|해동지도|광여도"
+)
 _YEAR_PATTERN = re.compile(r"(?<!\d)((?:18|19|20)\d{2})(?!\d)")
 _SECTION_PATTERN = re.compile(
     r"\b([A-Za-z])\s*-\s*([A-Za-z])\s*(['′’]?)",
