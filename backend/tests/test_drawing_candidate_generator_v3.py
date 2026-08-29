@@ -215,3 +215,15 @@ def test_explicit_feature_pairs_do_not_invent_cross_type_number_matches():
         if evidence.method == "exact_feature_pair"
     }
     assert feature_pair_values == {"토광묘:3"}
+
+
+def test_neighboring_context_cannot_create_hard_feature_match_for_anchor():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet("4호 석곽묘 평단면")
+
+    rows = generator.generate(
+        source,
+        [body("70", "도면 70. 3호 토광묘 평단면\n4호 석곽묘 평단면")],
+    )
+
+    assert rows == ()
