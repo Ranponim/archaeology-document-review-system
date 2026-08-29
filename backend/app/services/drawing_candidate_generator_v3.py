@@ -87,16 +87,6 @@ class DrawingCandidateGeneratorV3:
         return dict(values)
 
     @staticmethod
-    def _feature_pairs(values: dict[str, set[str]]) -> set[tuple[str, str]]:
-        feature_types = values.get("feature_type", set())
-        feature_numbers = values.get("feature_number", set())
-        return {
-            (feature_type, feature_number)
-            for feature_type in feature_types
-            for feature_number in feature_numbers
-        }
-
-    @staticmethod
     def _exact_feature_pairs(facts: tuple[ContextFact, ...]) -> set[tuple[str, str]]:
         pairs: set[tuple[str, str]] = set()
         for fact in facts:
@@ -106,6 +96,22 @@ class DrawingCandidateGeneratorV3:
             if match:
                 pairs.add((match.group(2), match.group(1)))
         return pairs
+
+    @classmethod
+    def _feature_pairs(
+        cls,
+        facts: tuple[ContextFact, ...],
+        values: dict[str, set[str]],
+    ) -> set[tuple[str, str]]:
+        exact_pairs = cls._exact_feature_pairs(facts)
+        if exact_pairs:
+            return exact_pairs
+
+        feature_types = values.get("feature_type", set())
+        feature_numbers = values.get("feature_number", set())
+        if len(feature_types) == 1 and len(feature_numbers) == 1:
+            return {(next(iter(feature_types)), next(iter(feature_numbers)))}
+        return set()
 
     @staticmethod
     def _dedupe_facts(facts: list[ContextFact]) -> tuple[ContextFact, ...]:
@@ -252,8 +258,8 @@ class DrawingCandidateGeneratorV3:
                 continue
             if self._has_explicit_disjoint(source_values, body_values, "grid"):
                 continue
-            source_pairs = self._feature_pairs(source_values)
-            body_pairs = self._feature_pairs(body_values)
+            source_pairs = self._feature_pairs(source_facts, source_values)
+            body_pairs = self._feature_pairs(body_facts, body_values)
             if source_pairs and body_pairs and source_pairs.isdisjoint(body_pairs):
                 continue
 
