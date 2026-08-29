@@ -35,7 +35,9 @@ def test_narrative_drawing_reference_is_not_used_as_visual_evidence(tmp_path):
     narrative = [
         packet
         for packet in packets
-        if packet.number == "52" and "유구(도면 : 52)" in packet.raw_texts[0]
+        if packet.number == "52"
+        and packet.source_bbox is not None
+        and packet.source_bbox[1] < 100
     ]
     assert narrative
     assert all(packet.visual_regions == () for packet in narrative)
