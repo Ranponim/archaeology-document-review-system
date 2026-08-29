@@ -197,3 +197,21 @@ def test_filename_exact_feature_number_conflict_keeps_candidate_but_vetoes_auto(
         for evidence in wrong.evidence
     )
     assert correct.hard_contradiction is False
+
+
+def test_explicit_feature_pairs_do_not_invent_cross_type_number_matches():
+    generator = DrawingCandidateGeneratorV3()
+    source = source_packet("3호 토광묘와 4호 석곽묘 평단면")
+
+    rows = generator.generate(
+        source,
+        [body("70", "3호 토광묘와 4호 토광묘 평단면")],
+    )
+
+    assert len(rows) == 1
+    feature_pair_values = {
+        evidence.value
+        for evidence in rows[0].evidence
+        if evidence.method == "exact_feature_pair"
+    }
+    assert feature_pair_values == {"토광묘:3"}
