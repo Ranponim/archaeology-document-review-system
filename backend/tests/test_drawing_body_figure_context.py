@@ -41,3 +41,27 @@ def test_narrative_drawing_reference_is_not_used_as_visual_evidence(tmp_path):
     ]
     assert narrative
     assert all(packet.visual_regions == () for packet in narrative)
+
+
+def test_figure_caption_visual_includes_bounded_context_above_caption(tmp_path):
+    module = _load_evaluator()
+    body_pdf = _make_body_pdf(tmp_path / "body.pdf")
+
+    packets = module.build_body_packets(body_pdf, tmp_path / "renders")
+
+    figure_packets = [
+        packet
+        for packet in packets
+        if packet.number == "52"
+        and packet.source_bbox is not None
+        and packet.source_bbox[1] > 300
+    ]
+    assert figure_packets
+    visual = next(
+        region
+        for packet in figure_packets
+        for region in packet.visual_regions
+    )
+    assert visual.bbox is not None
+    assert visual.bbox[1] <= 180.0
+    assert visual.bbox[3] < 450.0
