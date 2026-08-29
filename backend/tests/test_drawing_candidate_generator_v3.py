@@ -165,3 +165,35 @@ def test_sparse_ai_text_uses_semantic_filename_only_to_retrieve_correct_target()
     ]
     assert filename_semantic
     assert all(evidence.weak for evidence in filename_semantic)
+
+
+def test_filename_exact_feature_number_conflict_keeps_candidate_but_vetoes_auto():
+    generator = DrawingCandidateGeneratorV3()
+    filename = "5지점 조선시대 4호 토광묘 평·단면도 및 출토유물.ai"
+    source = source_packet(
+        "",
+        original_name=filename,
+        source_path=f"본문 도면/5지점/{filename}",
+    )
+
+    rows = generator.generate(
+        source,
+        [
+            body("119", "5지점 조선시대 3호 토광묘 평·단면도 및 출토유물"),
+            body("120", "5지점 조선시대 4호 토광묘 평·단면도 및 출토유물"),
+        ],
+    )
+
+    wrong = next(row for row in rows if row.number == "119")
+    correct = next(row for row in rows if row.number == "120")
+
+    # Filename semantics remain retrieval hints: the conflicting candidate stays
+    # available to Luna/review, but an explicit same-type feature-number clash
+    # must prevent unattended AUTO promotion.
+    assert wrong.hard_contradiction is True
+    assert any(
+        evidence.method == "strong_contradiction_filename_feature_pair"
+        and not evidence.supports
+        for evidence in wrong.evidence
+    )
+    assert correct.hard_contradiction is False
