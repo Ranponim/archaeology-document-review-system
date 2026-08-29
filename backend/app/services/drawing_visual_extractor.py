@@ -26,6 +26,22 @@ class DrawingVisualExtractor:
         normalized = _SAFE_NAME_RE.sub("-", value).strip("-._")
         return normalized or "region"
 
+    @staticmethod
+    def _figure_context_clip(
+        page_rect: "pymupdf.Rect",
+        caption_clip: "pymupdf.Rect",
+    ) -> "pymupdf.Rect":
+        """Expand a real figure caption into a bounded visual context window."""
+        vertical_back = max(page_rect.height * 0.45, caption_clip.height * 8.0)
+        vertical_forward = max(page_rect.height * 0.03, caption_clip.height * 1.5)
+        horizontal_pad = max(page_rect.width * 0.40, caption_clip.width)
+        return pymupdf.Rect(
+            caption_clip.x0 - horizontal_pad,
+            caption_clip.y0 - vertical_back,
+            caption_clip.x1 + horizontal_pad,
+            caption_clip.y1 + vertical_forward,
+        ) & page_rect
+
     def render_source(
         self,
         path: str | Path,
@@ -77,10 +93,13 @@ class DrawingVisualExtractor:
                 raise ValueError("body bbox produced an empty crop")
 
             anchor_text = (page.get_text("text", clip=clip) or "").strip()
-            if _KOREAN_DRAWING_REF_RE.search(anchor_text) and not _FIGURE_CAPTION_RE.match(
-                anchor_text
-            ):
+            figure_caption = bool(_FIGURE_CAPTION_RE.match(anchor_text))
+            if _KOREAN_DRAWING_REF_RE.search(anchor_text) and not figure_caption:
                 raise ValueError("body bbox is a narrative drawing reference, not a figure caption")
+            if figure_caption:
+                clip = self._figure_context_clip(page.rect, clip)
+                if clip.is_empty or clip.width <= 0 or clip.height <= 0:
+                    raise ValueError("figure context produced an empty crop")
 
             pixmap = page.get_pixmap(matrix=self._matrix, clip=clip, alpha=False)
             target = target_dir / f"{self._safe_name(region_id)}.png"
