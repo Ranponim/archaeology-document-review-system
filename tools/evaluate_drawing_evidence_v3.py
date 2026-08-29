@@ -466,7 +466,10 @@ def resolution_rows(source_root: Path, sources, resolution) -> list[dict]:
             for evidence_id in (decision.cited_support_ids if decision else ())
             if evidence_id in evidence_by_id
         ]
-        weak_only = bool(cited) and all(item.weak for item in cited)
+        validated_visual = "visual_signature" in (
+            result.diagnostics.get("cited_support_families") or []
+        )
+        weak_only = bool(cited) and all(item.weak for item in cited) and not validated_visual
         hard_promoted = bool(
             result.status == "AUTO_VERIFIED" and selected is not None and selected.hard_contradiction
         )
