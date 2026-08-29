@@ -162,8 +162,13 @@ class DrawingCandidateGeneratorV3:
                     if body.source_node_ids
                     else f"{key[0]}:{key[1]}:mention:{index + 1}"
                 )
+                # Evaluator packets put the actual body reference/caption first
+                # and append nearby blocks after newlines. Only the anchor is
+                # authoritative enough for hard semantic facts; keep the full
+                # text below for lexical/context retrieval.
+                anchor_text = text.partition("\n")[0].strip() or text
                 normalized = self._normalizer.normalize(
-                    text,
+                    anchor_text,
                     source_kind="body",
                     source_node_id=source_node_id,
                     source_sha256=body.source_sha256,
