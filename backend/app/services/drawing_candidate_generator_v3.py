@@ -366,6 +366,34 @@ class DrawingCandidateGeneratorV3:
                     )
                 )
 
+            # A filename remains weak positive evidence, but an explicit feature
+            # identity such as "4호 토광묘" is useful as an unattended-AUTO
+            # veto when the body candidate explicitly says the same feature type
+            # with a different number. Keep the candidate for Luna/manual review;
+            # only mark the conflict so the resolver fails closed on AUTO.
+            for feature_type, feature_number in sorted(filename_feature_pairs):
+                same_type_body_pairs = {
+                    pair
+                    for pair in body_exact_feature_pairs
+                    if pair[0] == feature_type
+                }
+                if not same_type_body_pairs or (feature_type, feature_number) in same_type_body_pairs:
+                    continue
+                body_numbers = sorted(pair[1] for pair in same_type_body_pairs)
+                contradiction = self._evidence(
+                    candidate_id,
+                    family="archaeology_signature",
+                    method="strong_contradiction_filename_feature_pair",
+                    value=(
+                        f"SOURCE={feature_type}:{feature_number} "
+                        f"BODY={feature_type}:{','.join(body_numbers)}"
+                    ),
+                    supports=False,
+                    weak=True,
+                )
+                evidence.append(contradiction)
+                strong_contradictions.append(contradiction.id)
+
             if filename_kind == publication_kind and filename_number == number:
                 score += WEIGHTS["filename"]
                 evidence.append(
