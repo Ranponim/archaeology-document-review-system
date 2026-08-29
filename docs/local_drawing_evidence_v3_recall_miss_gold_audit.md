@@ -69,5 +69,6 @@ source 원본은 제목부터 `3지점-유구현황도`이고 이미지 좌상�
 3. source 30: confirmed site map at rank 15.
 4. source 50~53: four confirmed illustration panels at rank 134, one separate panel test family.
 
-source 36은 현재 gold가 실제 본문과 불일치하므로 제외한다. 이후 테스트/수정은 먼저 이 audit artifact를 기준으로 RED를 만들고, 최소 retrieval 수정 후 GREEN을 측정해야 한다. AUTO precision, AUTO coverage, review rate와 safety counters는 기존 회귀 기준을 그대로 유지한다.
+End of audit record.
 
+source 36은 현재 gold가 실제 본문과 불일치하므로 제외한다. 이후 테스트/수정은 먼저 이 audit artifact를 기준으로 RED를 만들고, 최소 retrieval 수정 후 GREEN을 측정해야 한다. AUTO precision, AUTO coverage, review rate와 safety counters는 기존 회귀 기준을 그대로 유지한다.
