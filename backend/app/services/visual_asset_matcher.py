@@ -6,10 +6,18 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageChops, ImageOps
 import pymupdf
 
 from app.domain.source_assets import OriginalAssetData
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchScoreIndex:
+    variant_asset_ids: tuple[str, ...]
+    candidate_image: Image.Image
+    fingerprint_length: int
+    variant_count: int
 
 
 _BATCH_CANDIDATE_FINGERPRINTS: ContextVar[dict[Path, tuple[bytes, ...] | None] | None] = ContextVar(
@@ -18,6 +26,10 @@ _BATCH_CANDIDATE_FINGERPRINTS: ContextVar[dict[Path, tuple[bytes, ...] | None] |
 )
 _BATCH_PDF_DOCUMENTS: ContextVar[dict[tuple[int, str], pymupdf.Document] | None] = ContextVar(
     "visual_asset_matcher_batch_pdf_documents",
+    default=None,
+)
+_BATCH_SCORE_INDEX: ContextVar[_BatchScoreIndex | None] = ContextVar(
+    "visual_asset_matcher_batch_score_index",
     default=None,
 )
 
@@ -42,10 +54,11 @@ class VisualAssetMatcher:
 
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
-    second-best candidate. Batch matching reuses expensive candidate/PDF work
-    and additionally requires the selected source JPG to be unique within each
-    supplied PDF. The same original may be reused by a distinct PDF
-    revision/version.
+    second-best candidate. Batch matching reuses expensive candidate/PDF work,
+    performs pixel-difference work in Pillow's native implementation instead of
+    one Python byte loop per panel/candidate pair, and additionally requires the
+    selected source JPG to be unique within each supplied PDF. The same original
+    may be reused by a distinct PDF revision/version.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -258,6 +271,80 @@ class VisualAssetMatcher:
             return (value,)
         return value
 
+    @staticmethod
+    def _build_batch_score_index(
+        candidates: list[tuple[OriginalAssetData, str | Path]]
+        | tuple[tuple[OriginalAssetData, str | Path], ...],
+        candidate_cache: dict[Path, tuple[bytes, ...] | None],
+    ) -> _BatchScoreIndex | None:
+        variant_asset_ids: list[str] = []
+        variant_fingerprints: list[bytes] = []
+        fingerprint_length: int | None = None
+
+        for asset, candidate_path in candidates:
+            fingerprints = candidate_cache.get(Path(candidate_path))
+            if not fingerprints:
+                continue
+            for fingerprint in fingerprints:
+                if not fingerprint:
+                    continue
+                if fingerprint_length is None:
+                    fingerprint_length = len(fingerprint)
+                if len(fingerprint) != fingerprint_length:
+                    continue
+                variant_asset_ids.append(asset.id)
+                variant_fingerprints.append(fingerprint)
+
+        if not variant_fingerprints or not fingerprint_length:
+            return None
+
+        candidate_image = Image.frombytes(
+            "L",
+            (fingerprint_length, len(variant_fingerprints)),
+            b"".join(variant_fingerprints),
+        )
+        return _BatchScoreIndex(
+            variant_asset_ids=tuple(variant_asset_ids),
+            candidate_image=candidate_image,
+            fingerprint_length=fingerprint_length,
+            variant_count=len(variant_fingerprints),
+        )
+
+    @staticmethod
+    def _bulk_candidate_scores(
+        panel_fingerprints: tuple[bytes, ...],
+        index: _BatchScoreIndex,
+    ) -> list[tuple[float, str]]:
+        best_error_by_asset: dict[str, int] = {}
+        width = index.fingerprint_length
+        count = index.variant_count
+
+        for panel_fingerprint in panel_fingerprints:
+            if len(panel_fingerprint) != width:
+                continue
+            panel_image = Image.frombytes(
+                "L",
+                (width, count),
+                panel_fingerprint * count,
+            )
+            differences = ImageChops.difference(
+                index.candidate_image,
+                panel_image,
+            ).tobytes()
+
+            for row, asset_id in enumerate(index.variant_asset_ids):
+                start = row * width
+                error = sum(differences[start : start + width])
+                previous = best_error_by_asset.get(asset_id)
+                if previous is None or error < previous:
+                    best_error_by_asset[asset_id] = error
+
+        denominator = 255.0 * width
+        return [
+            (max(0.0, 1.0 - error / denominator), asset_id)
+            for asset_id, error in best_error_by_asset.items()
+        ]
+
     def match_panel(
         self,
         *,
@@ -271,20 +358,27 @@ class VisualAssetMatcher:
             return None
         panel_fingerprints = self._panel_fingerprint_variants(panel_value)
 
-        scored: list[tuple[float, str]] = []
-        for asset, candidate_path in candidates:
-            path = Path(candidate_path)
-            if not path.is_file():
-                continue
-            fingerprints = self._candidate_fingerprints_for_match(path)
-            if not fingerprints:
-                continue
-            score = max(
-                self._similarity(panel_fingerprint, fingerprint)
-                for panel_fingerprint in panel_fingerprints
-                for fingerprint in fingerprints
+        batch_score_index = _BATCH_SCORE_INDEX.get()
+        if batch_score_index is not None:
+            scored = self._bulk_candidate_scores(
+                panel_fingerprints,
+                batch_score_index,
             )
-            scored.append((score, asset.id))
+        else:
+            scored: list[tuple[float, str]] = []
+            for asset, candidate_path in candidates:
+                path = Path(candidate_path)
+                if not path.is_file():
+                    continue
+                fingerprints = self._candidate_fingerprints_for_match(path)
+                if not fingerprints:
+                    continue
+                score = max(
+                    self._similarity(panel_fingerprint, fingerprint)
+                    for panel_fingerprint in panel_fingerprints
+                    for fingerprint in fingerprints
+                )
+                scored.append((score, asset.id))
 
         if not scored:
             return None
@@ -315,9 +409,11 @@ class VisualAssetMatcher:
             except (OSError, ValueError):
                 candidate_cache[path] = None
 
+        score_index = self._build_batch_score_index(candidates, candidate_cache)
         batch_documents: dict[tuple[int, str], pymupdf.Document] = {}
         candidate_token = _BATCH_CANDIDATE_FINGERPRINTS.set(candidate_cache)
         document_token = _BATCH_PDF_DOCUMENTS.set(batch_documents)
+        score_token = _BATCH_SCORE_INDEX.set(score_index)
         try:
             local_matches: dict[str, tuple[VisualAssetMatch, str]] = {}
             for panel in panels:
@@ -335,6 +431,7 @@ class VisualAssetMatcher:
         finally:
             for doc in batch_documents.values():
                 doc.close()
+            _BATCH_SCORE_INDEX.reset(score_token)
             _BATCH_PDF_DOCUMENTS.reset(document_token)
             _BATCH_CANDIDATE_FINGERPRINTS.reset(candidate_token)
 
