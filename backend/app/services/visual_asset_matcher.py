@@ -21,10 +21,22 @@ class VisualAssetMatch:
 @dataclass(frozen=True, slots=True)
 class VisualPanelRequest:
     panel_id: str
-    uniqueness_scope_id: str
     pdf_path: str | Path
     physical_page: int
     bbox: tuple[float, float, float, float]
+    uniqueness_scope_id: str | None = None
+
+    @property
+    def resolved_uniqueness_scope_id(self) -> str:
+        """Return the explicit revision scope, or a stable PDF-path fallback.
+
+        The fallback is used only to scope collision detection. It is never
+        visual-match evidence and cannot promote an unresolved panel.
+        """
+
+        if self.uniqueness_scope_id:
+            return self.uniqueness_scope_id
+        return str(Path(self.pdf_path).resolve())
 
 
 class VisualAssetMatcher:
@@ -239,7 +251,7 @@ class VisualAssetMatcher:
     ) -> dict[str, VisualAssetMatch]:
         local_matches: dict[str, VisualAssetMatch] = {}
         scope_by_panel = {
-            panel.panel_id: panel.uniqueness_scope_id for panel in panels
+            panel.panel_id: panel.resolved_uniqueness_scope_id for panel in panels
         }
         for panel in panels:
             match = self.match_panel(
