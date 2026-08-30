@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pymupdf
+import pytest
 from PIL import Image, ImageDraw
 
 import app.services.visual_asset_matcher as visual_asset_matcher
@@ -89,6 +90,29 @@ def _write_pdf_without_source_border(
         doc.close()
 
     return (0.10, 0.10, 0.90, 0.66)
+
+
+def _stub_scores(monkeypatch, matcher, tmp_path, scored_assets):
+    candidates = []
+    scores = {}
+    for source_asset_id, score in scored_assets:
+        path = tmp_path / f"{source_asset_id}.jpg"
+        path.write_bytes(b"candidate")
+        candidates.append((SimpleNamespace(id=source_asset_id), path))
+        scores[path.name.encode()] = score
+
+    monkeypatch.setattr(matcher, "_panel_fingerprint", lambda *_: b"panel")
+    monkeypatch.setattr(
+        matcher,
+        "_candidate_fingerprints_path",
+        lambda path: (path.name.encode(),),
+    )
+    monkeypatch.setattr(
+        matcher,
+        "_similarity",
+        lambda _panel, candidate: scores[candidate],
+    )
+    return candidates
 
 
 def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_threshold(tmp_path):
@@ -206,3 +230,81 @@ def test_match_panels_allows_same_source_across_revision_scopes(monkeypatch):
     matches = matcher.match_panels(panels=requests, candidates=[])
 
     assert set(matches) == {"rev-a-panel", "rev-b-panel"}
+
+
+def test_assessment_preserves_ranked_candidates_below_score(monkeypatch, tmp_path):
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    candidates = _stub_scores(
+        monkeypatch,
+        matcher,
+        tmp_path,
+        [("candidate-a", 0.95), ("candidate-b", 0.91), ("candidate-c", 0.80)],
+    )
+
+    assessment = matcher.assess_panel(
+        pdf_path=tmp_path / "plate.pdf",
+        physical_page=1,
+        bbox=(0.0, 0.0, 1.0, 1.0),
+        candidates=candidates,
+        top_k=5,
+    )
+
+    assert assessment.status == "BELOW_SCORE"
+    assert assessment.best_score == pytest.approx(0.95)
+    assert assessment.margin == pytest.approx(0.04)
+    assert [item.source_asset_id for item in assessment.candidates] == [
+        "candidate-a",
+        "candidate-b",
+        "candidate-c",
+    ]
+    assert assessment.match is None
+
+
+def test_assessment_preserves_ambiguous_runner_up(monkeypatch, tmp_path):
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    candidates = _stub_scores(
+        monkeypatch,
+        matcher,
+        tmp_path,
+        [("candidate-a", 0.98), ("candidate-b", 0.97), ("candidate-c", 0.70)],
+    )
+
+    assessment = matcher.assess_panel(
+        pdf_path=tmp_path / "plate.pdf",
+        physical_page=1,
+        bbox=(0.0, 0.0, 1.0, 1.0),
+        candidates=candidates,
+        top_k=2,
+    )
+
+    assert assessment.status == "AMBIGUOUS_MARGIN"
+    assert assessment.best_score == pytest.approx(0.98)
+    assert assessment.margin == pytest.approx(0.01)
+    assert [item.source_asset_id for item in assessment.candidates] == [
+        "candidate-a",
+        "candidate-b",
+    ]
+    assert assessment.match is None
+
+
+def test_assessment_keeps_verified_match_and_ranking(monkeypatch, tmp_path):
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    candidates = _stub_scores(
+        monkeypatch,
+        matcher,
+        tmp_path,
+        [("candidate-a", 0.99), ("candidate-b", 0.90)],
+    )
+
+    assessment = matcher.assess_panel(
+        pdf_path=tmp_path / "plate.pdf",
+        physical_page=1,
+        bbox=(0.0, 0.0, 1.0, 1.0),
+        candidates=candidates,
+    )
+
+    assert assessment.status == "VERIFIED"
+    assert assessment.match is not None
+    assert assessment.match.source_asset_id == "candidate-a"
+    assert assessment.best_score == pytest.approx(0.99)
+    assert assessment.margin == pytest.approx(0.09)
