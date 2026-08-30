@@ -298,8 +298,10 @@ def test_adobe_free_build_resolves_segmented_panels_once_as_a_corpus_batch(tmp_p
 
     assert result.status == ReferenceCorpusStatus.READY
     assert len(matcher.calls) == 1
-    request_ids = [item.panel_id for item in matcher.calls[0]["panels"]]
+    requests = matcher.calls[0]["panels"]
+    request_ids = [item.panel_id for item in requests]
     assert request_ids == ["plate-panel:c1:3:1", "plate-panel:c1:3:2"]
+    assert {item.uniqueness_scope_id for item in requests} == {"plates"}
     assert len(matcher.calls[0]["candidates"]) == 1
 
     assert repository.visuals is not None
