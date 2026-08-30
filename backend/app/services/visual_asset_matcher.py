@@ -25,6 +25,8 @@ class VisualAssetMatcher:
     second-best candidate. Equal or near-equal candidates are unresolved.
     """
 
+    _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
+
     def __init__(
         self,
         *,
@@ -36,19 +38,44 @@ class VisualAssetMatcher:
         self._minimum_margin = float(minimum_margin)
         self._fingerprint_size = fingerprint_size
 
-    def _fingerprint_image(self, image: Image.Image) -> bytes:
-        normalized = ImageOps.exif_transpose(image).convert("L")
-        normalized.thumbnail(self._fingerprint_size, Image.Resampling.LANCZOS)
+    @staticmethod
+    def _normalize_image(image: Image.Image) -> Image.Image:
+        return ImageOps.exif_transpose(image).convert("L")
+
+    @staticmethod
+    def _center_crop(image: Image.Image, fraction: float) -> Image.Image:
+        if fraction >= 1.0:
+            return image.copy()
+        width, height = image.size
+        crop_width = max(1, round(width * fraction))
+        crop_height = max(1, round(height * fraction))
+        left = max(0, (width - crop_width) // 2)
+        top = max(0, (height - crop_height) // 2)
+        return image.crop((left, top, left + crop_width, top + crop_height))
+
+    def _fingerprint_normalized(self, normalized: Image.Image) -> bytes:
+        thumbnail = normalized.copy()
+        thumbnail.thumbnail(self._fingerprint_size, Image.Resampling.LANCZOS)
         canvas = Image.new("L", self._fingerprint_size, 255)
-        left = (self._fingerprint_size[0] - normalized.width) // 2
-        top = (self._fingerprint_size[1] - normalized.height) // 2
-        canvas.paste(normalized, (left, top))
+        left = (self._fingerprint_size[0] - thumbnail.width) // 2
+        top = (self._fingerprint_size[1] - thumbnail.height) // 2
+        canvas.paste(thumbnail, (left, top))
         return canvas.tobytes()
 
-    def _fingerprint_path(self, path: Path) -> bytes:
+    def _fingerprint_image(self, image: Image.Image) -> bytes:
+        return self._fingerprint_normalized(self._normalize_image(image))
+
+    def _candidate_fingerprints(self, image: Image.Image) -> tuple[bytes, ...]:
+        normalized = self._normalize_image(image)
+        return tuple(
+            self._fingerprint_normalized(self._center_crop(normalized, fraction))
+            for fraction in self._CANDIDATE_CROP_FRACTIONS
+        )
+
+    def _candidate_fingerprints_path(self, path: Path) -> tuple[bytes, ...]:
         with Image.open(path) as image:
             image.load()
-            return self._fingerprint_image(image)
+            return self._candidate_fingerprints(image)
 
     @staticmethod
     def _similarity(left: bytes, right: bytes) -> float:
@@ -131,10 +158,14 @@ class VisualAssetMatcher:
             if not path.is_file():
                 continue
             try:
-                fingerprint = self._fingerprint_path(path)
+                fingerprints = self._candidate_fingerprints_path(path)
             except (OSError, ValueError):
                 continue
-            scored.append((self._similarity(panel_fingerprint, fingerprint), asset.id))
+            score = max(
+                self._similarity(panel_fingerprint, fingerprint)
+                for fingerprint in fingerprints
+            )
+            scored.append((score, asset.id))
 
         if not scored:
             return None
