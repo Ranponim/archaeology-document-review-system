@@ -36,6 +36,9 @@ class VisualAssetMatcher:
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
+    _LIGHT_BORDER_THRESHOLD = 245
+    _MIN_TRIMMED_CONTENT_FRACTION = 0.25
+    _MIN_BORDER_TRIM_FRACTION = 0.03
 
     def __init__(
         self,
@@ -63,6 +66,38 @@ class VisualAssetMatcher:
         top = max(0, (height - crop_height) // 2)
         return image.crop((left, top, left + crop_width, top + crop_height))
 
+    @classmethod
+    def _trim_light_border(cls, image: Image.Image) -> Image.Image | None:
+        """Return one conservative border-trimmed view, never a replacement.
+
+        The original image is always retained as a candidate view.  This helper
+        only contributes an additional view when a material light border
+        surrounds a reasonably sized darker content region.
+        """
+
+        width, height = image.size
+        if width < 2 or height < 2:
+            return None
+        mask = image.point(
+            lambda value: 255 if value < cls._LIGHT_BORDER_THRESHOLD else 0
+        )
+        bbox = mask.getbbox()
+        if bbox is None:
+            return None
+        left, top, right, bottom = bbox
+        content_width = right - left
+        content_height = bottom - top
+        if (
+            content_width < width * cls._MIN_TRIMMED_CONTENT_FRACTION
+            or content_height < height * cls._MIN_TRIMMED_CONTENT_FRACTION
+        ):
+            return None
+        horizontal_trim = (width - content_width) / width
+        vertical_trim = (height - content_height) / height
+        if max(horizontal_trim, vertical_trim) < cls._MIN_BORDER_TRIM_FRACTION:
+            return None
+        return image.crop(bbox)
+
     def _fingerprint_normalized(self, normalized: Image.Image) -> bytes:
         thumbnail = normalized.copy()
         thumbnail.thumbnail(self._fingerprint_size, Image.Resampling.LANCZOS)
@@ -77,10 +112,18 @@ class VisualAssetMatcher:
 
     def _candidate_fingerprints(self, image: Image.Image) -> tuple[bytes, ...]:
         normalized = self._normalize_image(image)
-        return tuple(
-            self._fingerprint_normalized(self._center_crop(normalized, fraction))
-            for fraction in self._CANDIDATE_CROP_FRACTIONS
-        )
+        views = [normalized]
+        trimmed = self._trim_light_border(normalized)
+        if trimmed is not None:
+            views.append(trimmed)
+
+        fingerprints = []
+        for view in views:
+            fingerprints.extend(
+                self._fingerprint_normalized(self._center_crop(view, fraction))
+                for fraction in self._CANDIDATE_CROP_FRACTIONS
+            )
+        return tuple(fingerprints)
 
     def _candidate_fingerprints_path(self, path: Path) -> tuple[bytes, ...]:
         with Image.open(path) as image:
