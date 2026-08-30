@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -53,6 +53,22 @@ class VisualPanelRequest:
             return self.uniqueness_scope_id
         return str(Path(self.pdf_path).resolve())
 
+    @property
+    def geometry_key(self) -> tuple[str, int, tuple[float, float, float, float]]:
+        """Identify one physical panel geometry inside a revision.
+
+        Parser aliases may emit multiple panel IDs for the exact same page and
+        bbox. Those aliases represent one physical image placement and must not
+        manufacture a source collision. Rounding removes insignificant parser
+        float noise while keeping genuinely different geometries distinct.
+        """
+
+        return (
+            self.resolved_uniqueness_scope_id,
+            int(self.physical_page),
+            tuple(round(float(value), 9) for value in self.bbox),
+        )
+
 
 class VisualAssetMatcher:
     """Conservatively match safely segmented PDF panels to original images.
@@ -60,7 +76,8 @@ class VisualAssetMatcher:
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
     second-best candidate. Batch matching additionally requires the selected
-    source JPG to be unique within each explicit revision/uniqueness scope.
+    source JPG to be unique across distinct physical panel geometries within
+    each explicit revision/uniqueness scope.
 
     ``assess_panel`` preserves failure reason and ranked candidates without
     changing the verification threshold. ``match_panel`` remains the backwards-
@@ -318,9 +335,7 @@ class VisualAssetMatcher:
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
     ) -> dict[str, VisualAssetMatch]:
         local_matches: dict[str, VisualAssetMatch] = {}
-        scope_by_panel = {
-            panel.panel_id: panel.resolved_uniqueness_scope_id for panel in panels
-        }
+        request_by_panel = {panel.panel_id: panel for panel in panels}
         for panel in panels:
             match = self.match_panel(
                 pdf_path=panel.pdf_path,
@@ -331,12 +346,26 @@ class VisualAssetMatcher:
             if match is not None:
                 local_matches[panel.panel_id] = match
 
-        source_counts = Counter(
-            (scope_by_panel[panel_id], match.source_asset_id)
-            for panel_id, match in local_matches.items()
-        )
+        geometries_by_source: dict[
+            tuple[str, str],
+            set[tuple[str, int, tuple[float, float, float, float]]],
+        ] = defaultdict(set)
+        for panel_id, match in local_matches.items():
+            panel = request_by_panel[panel_id]
+            geometries_by_source[
+                (panel.resolved_uniqueness_scope_id, match.source_asset_id)
+            ].add(panel.geometry_key)
+
         return {
             panel_id: match
             for panel_id, match in local_matches.items()
-            if source_counts[(scope_by_panel[panel_id], match.source_asset_id)] == 1
+            if len(
+                geometries_by_source[
+                    (
+                        request_by_panel[panel_id].resolved_uniqueness_scope_id,
+                        match.source_asset_id,
+                    )
+                ]
+            )
+            == 1
         }
