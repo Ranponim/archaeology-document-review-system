@@ -173,6 +173,7 @@ def test_match_panels_fails_closed_when_two_panels_in_same_revision_select_same_
     assert matches == {}
 
 
+# Regression from the 2,750-panel acceptance: reuse across revisions is valid.
 def test_match_panels_allows_same_source_across_revision_scopes(monkeypatch):
     request_type = visual_asset_matcher.VisualPanelRequest
     matcher = VisualAssetMatcher()
