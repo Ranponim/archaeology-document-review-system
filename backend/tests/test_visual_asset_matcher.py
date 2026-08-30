@@ -23,6 +23,23 @@ def _write_pattern_jpg(path: Path) -> None:
     image.save(path, format="JPEG", quality=100, subsampling=0)
 
 
+def _write_bordered_pattern_jpg(path: Path) -> tuple[int, int, int, int]:
+    inner = Image.new("RGB", (160, 112), "black")
+    draw = ImageDraw.Draw(inner)
+    for index, value in enumerate((20, 220, 50, 180, 90)):
+        draw.rectangle(
+            (index * 32, 0, index * 32 + 31, 111),
+            fill=(value, value, value),
+        )
+    draw.ellipse((44, 16, 116, 96), fill=(130, 130, 130))
+
+    canvas = Image.new("RGB", (320, 220), "white")
+    box = (73, 51, 233, 163)
+    canvas.paste(inner, box[:2])
+    canvas.save(path, format="JPEG", quality=100, subsampling=0)
+    return box
+
+
 def _write_distractor_jpg(path: Path) -> None:
     image = Image.new("RGB", (200, 140), (245, 245, 245))
     draw = ImageDraw.Draw(image)
@@ -51,6 +68,29 @@ def _write_pdf_with_center_crop(original_path: Path, pdf_path: Path) -> tuple[fl
     return (0.10, 0.10, 0.90, 0.66)
 
 
+def _write_pdf_without_source_border(
+    original_path: Path,
+    pdf_path: Path,
+    content_box: tuple[int, int, int, int],
+) -> tuple[float, float, float, float]:
+    with Image.open(original_path) as image:
+        image.load()
+        cropped = image.crop(content_box)
+        payload = BytesIO()
+        cropped.save(payload, format="PNG")
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        rect = pymupdf.Rect(20, 20, 180, 132)
+        page.insert_image(rect, stream=payload.getvalue())
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.10, 0.10, 0.90, 0.66)
+
+
 def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_threshold(tmp_path):
     original = tmp_path / "original.jpg"
     distractor = tmp_path / "distractor.jpg"
@@ -58,6 +98,30 @@ def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_thresho
     _write_pattern_jpg(original)
     _write_distractor_jpg(distractor)
     bbox = _write_pdf_with_center_crop(original, pdf_path)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    match = matcher.match_panel(
+        pdf_path=pdf_path,
+        physical_page=1,
+        bbox=bbox,
+        candidates=[
+            (SimpleNamespace(id="original"), original),
+            (SimpleNamespace(id="distractor"), distractor),
+        ],
+    )
+
+    assert match is not None
+    assert match.source_asset_id == "original"
+    assert match.score >= 0.97
+
+
+def test_match_panel_trims_light_source_border_without_lowering_safety_threshold(tmp_path):
+    original = tmp_path / "bordered-original.jpg"
+    distractor = tmp_path / "distractor.jpg"
+    pdf_path = tmp_path / "plate.pdf"
+    content_box = _write_bordered_pattern_jpg(original)
+    _write_distractor_jpg(distractor)
+    bbox = _write_pdf_without_source_border(original, pdf_path, content_box)
 
     matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
     match = matcher.match_panel(
