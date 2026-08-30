@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pymupdf
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageEnhance
 
 import app.services.visual_asset_matcher as visual_asset_matcher
 from app.services.visual_asset_matcher import VisualAssetMatcher
@@ -92,6 +92,30 @@ def _write_pdf_without_source_border(
     return (0.10, 0.10, 0.90, 0.66)
 
 
+def _write_pdf_with_brightness_shift(
+    original_path: Path,
+    pdf_path: Path,
+    *,
+    factor: float,
+) -> tuple[float, float, float, float]:
+    with Image.open(original_path) as image:
+        image.load()
+        shifted = ImageEnhance.Brightness(image).enhance(factor)
+        payload = BytesIO()
+        shifted.save(payload, format="JPEG", quality=88)
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        rect = pymupdf.Rect(20, 20, 180, 132)
+        page.insert_image(rect, stream=payload.getvalue())
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.10, 0.10, 0.90, 0.66)
+
+
 def _write_pdf_with_reused_image_twice(
     original_path: Path,
     pdf_path: Path,
@@ -140,6 +164,30 @@ def test_match_panel_trims_light_source_border_without_lowering_safety_threshold
     content_box = _write_bordered_pattern_jpg(original)
     _write_distractor_jpg(distractor)
     bbox = _write_pdf_without_source_border(original, pdf_path, content_box)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    match = matcher.match_panel(
+        pdf_path=pdf_path,
+        physical_page=1,
+        bbox=bbox,
+        candidates=[
+            (SimpleNamespace(id="original"), original),
+            (SimpleNamespace(id="distractor"), distractor),
+        ],
+    )
+
+    assert match is not None
+    assert match.source_asset_id == "original"
+    assert match.score >= 0.97
+
+
+def test_match_panel_normalizes_brightness_shift_without_lowering_safety_threshold(tmp_path):
+    original = tmp_path / "original.jpg"
+    distractor = tmp_path / "distractor.jpg"
+    pdf_path = tmp_path / "plate-brightness-shift.pdf"
+    _write_pattern_jpg(original)
+    _write_distractor_jpg(distractor)
+    bbox = _write_pdf_with_brightness_shift(original, pdf_path, factor=0.75)
 
     matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
     match = matcher.match_panel(
