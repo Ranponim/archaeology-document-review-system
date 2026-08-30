@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -89,6 +90,23 @@ def _write_pdf_without_source_border(
         doc.close()
 
     return (0.10, 0.10, 0.90, 0.66)
+
+
+def _write_pdf_with_reused_image_twice(
+    original_path: Path,
+    pdf_path: Path,
+) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
+    image_bytes = original_path.read_bytes()
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        page.insert_image(pymupdf.Rect(10, 10, 90, 66), stream=image_bytes)
+        page.insert_image(pymupdf.Rect(110, 10, 190, 66), stream=image_bytes)
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.05, 0.05, 0.45, 0.33), (0.55, 0.05, 0.95, 0.33)
 
 
 def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_threshold(tmp_path):
@@ -202,3 +220,92 @@ def test_match_panels_allows_same_source_once_per_distinct_plate_pdf(monkeypatch
 
     assert set(matches) == {"panel-v1", "panel-v2"}
     assert {match.source_asset_id for match in matches.values()} == {"reused-photo"}
+
+
+def test_match_panels_precomputes_each_candidate_once_per_batch(tmp_path, monkeypatch):
+    candidate_a = tmp_path / "a.jpg"
+    candidate_b = tmp_path / "b.jpg"
+    candidate_a.write_bytes(b"a")
+    candidate_b.write_bytes(b"b")
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    panel_fingerprint = bytes([0]) * 1024
+    candidate_fingerprints = {
+        candidate_a: (bytes([0]) * 1024,),
+        candidate_b: (bytes([255]) * 1024,),
+    }
+    calls: Counter[Path] = Counter()
+
+    monkeypatch.setattr(
+        matcher,
+        "_panel_fingerprint",
+        lambda pdf_path, physical_page, bbox: panel_fingerprint,
+    )
+
+    def fake_candidate_fingerprints(path: Path) -> tuple[bytes, ...]:
+        calls[path] += 1
+        return candidate_fingerprints[path]
+
+    monkeypatch.setattr(matcher, "_candidate_fingerprints_path", fake_candidate_fingerprints)
+
+    requests = [
+        visual_asset_matcher.VisualPanelRequest(
+            panel_id="panel-v1",
+            pdf_path="plate-v1.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 1.0, 1.0),
+        ),
+        visual_asset_matcher.VisualPanelRequest(
+            panel_id="panel-v2",
+            pdf_path="plate-v2.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 1.0, 1.0),
+        ),
+    ]
+    candidates = [
+        (SimpleNamespace(id="a"), candidate_a),
+        (SimpleNamespace(id="b"), candidate_b),
+    ]
+
+    matches = matcher.match_panels(panels=requests, candidates=candidates)
+
+    assert set(matches) == {"panel-v1", "panel-v2"}
+    assert calls == Counter({candidate_a: 1, candidate_b: 1})
+
+
+def test_match_panels_opens_each_pdf_once_per_batch(tmp_path, monkeypatch):
+    original = tmp_path / "original.jpg"
+    pdf_path = tmp_path / "plate.pdf"
+    _write_pattern_jpg(original)
+    bbox_a, bbox_b = _write_pdf_with_reused_image_twice(original, pdf_path)
+
+    real_open = pymupdf.open
+    open_count = 0
+
+    def counting_open(*args, **kwargs):
+        nonlocal open_count
+        open_count += 1
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(visual_asset_matcher.pymupdf, "open", counting_open)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    matcher.match_panels(
+        panels=[
+            visual_asset_matcher.VisualPanelRequest(
+                panel_id="panel-a",
+                pdf_path=pdf_path,
+                physical_page=1,
+                bbox=bbox_a,
+            ),
+            visual_asset_matcher.VisualPanelRequest(
+                panel_id="panel-b",
+                pdf_path=pdf_path,
+                physical_page=1,
+                bbox=bbox_b,
+            ),
+        ],
+        candidates=[(SimpleNamespace(id="original"), original)],
+    )
+
+    assert open_count == 1
