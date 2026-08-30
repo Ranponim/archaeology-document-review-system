@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -17,12 +18,21 @@ class VisualAssetMatch:
     method: str = "pixel_thumbnail_similarity"
 
 
-class VisualAssetMatcher:
-    """Conservatively match one safely segmented PDF panel to an original image.
+@dataclass(frozen=True, slots=True)
+class VisualPanelRequest:
+    panel_id: str
+    pdf_path: str | Path
+    physical_page: int
+    bbox: tuple[float, float, float, float]
 
-    Matching is intentionally deterministic and fail-closed: the best normalized
+
+class VisualAssetMatcher:
+    """Conservatively match safely segmented PDF panels to original images.
+
+    Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
-    second-best candidate. Equal or near-equal candidates are unresolved.
+    second-best candidate. Batch matching additionally requires the selected
+    source JPG to be unique across the supplied panels.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -176,3 +186,29 @@ class VisualAssetMatcher:
         if len(scored) > 1 and best_score - scored[1][0] < self._minimum_margin:
             return None
         return VisualAssetMatch(source_asset_id=best_id, score=best_score)
+
+    def match_panels(
+        self,
+        *,
+        panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
+        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> dict[str, VisualAssetMatch]:
+        local_matches: dict[str, VisualAssetMatch] = {}
+        for panel in panels:
+            match = self.match_panel(
+                pdf_path=panel.pdf_path,
+                physical_page=panel.physical_page,
+                bbox=panel.bbox,
+                candidates=candidates,
+            )
+            if match is not None:
+                local_matches[panel.panel_id] = match
+
+        source_counts = Counter(
+            match.source_asset_id for match in local_matches.values()
+        )
+        return {
+            panel_id: match
+            for panel_id, match in local_matches.items()
+            if source_counts[match.source_asset_id] == 1
+        }
