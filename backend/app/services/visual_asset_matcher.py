@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +9,7 @@ from PIL import Image, ImageOps
 import pymupdf
 
 from app.domain.source_assets import OriginalAssetData
+from app.services.geometric_visual_retriever import GeometricVisualRetriever
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,9 @@ class VisualAssetMatch:
     source_asset_id: str
     score: float
     method: str = "pixel_thumbnail_similarity"
+    geometric_good_matches: int | None = None
+    geometric_inliers: int | None = None
+    geometric_inlier_ratio: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,17 +75,18 @@ class VisualPanelRequest:
 
 
 class VisualAssetMatcher:
-    """Conservatively match safely segmented PDF panels to original images.
+    """Hybrid visual matcher for safely segmented PDF panels.
 
-    Local matching is deterministic and fail-closed: the best normalized
-    thumbnail similarity must clear a high threshold and be separated from the
-    second-best candidate. Batch matching additionally requires the selected
-    source JPG to be unique across distinct physical panel geometries within
-    each explicit revision/uniqueness scope.
+    Tier 0 keeps the existing conservative pixel-thumbnail contract unchanged:
+    score >= ``minimum_score`` and separation >= ``minimum_margin``. When Tier
+    0 cannot verify a panel, a bounded shortlist is passed to a SIFT/RANSAC
+    geometric verifier that can recover crop, resize and rotation without
+    lowering the pixel safety threshold.
 
-    ``assess_panel`` preserves failure reason and ranked candidates without
-    changing the verification threshold. ``match_panel`` remains the backwards-
-    compatible verified-only API.
+    Filename, path, caption and sequence metadata are never verification
+    evidence. Batch uniqueness is enforced across distinct physical panel
+    geometries within each revision scope; identical parser aliases share one
+    geometry and therefore do not manufacture a collision.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -95,10 +100,21 @@ class VisualAssetMatcher:
         minimum_score: float = 0.97,
         minimum_margin: float = 0.03,
         fingerprint_size: tuple[int, int] = (32, 32),
+        geometric_candidate_pool: int = 50,
+        geometric_minimum_margin: float = 0.08,
+        geometric_retriever: GeometricVisualRetriever | None = None,
     ) -> None:
+        if geometric_candidate_pool < 1:
+            raise ValueError("geometric_candidate_pool must be at least 1")
+        if geometric_minimum_margin < 0.0:
+            raise ValueError("geometric_minimum_margin cannot be negative")
+
         self._minimum_score = float(minimum_score)
         self._minimum_margin = float(minimum_margin)
         self._fingerprint_size = fingerprint_size
+        self._geometric_candidate_pool = int(geometric_candidate_pool)
+        self._geometric_minimum_margin = float(geometric_minimum_margin)
+        self._geometric_retriever = geometric_retriever or GeometricVisualRetriever()
 
     @staticmethod
     def _normalize_image(image: Image.Image) -> Image.Image:
@@ -200,13 +216,18 @@ class VisualAssetMatcher:
         union_area = left.width * left.height + right.width * right.height - inter_area
         return inter_area / union_area if union_area > 0 else 0.0
 
-    def _panel_fingerprint(
+    def _panel_image(
         self,
         pdf_path: Path,
         physical_page: int,
         bbox: tuple[float, float, float, float],
-    ) -> bytes | None:
-        doc = pymupdf.open(str(pdf_path))
+    ) -> Image.Image | None:
+        if not pdf_path.is_file():
+            return None
+        try:
+            doc = pymupdf.open(str(pdf_path))
+        except (OSError, ValueError):
+            return None
         try:
             if physical_page < 1 or physical_page > len(doc):
                 return None
@@ -223,19 +244,69 @@ class VisualAssetMatcher:
                 return None
             occurrences.sort(key=lambda item: item[0], reverse=True)
             best_score = occurrences[0][0]
-            best_xrefs = {xref for score, xref in occurrences if abs(score - best_score) < 1e-6}
+            best_xrefs = {
+                xref
+                for score, xref in occurrences
+                if abs(score - best_score) < 1e-6
+            }
             if len(best_xrefs) != 1:
                 return None
-            xref = next(iter(best_xrefs))
-            extracted = doc.extract_image(xref)
+            extracted = doc.extract_image(next(iter(best_xrefs)))
             data = extracted.get("image")
             if not data:
                 return None
             with Image.open(BytesIO(data)) as image:
                 image.load()
-                return self._fingerprint_image(image)
+                return ImageOps.exif_transpose(image).convert("RGB").copy()
+        except (OSError, ValueError):
+            return None
         finally:
             doc.close()
+
+    def _panel_fingerprint(
+        self,
+        pdf_path: Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+    ) -> bytes | None:
+        panel_image = self._panel_image(pdf_path, physical_page, bbox)
+        if panel_image is None:
+            return None
+        return self._fingerprint_image(panel_image)
+
+    def _geometric_match(
+        self,
+        *,
+        pdf_path: Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+        candidates: list[tuple[OriginalAssetData, Path]],
+    ) -> VisualAssetMatch | None:
+        if not candidates:
+            return None
+        panel_image = self._panel_image(pdf_path, physical_page, bbox)
+        if panel_image is None:
+            return None
+        ranked = self._geometric_retriever.rank(
+            panel_image=panel_image,
+            candidates=candidates,
+            top_k=2,
+        )
+        if not ranked:
+            return None
+        best = ranked[0]
+        if len(ranked) > 1:
+            geometric_margin = best.score - ranked[1].score
+            if geometric_margin < self._geometric_minimum_margin:
+                return None
+        return VisualAssetMatch(
+            source_asset_id=best.source_asset_id,
+            score=best.score,
+            method="sift_ransac",
+            geometric_good_matches=best.good_matches,
+            geometric_inliers=best.inliers,
+            geometric_inlier_ratio=best.inlier_ratio,
+        )
 
     def assess_panel(
         self,
@@ -249,7 +320,8 @@ class VisualAssetMatcher:
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
 
-        panel_fingerprint = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
+        resolved_pdf = Path(pdf_path)
+        panel_fingerprint = self._panel_fingerprint(resolved_pdf, physical_page, bbox)
         if panel_fingerprint is None:
             return VisualPanelAssessment(
                 status="INSUFFICIENT_PANEL",
@@ -258,7 +330,7 @@ class VisualAssetMatcher:
                 candidates=(),
             )
 
-        scored: list[tuple[float, str]] = []
+        scored: list[tuple[float, str, OriginalAssetData, Path]] = []
         for asset, candidate_path in candidates:
             path = Path(candidate_path)
             if not path.is_file():
@@ -271,7 +343,7 @@ class VisualAssetMatcher:
                 self._similarity(panel_fingerprint, fingerprint)
                 for fingerprint in fingerprints
             )
-            scored.append((score, asset.id))
+            scored.append((score, asset.id, asset, path))
 
         if not scored:
             return VisualPanelAssessment(
@@ -282,35 +354,53 @@ class VisualAssetMatcher:
             )
 
         scored.sort(key=lambda item: (-item[0], item[1]))
-        best_score, best_id = scored[0]
+        best_score, best_id, _, _ = scored[0]
         margin = best_score - scored[1][0] if len(scored) > 1 else None
         ranked = tuple(
             RankedVisualCandidate(source_asset_id=source_asset_id, score=score)
-            for score, source_asset_id in scored[:top_k]
+            for score, source_asset_id, _, _ in scored[:top_k]
         )
 
+        pixel_status = "VERIFIED"
         if best_score < self._minimum_score:
+            pixel_status = "BELOW_SCORE"
+        elif margin is not None and margin < self._minimum_margin:
+            pixel_status = "AMBIGUOUS_MARGIN"
+
+        if pixel_status == "VERIFIED":
+            match = VisualAssetMatch(source_asset_id=best_id, score=best_score)
             return VisualPanelAssessment(
-                status="BELOW_SCORE",
+                status="VERIFIED",
                 best_score=best_score,
                 margin=margin,
                 candidates=ranked,
-            )
-        if margin is not None and margin < self._minimum_margin:
-            return VisualPanelAssessment(
-                status="AMBIGUOUS_MARGIN",
-                best_score=best_score,
-                margin=margin,
-                candidates=ranked,
+                match=match,
             )
 
-        match = VisualAssetMatch(source_asset_id=best_id, score=best_score)
+        geometric_candidates = [
+            (asset, path)
+            for _, _, asset, path in scored[: self._geometric_candidate_pool]
+        ]
+        geometric_match = self._geometric_match(
+            pdf_path=resolved_pdf,
+            physical_page=physical_page,
+            bbox=bbox,
+            candidates=geometric_candidates,
+        )
+        if geometric_match is not None:
+            return VisualPanelAssessment(
+                status="VERIFIED",
+                best_score=best_score,
+                margin=margin,
+                candidates=ranked,
+                match=geometric_match,
+            )
+
         return VisualPanelAssessment(
-            status="VERIFIED",
+            status=pixel_status,
             best_score=best_score,
             margin=margin,
             candidates=ranked,
-            match=match,
         )
 
     def match_panel(
