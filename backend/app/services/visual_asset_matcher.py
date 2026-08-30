@@ -19,6 +19,21 @@ class VisualAssetMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class RankedVisualCandidate:
+    source_asset_id: str
+    score: float
+
+
+@dataclass(frozen=True, slots=True)
+class VisualPanelAssessment:
+    status: str
+    best_score: float | None
+    margin: float | None
+    candidates: tuple[RankedVisualCandidate, ...]
+    match: VisualAssetMatch | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VisualPanelRequest:
     panel_id: str
     pdf_path: str | Path
@@ -46,6 +61,10 @@ class VisualAssetMatcher:
     thumbnail similarity must clear a high threshold and be separated from the
     second-best candidate. Batch matching additionally requires the selected
     source JPG to be unique within each explicit revision/uniqueness scope.
+
+    ``assess_panel`` preserves failure reason and ranked candidates without
+    changing the verification threshold. ``match_panel`` remains the backwards-
+    compatible verified-only API.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -81,12 +100,7 @@ class VisualAssetMatcher:
 
     @classmethod
     def _trim_light_border(cls, image: Image.Image) -> Image.Image | None:
-        """Return one conservative border-trimmed view, never a replacement.
-
-        The original image is always retained as a candidate view.  This helper
-        only contributes an additional view when a material light border
-        surrounds a reasonably sized darker content region.
-        """
+        """Return one conservative border-trimmed view, never a replacement."""
 
         width, height = image.size
         if width < 2 or height < 2:
@@ -206,17 +220,26 @@ class VisualAssetMatcher:
         finally:
             doc.close()
 
-    def match_panel(
+    def assess_panel(
         self,
         *,
         pdf_path: str | Path,
         physical_page: int,
         bbox: tuple[float, float, float, float],
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
-    ) -> VisualAssetMatch | None:
+        top_k: int = 5,
+    ) -> VisualPanelAssessment:
+        if top_k < 1:
+            raise ValueError("top_k must be at least 1")
+
         panel_fingerprint = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
         if panel_fingerprint is None:
-            return None
+            return VisualPanelAssessment(
+                status="INSUFFICIENT_PANEL",
+                best_score=None,
+                margin=None,
+                candidates=(),
+            )
 
         scored: list[tuple[float, str]] = []
         for asset, candidate_path in candidates:
@@ -234,14 +257,59 @@ class VisualAssetMatcher:
             scored.append((score, asset.id))
 
         if not scored:
-            return None
+            return VisualPanelAssessment(
+                status="NO_CANDIDATE",
+                best_score=None,
+                margin=None,
+                candidates=(),
+            )
+
         scored.sort(key=lambda item: (-item[0], item[1]))
         best_score, best_id = scored[0]
+        margin = best_score - scored[1][0] if len(scored) > 1 else None
+        ranked = tuple(
+            RankedVisualCandidate(source_asset_id=source_asset_id, score=score)
+            for score, source_asset_id in scored[:top_k]
+        )
+
         if best_score < self._minimum_score:
-            return None
-        if len(scored) > 1 and best_score - scored[1][0] < self._minimum_margin:
-            return None
-        return VisualAssetMatch(source_asset_id=best_id, score=best_score)
+            return VisualPanelAssessment(
+                status="BELOW_SCORE",
+                best_score=best_score,
+                margin=margin,
+                candidates=ranked,
+            )
+        if margin is not None and margin < self._minimum_margin:
+            return VisualPanelAssessment(
+                status="AMBIGUOUS_MARGIN",
+                best_score=best_score,
+                margin=margin,
+                candidates=ranked,
+            )
+
+        match = VisualAssetMatch(source_asset_id=best_id, score=best_score)
+        return VisualPanelAssessment(
+            status="VERIFIED",
+            best_score=best_score,
+            margin=margin,
+            candidates=ranked,
+            match=match,
+        )
+
+    def match_panel(
+        self,
+        *,
+        pdf_path: str | Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> VisualAssetMatch | None:
+        return self.assess_panel(
+            pdf_path=pdf_path,
+            physical_page=physical_page,
+            bbox=bbox,
+            candidates=candidates,
+        ).match
 
     def match_panels(
         self,
