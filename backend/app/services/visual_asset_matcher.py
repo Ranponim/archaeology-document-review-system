@@ -66,7 +66,11 @@ class VisualAssetMatcher:
 
     @staticmethod
     def _normalize_image(image: Image.Image) -> Image.Image:
-        return ImageOps.exif_transpose(image).convert("L")
+        normalized = ImageOps.exif_transpose(image).convert("L")
+        # Publication/export revisions can change exposure or tonal range while
+        # preserving the underlying photograph. Normalize only the grayscale
+        # range; geometry and pixel structure still drive the actual match.
+        return ImageOps.autocontrast(normalized)
 
     @staticmethod
     def _center_crop(image: Image.Image, fraction: float) -> Image.Image:
