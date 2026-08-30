@@ -66,11 +66,7 @@ class VisualAssetMatcher:
 
     @staticmethod
     def _normalize_image(image: Image.Image) -> Image.Image:
-        normalized = ImageOps.exif_transpose(image).convert("L")
-        # Publication/export revisions can change exposure or tonal range while
-        # preserving the underlying photograph. Normalize only the grayscale
-        # range; geometry and pixel structure still drive the actual match.
-        return ImageOps.autocontrast(normalized)
+        return ImageOps.exif_transpose(image).convert("L")
 
     @staticmethod
     def _center_crop(image: Image.Image, fraction: float) -> Image.Image:
@@ -124,8 +120,17 @@ class VisualAssetMatcher:
         canvas.paste(thumbnail, (left, top))
         return canvas.tobytes()
 
-    def _fingerprint_image(self, image: Image.Image) -> bytes:
-        return self._fingerprint_normalized(self._normalize_image(image))
+    def _fingerprint_variants(self, normalized: Image.Image) -> tuple[bytes, ...]:
+        """Keep the raw signal and add one exposure-normalized fallback."""
+
+        raw = self._fingerprint_normalized(normalized)
+        tonal = self._fingerprint_normalized(ImageOps.autocontrast(normalized))
+        if tonal == raw:
+            return (raw,)
+        return (raw, tonal)
+
+    def _fingerprint_image(self, image: Image.Image) -> tuple[bytes, ...]:
+        return self._fingerprint_variants(self._normalize_image(image))
 
     def _candidate_fingerprints(self, image: Image.Image) -> tuple[bytes, ...]:
         normalized = self._normalize_image(image)
@@ -134,12 +139,12 @@ class VisualAssetMatcher:
         if trimmed is not None:
             views.append(trimmed)
 
-        fingerprints = []
+        fingerprints: list[bytes] = []
         for view in views:
-            fingerprints.extend(
-                self._fingerprint_normalized(self._center_crop(view, fraction))
-                for fraction in self._CANDIDATE_CROP_FRACTIONS
-            )
+            for fraction in self._CANDIDATE_CROP_FRACTIONS:
+                fingerprints.extend(
+                    self._fingerprint_variants(self._center_crop(view, fraction))
+                )
         return tuple(fingerprints)
 
     def _candidate_fingerprints_path(self, path: Path) -> tuple[bytes, ...]:
@@ -194,7 +199,7 @@ class VisualAssetMatcher:
         doc: pymupdf.Document,
         physical_page: int,
         bbox: tuple[float, float, float, float],
-    ) -> bytes | None:
+    ) -> tuple[bytes, ...] | None:
         if physical_page < 1 or physical_page > len(doc):
             return None
         page = doc[physical_page - 1]
@@ -227,7 +232,7 @@ class VisualAssetMatcher:
         pdf_path: Path,
         physical_page: int,
         bbox: tuple[float, float, float, float],
-    ) -> bytes | None:
+    ) -> tuple[bytes, ...] | None:
         batch_documents = _BATCH_PDF_DOCUMENTS.get()
         if batch_documents is not None:
             key = (id(self), self._pdf_identity(pdf_path))
@@ -243,6 +248,16 @@ class VisualAssetMatcher:
         finally:
             doc.close()
 
+    @staticmethod
+    def _panel_fingerprint_variants(
+        value: bytes | tuple[bytes, ...],
+    ) -> tuple[bytes, ...]:
+        # Preserve test/integration compatibility with callers that replace the
+        # private extractor with one legacy fingerprint.
+        if isinstance(value, bytes):
+            return (value,)
+        return value
+
     def match_panel(
         self,
         *,
@@ -251,9 +266,10 @@ class VisualAssetMatcher:
         bbox: tuple[float, float, float, float],
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
     ) -> VisualAssetMatch | None:
-        panel_fingerprint = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
-        if panel_fingerprint is None:
+        panel_value = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
+        if panel_value is None:
             return None
+        panel_fingerprints = self._panel_fingerprint_variants(panel_value)
 
         scored: list[tuple[float, str]] = []
         for asset, candidate_path in candidates:
@@ -265,6 +281,7 @@ class VisualAssetMatcher:
                 continue
             score = max(
                 self._similarity(panel_fingerprint, fingerprint)
+                for panel_fingerprint in panel_fingerprints
                 for fingerprint in fingerprints
             )
             scored.append((score, asset.id))
