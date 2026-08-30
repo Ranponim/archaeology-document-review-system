@@ -169,3 +169,36 @@ def test_match_panels_fails_closed_when_two_panels_select_same_source(monkeypatc
     matches = matcher.match_panels(panels=requests, candidates=[])
 
     assert matches == {}
+
+
+def test_match_panels_allows_same_source_once_per_distinct_plate_pdf(monkeypatch):
+    request_type = visual_asset_matcher.VisualPanelRequest
+    matcher = VisualAssetMatcher()
+    requests = [
+        request_type(
+            panel_id="panel-v1",
+            pdf_path="plate-v1.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+        request_type(
+            panel_id="panel-v2",
+            pdf_path="plate-v2.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        matcher,
+        "match_panel",
+        lambda **_: visual_asset_matcher.VisualAssetMatch(
+            source_asset_id="reused-photo",
+            score=0.99,
+        ),
+    )
+
+    matches = matcher.match_panels(panels=requests, candidates=[])
+
+    assert set(matches) == {"panel-v1", "panel-v2"}
+    assert {match.source_asset_id for match in matches.values()} == {"reused-photo"}
