@@ -139,18 +139,20 @@ def test_match_panel_trims_light_source_border_without_lowering_safety_threshold
     assert match.score >= 0.97
 
 
-def test_match_panels_fails_closed_when_two_panels_select_same_source(monkeypatch):
+def test_match_panels_fails_closed_when_two_panels_in_same_revision_select_same_source(monkeypatch):
     request_type = visual_asset_matcher.VisualPanelRequest
     matcher = VisualAssetMatcher()
     requests = [
         request_type(
             panel_id="panel-a",
+            uniqueness_scope_id="pdf-a",
             pdf_path="plate.pdf",
             physical_page=1,
             bbox=(0.0, 0.0, 0.5, 0.5),
         ),
         request_type(
             panel_id="panel-b",
+            uniqueness_scope_id="pdf-a",
             pdf_path="plate.pdf",
             physical_page=1,
             bbox=(0.5, 0.0, 1.0, 0.5),
@@ -169,3 +171,37 @@ def test_match_panels_fails_closed_when_two_panels_select_same_source(monkeypatc
     matches = matcher.match_panels(panels=requests, candidates=[])
 
     assert matches == {}
+
+
+def test_match_panels_allows_same_source_across_revision_scopes(monkeypatch):
+    request_type = visual_asset_matcher.VisualPanelRequest
+    matcher = VisualAssetMatcher()
+    requests = [
+        request_type(
+            panel_id="rev-a-panel",
+            uniqueness_scope_id="pdf-a",
+            pdf_path="a.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+        request_type(
+            panel_id="rev-b-panel",
+            uniqueness_scope_id="pdf-b",
+            pdf_path="b.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        matcher,
+        "match_panel",
+        lambda **_: visual_asset_matcher.VisualAssetMatch(
+            source_asset_id="same-photo",
+            score=0.99,
+        ),
+    )
+
+    matches = matcher.match_panels(panels=requests, candidates=[])
+
+    assert set(matches) == {"rev-a-panel", "rev-b-panel"}
