@@ -32,7 +32,8 @@ class VisualAssetMatcher:
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
     second-best candidate. Batch matching additionally requires the selected
-    source JPG to be unique across the supplied panels.
+    source JPG to be unique within each supplied PDF. The same original may be
+    reused by a distinct PDF revision/version.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -70,7 +71,7 @@ class VisualAssetMatcher:
     def _trim_light_border(cls, image: Image.Image) -> Image.Image | None:
         """Return one conservative border-trimmed view, never a replacement.
 
-        The original image is always retained as a candidate view.  This helper
+        The original image is always retained as a candidate view. This helper
         only contributes an additional view when a material light border
         surrounds a reasonably sized darker content region.
         """
@@ -156,6 +157,13 @@ class VisualAssetMatcher:
         union_area = left.width * left.height + right.width * right.height - inter_area
         return inter_area / union_area if union_area > 0 else 0.0
 
+    @staticmethod
+    def _pdf_identity(pdf_path: str | Path) -> str:
+        # PDF paths can arrive with Windows or POSIX separators. Collision
+        # safety is scoped to one PDF, so normalize only enough to make the same
+        # path compare consistently without requiring that the path exists.
+        return str(pdf_path).replace("\\", "/").casefold()
+
     def _panel_fingerprint(
         self,
         pdf_path: Path,
@@ -236,7 +244,7 @@ class VisualAssetMatcher:
         panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
     ) -> dict[str, VisualAssetMatch]:
-        local_matches: dict[str, VisualAssetMatch] = {}
+        local_matches: dict[str, tuple[VisualAssetMatch, str]] = {}
         for panel in panels:
             match = self.match_panel(
                 pdf_path=panel.pdf_path,
@@ -245,13 +253,17 @@ class VisualAssetMatcher:
                 candidates=candidates,
             )
             if match is not None:
-                local_matches[panel.panel_id] = match
+                local_matches[panel.panel_id] = (
+                    match,
+                    self._pdf_identity(panel.pdf_path),
+                )
 
         source_counts = Counter(
-            match.source_asset_id for match in local_matches.values()
+            (pdf_identity, match.source_asset_id)
+            for match, pdf_identity in local_matches.values()
         )
         return {
             panel_id: match
-            for panel_id, match in local_matches.items()
-            if source_counts[match.source_asset_id] == 1
+            for panel_id, (match, pdf_identity) in local_matches.items()
+            if source_counts[(pdf_identity, match.source_asset_id)] == 1
         }
