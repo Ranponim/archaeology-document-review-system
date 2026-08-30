@@ -15,6 +15,7 @@ from app.domain.canonical_models import (
 from app.domain.reference_corpus import ReferenceCorpusData, ReferenceCorpusStatus
 from app.services.drawing_identity_resolver import DrawingIdentityResolution
 from app.services.reference_corpus_service import ReferenceCorpusService
+from app.services.visual_asset_matcher import VisualAssetMatch
 
 
 def _corpus(status: ReferenceCorpusStatus = ReferenceCorpusStatus.STAGING):
@@ -130,6 +131,42 @@ class PlateParser:
         )
 
 
+class SegmentedPlateParser:
+    def parse(self, path, **kwargs):
+        return SimpleNamespace(
+            plates=[
+                PlateData(
+                    plate_id="legacy-plate-3",
+                    number="3",
+                    physical_page=1,
+                    title="유적 전경",
+                    source_sha256="derived-pdf-sha",
+                    panels=[
+                        PlatePanelData(
+                            panel_id="legacy-panel-1",
+                            plate_id="legacy-plate-3",
+                            panel_index=1,
+                            caption="전경 1",
+                            bbox=(0.05, 0.10, 0.45, 0.45),
+                            bbox_status="segmented",
+                            physical_page=1,
+                        ),
+                        PlatePanelData(
+                            panel_id="legacy-panel-2",
+                            plate_id="legacy-plate-3",
+                            panel_index=2,
+                            caption="전경 2",
+                            bbox=(0.55, 0.10, 0.95, 0.45),
+                            bbox_status="segmented",
+                            physical_page=1,
+                        ),
+                    ],
+                    raw_identifier="【도판 3】",
+                )
+            ]
+        )
+
+
 class DrawingResolver:
     def resolve(self, *, corpus_id, asset, source_path):
         return DrawingIdentityResolution(
@@ -156,6 +193,20 @@ class Matcher:
     def match_panel(self, **kwargs):
         self.calls.append(kwargs)
         return None
+
+
+class BatchMatcher:
+    def __init__(self):
+        self.calls = []
+
+    def match_panels(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "plate-panel:c1:3:1": VisualAssetMatch(
+                source_asset_id="photo",
+                score=0.99,
+            )
+        }
 
 
 def test_plate_pdf_is_valid_adobe_free_source_role():
@@ -220,3 +271,45 @@ def test_adobe_free_build_uses_plate_pdf_ai_and_explicit_unresolved_panel(tmp_pa
     assert drawings[0].source_asset_id == "drawing"
     assert drawings[0].evidence_level == EvidenceLevel.HEURISTIC
     assert any(artifact.artifact_type == "build_diagnostics" for artifact in repository.artifacts)
+
+
+def test_adobe_free_build_resolves_segmented_panels_once_as_a_corpus_batch(tmp_path):
+    repository = Repository()
+    matcher = BatchMatcher()
+    paths = {}
+    for row in repository.sources:
+        path = tmp_path / row["relative_path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(row["sha256"].encode("ascii"))
+        paths[row["uri"]] = path
+
+    service = ReferenceCorpusService(
+        repository,
+        NoAdobeConverter(),
+        LegacyCanonicalizer(),
+        artifact_root=tmp_path / "derived",
+        source_path_resolver=lambda uri: paths[uri],
+        plate_parser=SegmentedPlateParser(),
+        drawing_identity_resolver=DrawingResolver(),
+        visual_asset_matcher=matcher,
+    )
+
+    result = service.build("p1", "c1")
+
+    assert result.status == ReferenceCorpusStatus.READY
+    assert len(matcher.calls) == 1
+    request_ids = [item.panel_id for item in matcher.calls[0]["panels"]]
+    assert request_ids == ["plate-panel:c1:3:1", "plate-panel:c1:3:2"]
+    assert len(matcher.calls[0]["candidates"]) == 1
+
+    assert repository.visuals is not None
+    plates, _ = repository.visuals
+    first, second = plates[0].panels
+    assert first.source_asset_id == "photo"
+    assert first.source_sha256 == "sha-photo"
+    assert first.evidence_level == EvidenceLevel.DERIVED_VERIFIED
+    assert first.evidence_method == "pixel_thumbnail_similarity"
+    assert second.source_asset_id is None
+    assert second.source_sha256 is None
+    assert second.evidence_level == EvidenceLevel.UNRESOLVED
+    assert second.evidence_method == "panel_source_unresolved"
