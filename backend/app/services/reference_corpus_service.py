@@ -28,7 +28,7 @@ from app.services.adobe_conversion_client import (
 from app.services.drawing_identity_resolver import DrawingIdentityResolver
 from app.services.plate_parser import PlateParser
 from app.services.reference_canonicalizer import CanonicalizationError, ReferenceCanonicalizer
-from app.services.visual_asset_matcher import VisualAssetMatcher
+from app.services.visual_asset_matcher import VisualAssetMatcher, VisualPanelRequest
 
 
 _ROLE_SUFFIXES = {
@@ -455,8 +455,7 @@ class ReferenceCorpusService:
 
         plates = []
         seen_plate_numbers: set[str] = set()
-        matched_panel_count = 0
-        unresolved_panel_count = 0
+        panel_requests: list[VisualPanelRequest] = []
 
         for row in rows_by_role.get("plate_pdf", []):
             source = by_id[str(row["id"])]
@@ -472,41 +471,32 @@ class ReferenceCorpusService:
                 plate_id = f"plate:{corpus_id}:{plate.number}"
                 panels = []
                 for panel in plate.panels:
-                    source_asset_id = None
-                    source_sha256 = None
-                    evidence_level = EvidenceLevel.UNRESOLVED
-                    evidence_method = "panel_source_unresolved"
-                    if panel.bbox is not None and panel.bbox_status == "segmented":
-                        match = self._visual_asset_matcher.match_panel(
-                            pdf_path=source_path,
-                            physical_page=panel.physical_page or plate.physical_page,
-                            bbox=panel.bbox,
-                            candidates=link_candidates,
-                        )
-                        if match is not None:
-                            matched_asset = link_assets.get(match.source_asset_id)
-                            if matched_asset is not None:
-                                source_asset_id = matched_asset.id
-                                source_sha256 = matched_asset.sha256
-                                evidence_level = EvidenceLevel.DERIVED_VERIFIED
-                                evidence_method = match.method
-                                matched_panel_count += 1
-                    if source_asset_id is None:
-                        unresolved_panel_count += 1
+                    panel_id = (
+                        f"plate-panel:{corpus_id}:{plate.number}:"
+                        f"{panel.panel_index}"
+                    )
                     panels.append(
                         replace(
                             panel,
-                            panel_id=(
-                                f"plate-panel:{corpus_id}:{plate.number}:"
-                                f"{panel.panel_index}"
-                            ),
+                            panel_id=panel_id,
                             plate_id=plate_id,
-                            source_sha256=source_sha256,
-                            source_asset_id=source_asset_id,
-                            evidence_level=evidence_level,
-                            evidence_method=evidence_method,
+                            source_sha256=None,
+                            source_asset_id=None,
+                            evidence_level=EvidenceLevel.UNRESOLVED,
+                            evidence_method="panel_source_unresolved",
                         )
                     )
+                    if panel.bbox is not None and panel.bbox_status == "segmented":
+                        panel_requests.append(
+                            VisualPanelRequest(
+                                panel_id=panel_id,
+                                pdf_path=source_path,
+                                physical_page=(
+                                    panel.physical_page or plate.physical_page
+                                ),
+                                bbox=panel.bbox,
+                            )
+                        )
                 plates.append(
                     replace(
                         plate,
@@ -521,6 +511,42 @@ class ReferenceCorpusService:
                         evidence_method="plate_pdf_identifier",
                     )
                 )
+
+        panel_matches = {}
+        if panel_requests:
+            panel_matches = self._visual_asset_matcher.match_panels(
+                panels=panel_requests,
+                candidates=link_candidates,
+            )
+
+        matched_panel_count = 0
+        unresolved_panel_count = 0
+        resolved_plates = []
+        for plate in plates:
+            resolved_panels = []
+            for panel in plate.panels:
+                match = panel_matches.get(panel.panel_id)
+                matched_asset = (
+                    link_assets.get(match.source_asset_id)
+                    if match is not None
+                    else None
+                )
+                if matched_asset is None:
+                    unresolved_panel_count += 1
+                    resolved_panels.append(panel)
+                    continue
+                matched_panel_count += 1
+                resolved_panels.append(
+                    replace(
+                        panel,
+                        source_asset_id=matched_asset.id,
+                        source_sha256=matched_asset.sha256,
+                        evidence_level=EvidenceLevel.DERIVED_VERIFIED,
+                        evidence_method=match.method,
+                    )
+                )
+            resolved_plates.append(replace(plate, panels=resolved_panels))
+        plates = resolved_plates
 
         drawing_by_number = {}
         conflicted_numbers: set[str] = set()
