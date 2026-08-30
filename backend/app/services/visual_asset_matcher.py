@@ -21,6 +21,7 @@ class VisualAssetMatch:
 @dataclass(frozen=True, slots=True)
 class VisualPanelRequest:
     panel_id: str
+    uniqueness_scope_id: str
     pdf_path: str | Path
     physical_page: int
     bbox: tuple[float, float, float, float]
@@ -32,7 +33,7 @@ class VisualAssetMatcher:
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
     second-best candidate. Batch matching additionally requires the selected
-    source JPG to be unique across the supplied panels.
+    source JPG to be unique within each explicit revision/uniqueness scope.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -237,6 +238,9 @@ class VisualAssetMatcher:
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
     ) -> dict[str, VisualAssetMatch]:
         local_matches: dict[str, VisualAssetMatch] = {}
+        scope_by_panel = {
+            panel.panel_id: panel.uniqueness_scope_id for panel in panels
+        }
         for panel in panels:
             match = self.match_panel(
                 pdf_path=panel.pdf_path,
@@ -248,10 +252,11 @@ class VisualAssetMatcher:
                 local_matches[panel.panel_id] = match
 
         source_counts = Counter(
-            match.source_asset_id for match in local_matches.values()
+            (scope_by_panel[panel_id], match.source_asset_id)
+            for panel_id, match in local_matches.items()
         )
         return {
             panel_id: match
             for panel_id, match in local_matches.items()
-            if source_counts[match.source_asset_id] == 1
+            if source_counts[(scope_by_panel[panel_id], match.source_asset_id)] == 1
         }
