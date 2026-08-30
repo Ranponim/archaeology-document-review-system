@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pymupdf
 from PIL import Image, ImageDraw
 
+import app.services.visual_asset_matcher as visual_asset_matcher
 from app.services.visual_asset_matcher import VisualAssetMatcher
 
 
@@ -72,3 +73,35 @@ def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_thresho
     assert match is not None
     assert match.source_asset_id == "original"
     assert match.score >= 0.97
+
+
+def test_match_panels_fails_closed_when_two_panels_select_same_source(monkeypatch):
+    request_type = visual_asset_matcher.VisualPanelRequest
+    matcher = VisualAssetMatcher()
+    requests = [
+        request_type(
+            panel_id="panel-a",
+            pdf_path="plate.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+        request_type(
+            panel_id="panel-b",
+            pdf_path="plate.pdf",
+            physical_page=1,
+            bbox=(0.5, 0.0, 1.0, 0.5),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        matcher,
+        "match_panel",
+        lambda **_: visual_asset_matcher.VisualAssetMatch(
+            source_asset_id="same-photo",
+            score=0.99,
+        ),
+    )
+
+    matches = matcher.match_panels(panels=requests, candidates=[])
+
+    assert matches == {}
