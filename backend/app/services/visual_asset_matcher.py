@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextvars import ContextVar
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -9,6 +10,16 @@ from PIL import Image, ImageOps
 import pymupdf
 
 from app.domain.source_assets import OriginalAssetData
+
+
+_BATCH_CANDIDATE_FINGERPRINTS: ContextVar[dict[Path, tuple[bytes, ...] | None] | None] = ContextVar(
+    "visual_asset_matcher_batch_candidate_fingerprints",
+    default=None,
+)
+_BATCH_PDF_DOCUMENTS: ContextVar[dict[tuple[int, str], pymupdf.Document] | None] = ContextVar(
+    "visual_asset_matcher_batch_pdf_documents",
+    default=None,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,9 +42,10 @@ class VisualAssetMatcher:
 
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
-    second-best candidate. Batch matching additionally requires the selected
-    source JPG to be unique within each supplied PDF. The same original may be
-    reused by a distinct PDF revision/version.
+    second-best candidate. Batch matching reuses expensive candidate/PDF work
+    and additionally requires the selected source JPG to be unique within each
+    supplied PDF. The same original may be reused by a distinct PDF
+    revision/version.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -131,6 +143,15 @@ class VisualAssetMatcher:
             image.load()
             return self._candidate_fingerprints(image)
 
+    def _candidate_fingerprints_for_match(self, path: Path) -> tuple[bytes, ...] | None:
+        batch_cache = _BATCH_CANDIDATE_FINGERPRINTS.get()
+        if batch_cache is not None and path in batch_cache:
+            return batch_cache[path]
+        try:
+            return self._candidate_fingerprints_path(path)
+        except (OSError, ValueError):
+            return None
+
     @staticmethod
     def _similarity(left: bytes, right: bytes) -> float:
         if len(left) != len(right) or not left:
@@ -164,40 +185,57 @@ class VisualAssetMatcher:
         # path compare consistently without requiring that the path exists.
         return str(pdf_path).replace("\\", "/").casefold()
 
+    def _panel_fingerprint_from_document(
+        self,
+        doc: pymupdf.Document,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+    ) -> bytes | None:
+        if physical_page < 1 or physical_page > len(doc):
+            return None
+        page = doc[physical_page - 1]
+        target = self._target_rect(page, bbox)
+        occurrences: list[tuple[float, int]] = []
+        for image_info in page.get_images(full=True):
+            xref = int(image_info[0])
+            for rect in page.get_image_rects(xref):
+                score = self._rect_similarity(rect, target)
+                if score >= 0.90:
+                    occurrences.append((score, xref))
+        if not occurrences:
+            return None
+        occurrences.sort(key=lambda item: item[0], reverse=True)
+        best_score = occurrences[0][0]
+        best_xrefs = {xref for score, xref in occurrences if abs(score - best_score) < 1e-6}
+        if len(best_xrefs) != 1:
+            return None
+        xref = next(iter(best_xrefs))
+        extracted = doc.extract_image(xref)
+        data = extracted.get("image")
+        if not data:
+            return None
+        with Image.open(BytesIO(data)) as image:
+            image.load()
+            return self._fingerprint_image(image)
+
     def _panel_fingerprint(
         self,
         pdf_path: Path,
         physical_page: int,
         bbox: tuple[float, float, float, float],
     ) -> bytes | None:
+        batch_documents = _BATCH_PDF_DOCUMENTS.get()
+        if batch_documents is not None:
+            key = (id(self), self._pdf_identity(pdf_path))
+            doc = batch_documents.get(key)
+            if doc is None:
+                doc = pymupdf.open(str(pdf_path))
+                batch_documents[key] = doc
+            return self._panel_fingerprint_from_document(doc, physical_page, bbox)
+
         doc = pymupdf.open(str(pdf_path))
         try:
-            if physical_page < 1 or physical_page > len(doc):
-                return None
-            page = doc[physical_page - 1]
-            target = self._target_rect(page, bbox)
-            occurrences: list[tuple[float, int]] = []
-            for image_info in page.get_images(full=True):
-                xref = int(image_info[0])
-                for rect in page.get_image_rects(xref):
-                    score = self._rect_similarity(rect, target)
-                    if score >= 0.90:
-                        occurrences.append((score, xref))
-            if not occurrences:
-                return None
-            occurrences.sort(key=lambda item: item[0], reverse=True)
-            best_score = occurrences[0][0]
-            best_xrefs = {xref for score, xref in occurrences if abs(score - best_score) < 1e-6}
-            if len(best_xrefs) != 1:
-                return None
-            xref = next(iter(best_xrefs))
-            extracted = doc.extract_image(xref)
-            data = extracted.get("image")
-            if not data:
-                return None
-            with Image.open(BytesIO(data)) as image:
-                image.load()
-                return self._fingerprint_image(image)
+            return self._panel_fingerprint_from_document(doc, physical_page, bbox)
         finally:
             doc.close()
 
@@ -218,9 +256,8 @@ class VisualAssetMatcher:
             path = Path(candidate_path)
             if not path.is_file():
                 continue
-            try:
-                fingerprints = self._candidate_fingerprints_path(path)
-            except (OSError, ValueError):
+            fingerprints = self._candidate_fingerprints_for_match(path)
+            if not fingerprints:
                 continue
             score = max(
                 self._similarity(panel_fingerprint, fingerprint)
@@ -244,19 +281,41 @@ class VisualAssetMatcher:
         panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
         candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
     ) -> dict[str, VisualAssetMatch]:
-        local_matches: dict[str, tuple[VisualAssetMatch, str]] = {}
-        for panel in panels:
-            match = self.match_panel(
-                pdf_path=panel.pdf_path,
-                physical_page=panel.physical_page,
-                bbox=panel.bbox,
-                candidates=candidates,
-            )
-            if match is not None:
-                local_matches[panel.panel_id] = (
-                    match,
-                    self._pdf_identity(panel.pdf_path),
+        candidate_cache: dict[Path, tuple[bytes, ...] | None] = {}
+        for _, candidate_path in candidates:
+            path = Path(candidate_path)
+            if path in candidate_cache:
+                continue
+            if not path.is_file():
+                candidate_cache[path] = None
+                continue
+            try:
+                candidate_cache[path] = self._candidate_fingerprints_path(path)
+            except (OSError, ValueError):
+                candidate_cache[path] = None
+
+        batch_documents: dict[tuple[int, str], pymupdf.Document] = {}
+        candidate_token = _BATCH_CANDIDATE_FINGERPRINTS.set(candidate_cache)
+        document_token = _BATCH_PDF_DOCUMENTS.set(batch_documents)
+        try:
+            local_matches: dict[str, tuple[VisualAssetMatch, str]] = {}
+            for panel in panels:
+                match = self.match_panel(
+                    pdf_path=panel.pdf_path,
+                    physical_page=panel.physical_page,
+                    bbox=panel.bbox,
+                    candidates=candidates,
                 )
+                if match is not None:
+                    local_matches[panel.panel_id] = (
+                        match,
+                        self._pdf_identity(panel.pdf_path),
+                    )
+        finally:
+            for doc in batch_documents.values():
+                doc.close()
+            _BATCH_PDF_DOCUMENTS.reset(document_token)
+            _BATCH_CANDIDATE_FINGERPRINTS.reset(candidate_token)
 
         source_counts = Counter(
             (pdf_identity, match.source_asset_id)
