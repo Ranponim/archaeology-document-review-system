@@ -495,6 +495,7 @@ class ReferenceCorpusService:
                                     panel.physical_page or plate.physical_page
                                 ),
                                 bbox=panel.bbox,
+                                uniqueness_scope_id=source.id,
                             )
                         )
                 plates.append(
