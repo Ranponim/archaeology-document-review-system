@@ -42,6 +42,15 @@ class VisualAssetMatch:
 
 
 @dataclass(frozen=True, slots=True)
+class VisualAssetCandidateScore:
+    """One retrieval candidate, independent of the automatic verification gate."""
+
+    source_asset_id: str
+    score: float
+    method: str = "pixel_thumbnail_similarity"
+
+
+@dataclass(frozen=True, slots=True)
 class VisualPanelRequest:
     panel_id: str
     pdf_path: str | Path
@@ -54,11 +63,13 @@ class VisualAssetMatcher:
 
     Local matching is deterministic and fail-closed: the best normalized
     thumbnail similarity must clear a high threshold and be separated from the
-    second-best candidate. Batch matching reuses expensive candidate/PDF work,
-    performs pixel-difference work in Pillow's native implementation instead of
-    one Python byte loop per panel/candidate pair, and additionally requires the
-    selected source JPG to be unique within each supplied PDF. The same original
-    may be reused by a distinct PDF revision/version.
+    second-best candidate. Retrieval can expose below-threshold Top-K candidates
+    for a separate review/model layer without weakening that automatic gate.
+    Batch operations reuse expensive candidate/PDF work, perform pixel-difference
+    work in Pillow's native implementation instead of one Python byte loop per
+    panel/candidate pair, and matching additionally requires the selected source
+    JPG to be unique within each supplied PDF. The same original may be reused by
+    a distinct PDF revision/version.
     """
 
     _CANDIDATE_CROP_FRACTIONS = (1.0, 0.9, 0.8)
@@ -345,27 +356,25 @@ class VisualAssetMatcher:
             for asset_id, error in best_error_by_asset.items()
         ]
 
-    def match_panel(
+    def _score_panel_candidates(
         self,
         *,
         pdf_path: str | Path,
         physical_page: int,
         bbox: tuple[float, float, float, float],
-        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
-    ) -> VisualAssetMatch | None:
+        candidates: list[tuple[OriginalAssetData, str | Path]]
+        | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> list[tuple[float, str]]:
         panel_value = self._panel_fingerprint(Path(pdf_path), physical_page, bbox)
         if panel_value is None:
-            return None
+            return []
         panel_fingerprints = self._panel_fingerprint_variants(panel_value)
 
         batch_score_index = _BATCH_SCORE_INDEX.get()
         if batch_score_index is not None:
-            scored = self._bulk_candidate_scores(
-                panel_fingerprints,
-                batch_score_index,
-            )
+            scored = self._bulk_candidate_scores(panel_fingerprints, batch_score_index)
         else:
-            scored: list[tuple[float, str]] = []
+            scored = []
             for asset, candidate_path in candidates:
                 path = Path(candidate_path)
                 if not path.is_file():
@@ -380,9 +389,50 @@ class VisualAssetMatcher:
                 )
                 scored.append((score, asset.id))
 
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return scored
+
+    def rank_panel_candidates(
+        self,
+        *,
+        pdf_path: str | Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+        candidates: list[tuple[OriginalAssetData, str | Path]]
+        | tuple[tuple[OriginalAssetData, str | Path], ...],
+        limit: int = 5,
+    ) -> tuple[VisualAssetCandidateScore, ...]:
+        """Return retrieval candidates without applying the automatic match gate."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        scored = self._score_panel_candidates(
+            pdf_path=pdf_path,
+            physical_page=physical_page,
+            bbox=bbox,
+            candidates=candidates,
+        )
+        return tuple(
+            VisualAssetCandidateScore(source_asset_id=asset_id, score=score)
+            for score, asset_id in scored[:limit]
+        )
+
+    def match_panel(
+        self,
+        *,
+        pdf_path: str | Path,
+        physical_page: int,
+        bbox: tuple[float, float, float, float],
+        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> VisualAssetMatch | None:
+        scored = self._score_panel_candidates(
+            pdf_path=pdf_path,
+            physical_page=physical_page,
+            bbox=bbox,
+            candidates=candidates,
+        )
         if not scored:
             return None
-        scored.sort(key=lambda item: (-item[0], item[1]))
         best_score, best_id = scored[0]
         if best_score < self._minimum_score:
             return None
@@ -390,12 +440,11 @@ class VisualAssetMatcher:
             return None
         return VisualAssetMatch(source_asset_id=best_id, score=best_score)
 
-    def match_panels(
+    def _candidate_cache(
         self,
-        *,
-        panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
-        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
-    ) -> dict[str, VisualAssetMatch]:
+        candidates: list[tuple[OriginalAssetData, str | Path]]
+        | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> dict[Path, tuple[bytes, ...] | None]:
         candidate_cache: dict[Path, tuple[bytes, ...] | None] = {}
         for _, candidate_path in candidates:
             path = Path(candidate_path)
@@ -408,7 +457,51 @@ class VisualAssetMatcher:
                 candidate_cache[path] = self._candidate_fingerprints_path(path)
             except (OSError, ValueError):
                 candidate_cache[path] = None
+        return candidate_cache
 
+    def rank_panels(
+        self,
+        *,
+        panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
+        candidates: list[tuple[OriginalAssetData, str | Path]]
+        | tuple[tuple[OriginalAssetData, str | Path], ...],
+        limit: int = 5,
+    ) -> dict[str, tuple[VisualAssetCandidateScore, ...]]:
+        """Batch Top-K retrieval with the same caches/native scoring as matching."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        candidate_cache = self._candidate_cache(candidates)
+        score_index = self._build_batch_score_index(candidates, candidate_cache)
+        batch_documents: dict[tuple[int, str], pymupdf.Document] = {}
+        candidate_token = _BATCH_CANDIDATE_FINGERPRINTS.set(candidate_cache)
+        document_token = _BATCH_PDF_DOCUMENTS.set(batch_documents)
+        score_token = _BATCH_SCORE_INDEX.set(score_index)
+        try:
+            return {
+                panel.panel_id: self.rank_panel_candidates(
+                    pdf_path=panel.pdf_path,
+                    physical_page=panel.physical_page,
+                    bbox=panel.bbox,
+                    candidates=candidates,
+                    limit=limit,
+                )
+                for panel in panels
+            }
+        finally:
+            for doc in batch_documents.values():
+                doc.close()
+            _BATCH_SCORE_INDEX.reset(score_token)
+            _BATCH_PDF_DOCUMENTS.reset(document_token)
+            _BATCH_CANDIDATE_FINGERPRINTS.reset(candidate_token)
+
+    def match_panels(
+        self,
+        *,
+        panels: list[VisualPanelRequest] | tuple[VisualPanelRequest, ...],
+        candidates: list[tuple[OriginalAssetData, str | Path]] | tuple[tuple[OriginalAssetData, str | Path], ...],
+    ) -> dict[str, VisualAssetMatch]:
+        candidate_cache = self._candidate_cache(candidates)
         score_index = self._build_batch_score_index(candidates, candidate_cache)
         batch_documents: dict[tuple[int, str], pymupdf.Document] = {}
         candidate_token = _BATCH_CANDIDATE_FINGERPRINTS.set(candidate_cache)
