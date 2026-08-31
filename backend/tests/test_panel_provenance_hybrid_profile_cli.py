@@ -27,12 +27,8 @@ def test_hybrid_profile_cli_exposes_bounded_sample_contract():
     assert "100 unresolved panels" in result.stdout
 
 
-def test_hybrid_profile_rejects_pool_larger_than_baseline_top_k(tmp_path: Path):
-    repo_root = Path(__file__).resolve().parents[2]
-    source_root = tmp_path / "source"
-    source_root.mkdir()
-    baseline_json = tmp_path / "baseline.json"
-    baseline_json.write_text(
+def _write_empty_baseline(path: Path) -> None:
+    path.write_text(
         json.dumps(
             {
                 "measurement_head": "baseline-head",
@@ -43,6 +39,14 @@ def test_hybrid_profile_rejects_pool_larger_than_baseline_top_k(tmp_path: Path):
         ),
         encoding="utf-8",
     )
+
+
+def test_hybrid_profile_rejects_pool_larger_than_baseline_top_k(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    baseline_json = tmp_path / "baseline.json"
+    _write_empty_baseline(baseline_json)
     output_json = tmp_path / "profile.json"
 
     result = subprocess.run(
@@ -68,3 +72,43 @@ def test_hybrid_profile_rejects_pool_larger_than_baseline_top_k(tmp_path: Path):
     assert "baseline top_k=5" in result.stderr
     assert "regenerate the baseline" in result.stderr
     assert not output_json.exists()
+
+
+def test_hybrid_profile_reports_candidate_timing_breakdown(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    baseline_json = tmp_path / "baseline.json"
+    _write_empty_baseline(baseline_json)
+    output_json = tmp_path / "profile.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "tools" / "profile_panel_provenance_hybrid.py"),
+            "--source-root",
+            str(source_root),
+            "--baseline-json",
+            str(baseline_json),
+            "--geometric-candidate-pool",
+            "5",
+            "--output-json",
+            str(output_json),
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert payload["baseline_top_k"] == 5
+    timing = payload["timing"]
+    assert timing["candidate_step_count"] == 0
+    assert timing["candidate_feature_mean_seconds"] is None
+    assert timing["candidate_evidence_mean_seconds"] is None
+    assert timing["candidate_feature_cache_hit_count"] == 0
+    assert timing["candidate_feature_cache_miss_count"] == 0
+    assert timing["candidate_feature_cache_hit_mean_seconds"] is None
+    assert timing["candidate_feature_cache_miss_mean_seconds"] is None
