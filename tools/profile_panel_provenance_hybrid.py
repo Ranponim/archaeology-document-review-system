@@ -16,7 +16,7 @@ from app.services.visual_asset_matcher import VisualAssetMatcher
 
 
 DEFAULT_SAMPLE_SIZE = 100
-DEFAULT_GEOMETRIC_CANDIDATE_POOL = 50
+DEFAULT_GEOMETRIC_CANDIDATE_POOL = base.DEFAULT_TOP_K
 DEFAULT_GEOMETRIC_MINIMUM_MARGIN = 0.08
 DEFAULT_BASELINE_JSON = (
     base.REPO_ROOT / "docs" / "local_panel_provenance_acceptance_retest_12688f8.json"
@@ -92,6 +92,21 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     rows = baseline_payload.get("rows")
     if not isinstance(rows, list):
         raise ValueError("baseline JSON has no rows list")
+
+    baseline_algorithm = baseline_payload.get("algorithm")
+    baseline_top_k = (
+        baseline_algorithm.get("top_k") if isinstance(baseline_algorithm, dict) else None
+    )
+    if (
+        isinstance(baseline_top_k, int)
+        and not isinstance(baseline_top_k, bool)
+        and args.geometric_candidate_pool > baseline_top_k
+    ):
+        raise ValueError(
+            "geometric candidate pool exceeds candidates retained by the baseline: "
+            f"baseline top_k={baseline_top_k}, requested pool={args.geometric_candidate_pool}; "
+            "regenerate the baseline with a larger --top-k before profiling this pool"
+        )
 
     unresolved = [
         row
