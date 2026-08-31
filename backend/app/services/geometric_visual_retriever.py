@@ -112,6 +112,9 @@ class GeometricVisualRetriever:
         )
         if descriptors is None or len(keypoints) < 4:
             return None
+        if len(keypoints) > self._sift_nfeatures:
+            keypoints = keypoints[: self._sift_nfeatures]
+            descriptors = descriptors[: self._sift_nfeatures]
         return tuple(keypoints), descriptors
 
     def _features_path(
