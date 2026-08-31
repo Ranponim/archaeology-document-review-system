@@ -11,6 +11,10 @@ from PIL import Image, ImageOps
 from app.domain.source_assets import OriginalAssetData
 
 
+DEFAULT_CANDIDATE_MAX_EDGE = 1600
+DEFAULT_SIFT_NFEATURES = 10_000
+
+
 @dataclass(frozen=True, slots=True)
 class GeometricVisualEvidence:
     source_asset_id: str
@@ -27,6 +31,10 @@ class GeometricVisualRetriever:
     metadata. SIFT descriptor correspondences are filtered with Lowe's ratio
     test and then verified by a RANSAC homography so crop/resize/rotation can be
     recovered without lowering the Tier-0 pixel threshold.
+
+    Panel features keep their original resolution and unbounded SIFT behavior.
+    Candidate JPGs are bounded before SIFT extraction so very large originals
+    cannot dominate both feature extraction and brute-force descriptor matching.
     """
 
     def __init__(
@@ -36,6 +44,8 @@ class GeometricVisualRetriever:
         minimum_inliers: int = 12,
         minimum_inlier_ratio: float = 0.55,
         ransac_reprojection_threshold: float = 5.0,
+        candidate_max_edge: int = DEFAULT_CANDIDATE_MAX_EDGE,
+        sift_nfeatures: int = DEFAULT_SIFT_NFEATURES,
     ) -> None:
         if not 0.0 < lowe_ratio < 1.0:
             raise ValueError("lowe_ratio must be between 0 and 1")
@@ -45,12 +55,19 @@ class GeometricVisualRetriever:
             raise ValueError("minimum_inlier_ratio must be between 0 and 1")
         if ransac_reprojection_threshold <= 0.0:
             raise ValueError("ransac_reprojection_threshold must be positive")
+        if candidate_max_edge < 1:
+            raise ValueError("candidate_max_edge must be positive")
+        if sift_nfeatures < 1:
+            raise ValueError("sift_nfeatures must be positive")
 
         self._lowe_ratio = float(lowe_ratio)
         self._minimum_inliers = int(minimum_inliers)
         self._minimum_inlier_ratio = float(minimum_inlier_ratio)
         self._ransac_reprojection_threshold = float(ransac_reprojection_threshold)
+        self._candidate_max_edge = int(candidate_max_edge)
+        self._sift_nfeatures = int(sift_nfeatures)
         self._sift = cv2.SIFT_create()
+        self._candidate_sift = cv2.SIFT_create(nfeatures=self._sift_nfeatures)
         self._matcher = cv2.BFMatcher(cv2.NORM_L2)
         self._feature_cache: dict[Path, tuple[tuple[cv2.KeyPoint, ...], np.ndarray] | None] = {}
 
@@ -67,11 +84,32 @@ class GeometricVisualRetriever:
         normalized = ImageOps.exif_transpose(image).convert("L")
         return np.asarray(normalized, dtype=np.uint8)
 
+    def _candidate_grayscale(self, image: Image.Image) -> np.ndarray:
+        normalized = ImageOps.exif_transpose(image).convert("L")
+        if max(normalized.size) > self._candidate_max_edge:
+            normalized.thumbnail(
+                (self._candidate_max_edge, self._candidate_max_edge),
+                Image.Resampling.LANCZOS,
+            )
+        return np.asarray(normalized, dtype=np.uint8)
+
     def _features_image(
         self,
         image: Image.Image,
     ) -> tuple[tuple[cv2.KeyPoint, ...], np.ndarray] | None:
         keypoints, descriptors = self._sift.detectAndCompute(self._grayscale(image), None)
+        if descriptors is None or len(keypoints) < 4:
+            return None
+        return tuple(keypoints), descriptors
+
+    def _candidate_features_image(
+        self,
+        image: Image.Image,
+    ) -> tuple[tuple[cv2.KeyPoint, ...], np.ndarray] | None:
+        keypoints, descriptors = self._candidate_sift.detectAndCompute(
+            self._candidate_grayscale(image),
+            None,
+        )
         if descriptors is None or len(keypoints) < 4:
             return None
         return tuple(keypoints), descriptors
@@ -88,7 +126,7 @@ class GeometricVisualRetriever:
         try:
             with Image.open(resolved) as image:
                 image.load()
-                features = self._features_image(image)
+                features = self._candidate_features_image(image)
         except (OSError, ValueError):
             features = None
         self._feature_cache[resolved] = features
