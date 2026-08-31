@@ -17,6 +17,7 @@ import evaluate_panel_provenance as base
 
 from app.services.geometric_visual_retriever import (
     DEFAULT_CANDIDATE_MAX_EDGE,
+    DEFAULT_MATCHER_BACKEND,
     DEFAULT_SIFT_NFEATURES,
     GeometricVisualRetriever,
 )
@@ -27,6 +28,7 @@ DEFAULT_GEOMETRIC_CANDIDATE_POOL = 50
 DEFAULT_GEOMETRIC_MINIMUM_MARGIN = 0.08
 DEFAULT_GEOMETRIC_CANDIDATE_MAX_EDGE = DEFAULT_CANDIDATE_MAX_EDGE
 DEFAULT_GEOMETRIC_SIFT_NFEATURES = DEFAULT_SIFT_NFEATURES
+DEFAULT_GEOMETRIC_MATCHER = DEFAULT_MATCHER_BACKEND
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_GEOMETRIC_SIFT_NFEATURES,
         help="Maximum retained SIFT features per candidate image.",
+    )
+    parser.add_argument(
+        "--geometric-matcher",
+        choices=("bf", "flann"),
+        default=DEFAULT_GEOMETRIC_MATCHER,
+        help="Descriptor matcher backend for SIFT verification (default: bf).",
     )
     parser.set_defaults(
         output_json=base.REPO_ROOT / "docs" / "local_panel_provenance_hybrid_latest.json",
@@ -340,6 +348,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     retriever = GeometricVisualRetriever(
         candidate_max_edge=args.geometric_candidate_max_edge,
         sift_nfeatures=args.geometric_sift_nfeatures,
+        matcher_backend=args.geometric_matcher,
     )
     candidate_paths = base.discover_candidate_images(source_root)
     candidate_by_id = {
@@ -516,6 +525,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "geometric_minimum_margin": args.geometric_minimum_margin,
         "geometric_candidate_max_edge": args.geometric_candidate_max_edge,
         "geometric_sift_nfeatures": args.geometric_sift_nfeatures,
+        "geometric_matcher_backend": retriever.matcher_backend,
+        "geometric_flann_fallback_count": retriever.flann_fallback_count,
         "minimum_geometric_inliers": retriever.minimum_inliers,
         "minimum_geometric_inlier_ratio": retriever.minimum_inlier_ratio,
         "filename_path_caption_verification": False,

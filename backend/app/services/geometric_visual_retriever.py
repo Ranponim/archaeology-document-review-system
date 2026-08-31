@@ -13,6 +13,7 @@ from app.domain.source_assets import OriginalAssetData
 
 DEFAULT_CANDIDATE_MAX_EDGE = 1600
 DEFAULT_SIFT_NFEATURES = 10_000
+DEFAULT_MATCHER_BACKEND = "bf"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class GeometricVisualRetriever:
         ransac_reprojection_threshold: float = 5.0,
         candidate_max_edge: int = DEFAULT_CANDIDATE_MAX_EDGE,
         sift_nfeatures: int = DEFAULT_SIFT_NFEATURES,
+        matcher_backend: str = DEFAULT_MATCHER_BACKEND,
     ) -> None:
         if not 0.0 < lowe_ratio < 1.0:
             raise ValueError("lowe_ratio must be between 0 and 1")
@@ -59,6 +61,9 @@ class GeometricVisualRetriever:
             raise ValueError("candidate_max_edge must be positive")
         if sift_nfeatures < 1:
             raise ValueError("sift_nfeatures must be positive")
+        normalized_matcher_backend = str(matcher_backend).strip().lower()
+        if normalized_matcher_backend not in {"bf", "flann"}:
+            raise ValueError("matcher_backend must be 'bf' or 'flann'")
 
         self._lowe_ratio = float(lowe_ratio)
         self._minimum_inliers = int(minimum_inliers)
@@ -68,8 +73,26 @@ class GeometricVisualRetriever:
         self._sift_nfeatures = int(sift_nfeatures)
         self._sift = cv2.SIFT_create()
         self._candidate_sift = cv2.SIFT_create(nfeatures=self._sift_nfeatures)
-        self._matcher = cv2.BFMatcher(cv2.NORM_L2)
+        self._matcher_backend = normalized_matcher_backend
+        self._bf_matcher = cv2.BFMatcher(cv2.NORM_L2)
+        self._matcher = (
+            cv2.FlannBasedMatcher(
+                dict(algorithm=1, trees=5),
+                dict(checks=64),
+            )
+            if self._matcher_backend == "flann"
+            else self._bf_matcher
+        )
+        self._flann_fallback_count = 0
         self._feature_cache: dict[Path, tuple[tuple[cv2.KeyPoint, ...], np.ndarray] | None] = {}
+
+    @property
+    def matcher_backend(self) -> str:
+        return self._matcher_backend
+
+    @property
+    def flann_fallback_count(self) -> int:
+        return self._flann_fallback_count
 
     @property
     def minimum_inliers(self) -> int:
@@ -135,6 +158,19 @@ class GeometricVisualRetriever:
         self._feature_cache[resolved] = features
         return features
 
+    def _knn_match(
+        self,
+        query_descriptors: np.ndarray,
+        train_descriptors: np.ndarray,
+    ) -> tuple[tuple[cv2.DMatch, ...], ...] | list[list[cv2.DMatch]]:
+        try:
+            return self._matcher.knnMatch(query_descriptors, train_descriptors, k=2)
+        except cv2.error:
+            if self._matcher_backend != "flann":
+                raise
+            self._flann_fallback_count += 1
+            return self._bf_matcher.knnMatch(query_descriptors, train_descriptors, k=2)
+
     def _evidence(
         self,
         *,
@@ -147,7 +183,7 @@ class GeometricVisualRetriever:
         if len(panel_descriptors) < 2 or len(candidate_descriptors) < 2:
             return None
 
-        pairs = self._matcher.knnMatch(candidate_descriptors, panel_descriptors, k=2)
+        pairs = self._knn_match(candidate_descriptors, panel_descriptors)
         good_matches = [
             first
             for pair in pairs
