@@ -1,7 +1,8 @@
 {
-  "measurement_head": "10b9c26652e3850eebee2b405715da51ca7c00ba",
+  "measurement_head": "a8ea9ecf88130ce7f4fa4101a0e70321f9505e81",
   "baseline_measurement_head": "12688f85a252771a49eafc2aaff7a6c3a8729243",
   "baseline_json": "D:\\Coding\\panel-provenance-latest-20260830\\docs\\local_panel_provenance_acceptance_retest_12688f8.json",
+  "baseline_top_k": 5,
   "source_root": "D:\\Coding\\archaeology-document-review-system\\src",
   "source_root_mutated": false,
   "unresolved_panel_count": 2675,
@@ -21,16 +22,23 @@
   },
   "timing": {
     "baseline_pixel_seconds": 345.669,
-    "panel_mean_seconds": 16.29378347000922,
-    "panel_p50_seconds": 14.157816499937326,
-    "panel_p95_seconds": 35.88501309999265,
-    "panel_extraction_mean_seconds": 0.14447937200427988,
-    "panel_feature_mean_seconds": 0.11434511099825613,
-    "candidate_step_mean_seconds": 3.2066903155962936,
-    "estimated_geometric_full_seconds": 43585.870782274666,
-    "estimated_geometric_full_minutes": 726.4311797045777,
-    "estimated_hybrid_total_seconds": 43931.53978227467,
-    "estimated_hybrid_total_minutes": 732.1923297045778
+    "panel_mean_seconds": 16.373383889002724,
+    "panel_p50_seconds": 14.24425520002842,
+    "panel_p95_seconds": 35.30225359997712,
+    "panel_extraction_mean_seconds": 0.14501119300141,
+    "panel_feature_mean_seconds": 0.11482863399898634,
+    "candidate_step_count": 500,
+    "candidate_step_mean_seconds": 3.2219891568017194,
+    "candidate_feature_mean_seconds": 1.717192789994413,
+    "candidate_evidence_mean_seconds": 1.502862697600387,
+    "candidate_feature_cache_hit_count": 218,
+    "candidate_feature_cache_miss_count": 282,
+    "candidate_feature_cache_hit_mean_seconds": 0.00027544219516764543,
+    "candidate_feature_cache_miss_mean_seconds": 3.0444551368746806,
+    "estimated_geometric_full_seconds": 43798.80190308229,
+    "estimated_geometric_full_minutes": 729.9800317180382,
+    "estimated_hybrid_total_seconds": 44144.47090308229,
+    "estimated_hybrid_total_minutes": 735.7411817180382
   },
   "sampled_rows": [
     {
@@ -44,7 +52,7 @@
       "best_geometric_score": 0.951743388834476,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 55.798044500057586
+      "panel_seconds": 52.49303010001313
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:12:2",
@@ -57,7 +65,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 10.898803399992175
+      "panel_seconds": 10.982651899917983
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:21:1",
@@ -70,7 +78,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 3.755077200010419
+      "panel_seconds": 3.8281510999659076
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:35:3",
@@ -83,7 +91,7 @@
       "best_geometric_score": 0.9028248587570621,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 20.004488000064157
+      "panel_seconds": 20.198725400026888
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:44:3",
@@ -96,7 +104,7 @@
       "best_geometric_score": 0.8272602739726027,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 16.777219599927776
+      "panel_seconds": 16.734963099937886
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:53:4",
@@ -109,7 +117,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 2.6264505999861285
+      "panel_seconds": 2.7287782999919727
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:62:1",
@@ -122,7 +130,7 @@
       "best_geometric_score": 0.8584260731319555,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 11.798689499963075
+      "panel_seconds": 11.795488800038584
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:66:2",
@@ -135,7 +143,7 @@
       "best_geometric_score": 0.8858879135719109,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 17.616961999912746
+      "panel_seconds": 17.556121099973097
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:69:8",
@@ -148,7 +156,7 @@
       "best_geometric_score": 0.9668741489982494,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 32.42178880004212
+      "panel_seconds": 32.45519130001776
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:75:1",
@@ -161,7 +169,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 21.524563599959947
+      "panel_seconds": 21.27469809993636
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:82:2",
@@ -174,7 +182,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 19.355553000001237
+      "panel_seconds": 19.196676600025967
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:86:2",
@@ -187,7 +195,7 @@
       "best_geometric_score": 0.9738181047275811,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 29.257386400015093
+      "panel_seconds": 28.823451800039038
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:89:5",
@@ -200,7 +208,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 23.703603000030853
+      "panel_seconds": 23.061594099970534
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:92:8",
@@ -213,7 +221,7 @@
       "best_geometric_score": 0.9208098591549296,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 10.80443010001909
+      "panel_seconds": 10.612914400058798
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:98:2",
@@ -226,7 +234,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 10.480201500002295
+      "panel_seconds": 10.378717500017956
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:106:4",
@@ -239,7 +247,7 @@
       "best_geometric_score": 0.9235146604938271,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 25.2106930000009
+      "panel_seconds": 26.409640199970454
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:111:7",
@@ -252,7 +260,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 10.64353260002099
+      "panel_seconds": 10.614572599995881
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:115:2",
@@ -265,7 +273,7 @@
       "best_geometric_score": 0.8676381529144588,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 23.67865180002991
+      "panel_seconds": 23.858150100102648
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:118:5",
@@ -278,7 +286,7 @@
       "best_geometric_score": 0.8745131244707874,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 17.462080999976024
+      "panel_seconds": 16.13972710003145
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:121:8",
@@ -291,7 +299,7 @@
       "best_geometric_score": 0.9008780036968577,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 12.351287800003774
+      "panel_seconds": 11.322057100012898
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:128:1",
@@ -304,7 +312,7 @@
       "best_geometric_score": 0.9735310194042088,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 21.489788300008513
+      "panel_seconds": 23.52257420006208
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:134:2",
@@ -317,7 +325,7 @@
       "best_geometric_score": 0.76059670781893,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 18.779308400000446
+      "panel_seconds": 20.704716600012034
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:137:5",
@@ -330,7 +338,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 17.112622099928558
+      "panel_seconds": 17.36361349991057
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:140:8",
@@ -343,7 +351,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 14.110219800029881
+      "panel_seconds": 14.207138400059193
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:144:3",
@@ -356,7 +364,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 27.89499479997903
+      "panel_seconds": 27.951018799911253
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:147:6",
@@ -369,7 +377,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 16.755512399948202
+      "panel_seconds": 16.436698799952865
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:151:1",
@@ -382,7 +390,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 7.572826100047678
+      "panel_seconds": 7.5588129999814555
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:154:4",
@@ -395,7 +403,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 22.987530200043693
+      "panel_seconds": 23.257761600078084
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:157:7",
@@ -408,7 +416,7 @@
       "best_geometric_score": 0.7679979777553083,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 14.05723819998093
+      "panel_seconds": 14.24425520002842
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:164:4",
@@ -421,7 +429,7 @@
       "best_geometric_score": 0.7611111111111111,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 3.5882855999516323
+      "panel_seconds": 3.5365636000642553
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:170:5",
@@ -434,7 +442,7 @@
       "best_geometric_score": 0.8938333333333334,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 8.001812599948607
+      "panel_seconds": 8.41138570010662
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:173:8",
@@ -447,7 +455,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.262353800004348
+      "panel_seconds": 4.24827739992179
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:177:3",
@@ -460,7 +468,7 @@
       "best_geometric_score": 0.8257563025210084,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 21.450525099993683
+      "panel_seconds": 21.23273190006148
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.19-2차 교정/11.18-115집 논산 산노리 산17-1번지 유적-도판-2차 교정.pdf:180:6",
@@ -473,7 +481,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 11.78978770005051
+      "panel_seconds": 11.734262000070885
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:9:1",
@@ -486,7 +494,7 @@
       "best_geometric_score": 0.9810670900055218,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 51.40818069991656
+      "panel_seconds": 51.853864199947566
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:19:2",
@@ -499,7 +507,7 @@
       "best_geometric_score": 0.95181720043181,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 6.685646899975836
+      "panel_seconds": 6.800698799896054
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:32:5",
@@ -512,7 +520,7 @@
       "best_geometric_score": 0.9590126529765609,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 20.282369799911976
+      "panel_seconds": 20.336925399955362
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:41:5",
@@ -525,7 +533,7 @@
       "best_geometric_score": 0.8815591734502192,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 22.206468100077473
+      "panel_seconds": 22.598386300029233
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:51:3",
@@ -538,7 +546,7 @@
       "best_geometric_score": 0.9411275415896487,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 35.88501309999265
+      "panel_seconds": 38.29181530000642
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:58:3",
@@ -551,7 +559,7 @@
       "best_geometric_score": 0.9800076258261311,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 9.723870099987835
+      "panel_seconds": 9.663464399985969
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:64:5",
@@ -564,7 +572,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 23.65189229999669
+      "panel_seconds": 22.387304799980484
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:69:1",
@@ -577,7 +585,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.172111800056882
+      "panel_seconds": 3.9832300000125542
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:73:2",
@@ -590,7 +598,7 @@
       "best_geometric_score": 0.7910714285714286,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 6.058239500038326
+      "panel_seconds": 5.54854680004064
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:81:2",
@@ -603,7 +611,7 @@
       "best_geometric_score": 0.9085848227365954,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 22.242029900080524
+      "panel_seconds": 22.77287550002802
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:85:2",
@@ -616,7 +624,7 @@
       "best_geometric_score": 0.8783686525389844,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 22.58529980003368
+      "panel_seconds": 22.578014599974267
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:88:6",
@@ -629,7 +637,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 9.252532900078222
+      "panel_seconds": 8.711626500007696
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:92:1",
@@ -642,7 +650,7 @@
       "best_geometric_score": 0.8329348475791991,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 17.77322329999879
+      "panel_seconds": 17.96309500001371
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:96:2",
@@ -655,7 +663,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.547634200076573
+      "panel_seconds": 4.538867000024766
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:103:7",
@@ -668,7 +676,7 @@
       "best_geometric_score": 0.9279166666666666,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 14.435830099973828
+      "panel_seconds": 14.35290920000989
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:110:8",
@@ -681,7 +689,7 @@
       "best_geometric_score": 0.9369581190301249,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 10.428481999901123
+      "panel_seconds": 10.33573679998517
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:114:4",
@@ -694,7 +702,7 @@
       "best_geometric_score": 0.834142239308025,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 33.6569430999225
+      "panel_seconds": 32.84798449999653
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:117:7",
@@ -707,7 +715,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 8.814967600046657
+      "panel_seconds": 8.677498300094157
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:121:2",
@@ -720,7 +728,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 14.157816499937326
+      "panel_seconds": 13.894989000051282
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:126:1",
@@ -733,7 +741,7 @@
       "best_geometric_score": 0.9918278529980658,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 16.98810240009334
+      "panel_seconds": 17.278207600000314
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:133:4",
@@ -746,7 +754,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 16.018797100055963
+      "panel_seconds": 16.00940320000518
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:136:7",
@@ -759,7 +767,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 21.43957769998815
+      "panel_seconds": 20.964890099945478
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:140:2",
@@ -772,7 +780,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 28.22995420009829
+      "panel_seconds": 28.012859700014815
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:143:5",
@@ -785,7 +793,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 10.242170999990776
+      "panel_seconds": 10.39868350001052
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:146:8",
@@ -798,7 +806,7 @@
       "best_geometric_score": 0.8837551867219917,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 36.12061740003992
+      "panel_seconds": 35.30225359997712
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:150:3",
@@ -811,7 +819,7 @@
       "best_geometric_score": 0.8799232158988256,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 11.459825900034048
+      "panel_seconds": 11.473487499984913
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:153:6",
@@ -824,7 +832,7 @@
       "best_geometric_score": 0.8478585657370518,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 16.752329700044356
+      "panel_seconds": 18.800715400022455
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:157:1",
@@ -837,7 +845,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.677571500069462
+      "panel_seconds": 4.635866399970837
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:162:3",
@@ -850,7 +858,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 8.875912999967113
+      "panel_seconds": 8.779867599951103
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:169:7",
@@ -863,7 +871,7 @@
       "best_geometric_score": 0.8342776203966006,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 3.361071399995126
+      "panel_seconds": 3.554752100026235
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:173:2",
@@ -876,7 +884,7 @@
       "best_geometric_score": 0.8635359116022099,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 0.7169127999804914
+      "panel_seconds": 0.759502699947916
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:176:5",
@@ -889,7 +897,7 @@
       "best_geometric_score": 0.9251950585175552,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 12.733569400035776
+      "panel_seconds": 12.883030999917537
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.21-3차 교정/11.21-115집 논산 산노리 산17-1번지 유적-도판-3차 교정.pdf:179:8",
@@ -902,7 +910,7 @@
       "best_geometric_score": 0.7603125,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 2.9044078000588343
+      "panel_seconds": 2.8987471000291407
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:7:2",
@@ -915,7 +923,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 3.4844905000645667
+      "panel_seconds": 3.501962700043805
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:18:3",
@@ -928,7 +936,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.655650999979116
+      "panel_seconds": 4.639255899935961
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:32:3",
@@ -941,7 +949,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 14.189068900072016
+      "panel_seconds": 14.429808999993838
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:41:3",
@@ -954,7 +962,7 @@
       "best_geometric_score": 0.8583462132921175,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 23.361675000051036
+      "panel_seconds": 23.25641200004611
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:51:2",
@@ -967,7 +975,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 2.6944265000056475
+      "panel_seconds": 2.6987475999630988
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:58:2",
@@ -980,7 +988,7 @@
       "best_geometric_score": 0.9700367647058824,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 14.007355200010352
+      "panel_seconds": 14.082540999981575
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:64:4",
@@ -993,7 +1001,7 @@
       "best_geometric_score": 0.8898379473328831,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 5.556162199936807
+      "panel_seconds": 5.786799599998631
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:68:8",
@@ -1006,7 +1014,7 @@
       "best_geometric_score": 0.9173107890499195,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 10.062378300004639
+      "panel_seconds": 10.147965600015596
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:73:1",
@@ -1019,7 +1027,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 10.647996800020337
+      "panel_seconds": 10.730984800029546
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:81:4",
@@ -1032,7 +1040,7 @@
       "best_geometric_score": 0.9722127762934175,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 21.804000100004487
+      "panel_seconds": 21.41393339994829
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:85:4",
@@ -1045,7 +1053,7 @@
       "best_geometric_score": 0.91983035304906,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 27.963642699993216
+      "panel_seconds": 28.440106899943203
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:89:1",
@@ -1058,7 +1066,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 13.83816140005365
+      "panel_seconds": 14.239724299986847
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:92:4",
@@ -1071,7 +1079,7 @@
       "best_geometric_score": 0.926195219123506,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 26.19050170003902
+      "panel_seconds": 26.314629100030288
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:97:3",
@@ -1084,7 +1092,7 @@
       "best_geometric_score": 0.932829345253747,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 39.962949700071476
+      "panel_seconds": 40.55310250003822
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:106:4",
@@ -1097,7 +1105,7 @@
       "best_geometric_score": 0.9098986608758596,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 19.960076000075787
+      "panel_seconds": 19.629370900103822
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:111:2",
@@ -1110,7 +1118,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 20.47646330005955
+      "panel_seconds": 20.338577499962412
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:114:5",
@@ -1123,7 +1131,7 @@
       "best_geometric_score": 0.8988342785129174,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 8.26325600000564
+      "panel_seconds": 8.516070500016212
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:118:1",
@@ -1136,7 +1144,7 @@
       "best_geometric_score": 0.95307911908646,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 26.10705550003331
+      "panel_seconds": 26.872790500056
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:121:6",
@@ -1149,7 +1157,7 @@
       "best_geometric_score": 0.9636982495137538,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 31.114980700076558
+      "panel_seconds": 32.69790720008314
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:128:1",
@@ -1162,7 +1170,7 @@
       "best_geometric_score": 0.9739861259338314,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 6.9855709000257775
+      "panel_seconds": 6.782343500060961
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:134:3",
@@ -1175,7 +1183,7 @@
       "best_geometric_score": 0.8547957920792079,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 49.68423040001653
+      "panel_seconds": 52.10023030010052
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:137:7",
@@ -1188,7 +1196,7 @@
       "best_geometric_score": 0.9705882352941176,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 8.521908599999733
+      "panel_seconds": 8.742131399922073
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:141:2",
@@ -1201,7 +1209,7 @@
       "best_geometric_score": 0.8681892666939779,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 24.07838089996949
+      "panel_seconds": 24.663029900053516
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:144:6",
@@ -1214,7 +1222,7 @@
       "best_geometric_score": 0.8856304985337243,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 27.110259599983692
+      "panel_seconds": 27.7074249999132
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:148:1",
@@ -1227,7 +1235,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 9.837961099925451
+      "panel_seconds": 9.901437900029123
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:151:4",
@@ -1240,7 +1248,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 11.166853100061417
+      "panel_seconds": 11.22290619998239
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:154:7",
@@ -1253,7 +1261,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 4.653289800044149
+      "panel_seconds": 4.56241259991657
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:158:2",
@@ -1266,7 +1274,7 @@
       "best_geometric_score": 0.8710904733373278,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 17.89140259998385
+      "panel_seconds": 17.276099600014277
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:165:7",
@@ -1279,7 +1287,7 @@
       "best_geometric_score": 0.9086776859504132,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 2.5804686000337824
+      "panel_seconds": 2.649474500096403
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:171:2",
@@ -1292,7 +1300,7 @@
       "best_geometric_score": 0.9153015636634401,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 7.9385644000722095
+      "panel_seconds": 8.403841399936937
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:174:5",
@@ -1305,7 +1313,7 @@
       "best_geometric_score": null,
       "geometric_margin": null,
       "accepted_by_current_margin": false,
-      "panel_seconds": 3.8933816999197006
+      "panel_seconds": 3.9156852000160143
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:177:8",
@@ -1318,7 +1326,7 @@
       "best_geometric_score": 0.8731231231231231,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 3.9562740999972448
+      "panel_seconds": 4.107490299968049
     },
     {
       "panel_id": "panel:plate-pdf:완성까지 가던 교정본들/11.8-본문-1차 교정/11.8-115집 논산 산노리 산17-1번지 유적-도판-1차 교정.pdf:182:2",
@@ -1331,7 +1339,7 @@
       "best_geometric_score": 0.9039103481163567,
       "geometric_margin": null,
       "accepted_by_current_margin": true,
-      "panel_seconds": 12.227824199944735
+      "panel_seconds": 12.247978799976408
     }
   ]
 }
