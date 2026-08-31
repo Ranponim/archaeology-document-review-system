@@ -15,12 +15,18 @@ from PIL import Image, ImageOps
 
 import evaluate_panel_provenance as base
 
-from app.services.geometric_visual_retriever import GeometricVisualRetriever
+from app.services.geometric_visual_retriever import (
+    DEFAULT_CANDIDATE_MAX_EDGE,
+    DEFAULT_SIFT_NFEATURES,
+    GeometricVisualRetriever,
+)
 from app.services.visual_asset_matcher import VisualAssetMatcher
 
 
 DEFAULT_GEOMETRIC_CANDIDATE_POOL = 50
 DEFAULT_GEOMETRIC_MINIMUM_MARGIN = 0.08
+DEFAULT_GEOMETRIC_CANDIDATE_MAX_EDGE = DEFAULT_CANDIDATE_MAX_EDGE
+DEFAULT_GEOMETRIC_SIFT_NFEATURES = DEFAULT_SIFT_NFEATURES
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +47,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_GEOMETRIC_MINIMUM_MARGIN,
         help="Required SIFT/RANSAC score separation from a second eligible candidate.",
+    )
+    parser.add_argument(
+        "--geometric-candidate-max-edge",
+        type=int,
+        default=DEFAULT_GEOMETRIC_CANDIDATE_MAX_EDGE,
+        help="Maximum candidate-image edge used for SIFT feature extraction.",
+    )
+    parser.add_argument(
+        "--geometric-sift-nfeatures",
+        type=int,
+        default=DEFAULT_GEOMETRIC_SIFT_NFEATURES,
+        help="Maximum retained SIFT features per candidate image.",
     )
     parser.set_defaults(
         output_json=base.REPO_ROOT / "docs" / "local_panel_provenance_hybrid_latest.json",
@@ -298,6 +316,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("geometric-candidate-pool must be positive")
     if args.geometric_minimum_margin < 0.0:
         raise ValueError("geometric-minimum-margin cannot be negative")
+    if args.geometric_candidate_max_edge < 1:
+        raise ValueError("geometric-candidate-max-edge must be positive")
+    if args.geometric_sift_nfeatures < 1:
+        raise ValueError("geometric-sift-nfeatures must be positive")
 
     source_root = args.source_root.resolve()
     before = base._tree_snapshot(source_root)
@@ -315,7 +337,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         geometric_candidate_pool=args.geometric_candidate_pool,
         geometric_minimum_margin=args.geometric_minimum_margin,
     )
-    retriever = GeometricVisualRetriever()
+    retriever = GeometricVisualRetriever(
+        candidate_max_edge=args.geometric_candidate_max_edge,
+        sift_nfeatures=args.geometric_sift_nfeatures,
+    )
     candidate_paths = base.discover_candidate_images(source_root)
     candidate_by_id = {
         base._relative(source_root, path): path.resolve() for path in candidate_paths
@@ -489,6 +514,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "tier_1": "sift_ransac",
         "geometric_candidate_pool": args.geometric_candidate_pool,
         "geometric_minimum_margin": args.geometric_minimum_margin,
+        "geometric_candidate_max_edge": args.geometric_candidate_max_edge,
+        "geometric_sift_nfeatures": args.geometric_sift_nfeatures,
         "minimum_geometric_inliers": retriever.minimum_inliers,
         "minimum_geometric_inlier_ratio": retriever.minimum_inlier_ratio,
         "filename_path_caption_verification": False,
