@@ -128,6 +128,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     panel_extraction_times: list[float] = []
     panel_feature_times: list[float] = []
     candidate_step_times: list[float] = []
+    candidate_feature_times: list[float] = []
+    candidate_evidence_times: list[float] = []
+    candidate_feature_cache_hit_times: list[float] = []
+    candidate_feature_cache_miss_times: list[float] = []
     evidence_ranks: list[int] = []
     evidence_panel_count = 0
     accepted_panel_count = 0
@@ -196,14 +200,26 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     continue
 
                 candidate_started = time.perf_counter()
+                resolved_candidate_path = candidate_path.resolve()
+                feature_cache_hit = resolved_candidate_path in retriever._feature_cache
+                candidate_feature_started = time.perf_counter()
                 candidate_features = retriever._features_path(candidate_path)
+                candidate_feature_seconds = time.perf_counter() - candidate_feature_started
+                candidate_feature_times.append(candidate_feature_seconds)
+                if feature_cache_hit:
+                    candidate_feature_cache_hit_times.append(candidate_feature_seconds)
+                else:
+                    candidate_feature_cache_miss_times.append(candidate_feature_seconds)
+
                 evidence = None
                 if candidate_features is not None:
+                    evidence_started = time.perf_counter()
                     evidence = retriever._evidence(
                         source_asset_id=source_asset_id,
                         panel_features=panel_features,
                         candidate_features=candidate_features,
                     )
+                    candidate_evidence_times.append(time.perf_counter() - evidence_started)
                 candidate_step_times.append(time.perf_counter() - candidate_started)
                 if evidence is not None:
                     strong.append((rank, evidence))
@@ -272,6 +288,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "measurement_head": base._head_sha(),
         "baseline_measurement_head": baseline_payload.get("measurement_head"),
         "baseline_json": str(baseline_path),
+        "baseline_top_k": baseline_top_k,
         "source_root": str(source_root),
         "source_root_mutated": source_mutated,
         "unresolved_panel_count": len(unresolved),
@@ -290,7 +307,18 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             "panel_p95_seconds": _percentile(panel_total_times, 0.95),
             "panel_extraction_mean_seconds": _mean(panel_extraction_times),
             "panel_feature_mean_seconds": _mean(panel_feature_times),
+            "candidate_step_count": len(candidate_step_times),
             "candidate_step_mean_seconds": _mean(candidate_step_times),
+            "candidate_feature_mean_seconds": _mean(candidate_feature_times),
+            "candidate_evidence_mean_seconds": _mean(candidate_evidence_times),
+            "candidate_feature_cache_hit_count": len(candidate_feature_cache_hit_times),
+            "candidate_feature_cache_miss_count": len(candidate_feature_cache_miss_times),
+            "candidate_feature_cache_hit_mean_seconds": _mean(
+                candidate_feature_cache_hit_times
+            ),
+            "candidate_feature_cache_miss_mean_seconds": _mean(
+                candidate_feature_cache_miss_times
+            ),
             "estimated_geometric_full_seconds": estimated_geometric_seconds,
             "estimated_geometric_full_minutes": (
                 estimated_geometric_seconds / 60.0
