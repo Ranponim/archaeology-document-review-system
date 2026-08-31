@@ -12,6 +12,21 @@ class ResolutionStatus(str, Enum):
     UNRESOLVED = "unresolved"
 
 
+class EvidenceLevel(str, Enum):
+    """Strength of the evidence used to identify or connect a graph object.
+
+    `direct` means the source itself explicitly declares the identity/relation.
+    `derived_verified` means a deterministic derivation passed a uniqueness
+    check. `heuristic` is useful candidate evidence that still needs
+    corroboration. `unresolved` means the system deliberately refused to guess.
+    """
+
+    DIRECT = "direct"
+    DERIVED_VERIFIED = "derived_verified"
+    HEURISTIC = "heuristic"
+    UNRESOLVED = "unresolved"
+
+
 @dataclass(frozen=True, slots=True)
 class ReferenceData:
     ref_type: ReferenceType | str
@@ -21,6 +36,9 @@ class ReferenceData:
     source_sha256: str | None = None
     bbox: tuple[float, float, float, float] | None = None
     physical_page: int | None = None
+    evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
+    evidence_method: str | None = None
+    publication_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +59,8 @@ class PlatePanelData:
     render_uri: str | None = None
     source_sha256: str | None = None
     source_asset_id: str | None = None
+    evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
+    evidence_method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +76,9 @@ class PlateData:
     raw_identifier: str | None = None
     source_kind: str = "plate_pdf"
     reference_corpus_id: str | None = None
+    source_asset_id: str | None = None
+    evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
+    evidence_method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +99,8 @@ class DrawingRegionData:
     render_uri: str | None = None
     source_sha256: str | None = None
     source_asset_id: str | None = None
+    evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
+    evidence_method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +116,10 @@ class DrawingData:
     raw_identifier: str | None = None
     source_kind: str = "drawing_pdf"
     reference_corpus_id: str | None = None
+    source_asset_id: str | None = None
+    evidence_level: EvidenceLevel | str = EvidenceLevel.DIRECT
+    evidence_method: str | None = None
+    publication_kind: str = "drawing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,4 +154,3 @@ ArchaeologyObject = ArchaeologyObjectData
 ResolutionResult = ObjectResolutionResult
 
 from app.domain.models import VersionInput  # noqa: E402
-

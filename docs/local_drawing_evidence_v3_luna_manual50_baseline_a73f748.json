@@ -1,0 +1,4512 @@
+{
+  "gold_rows": 56,
+  "gold_known": 50,
+  "gold_unknown": 6,
+  "evaluated_sources": 56,
+  "recall_at_5": 0.76,
+  "recall_at_10": 0.88,
+  "recall_at_20": 0.92,
+  "codex_top1_accuracy": 0.68,
+  "auto_coverage": 0.36,
+  "auto_precision": 0.888889,
+  "review_rate": 0.6,
+  "unresolved_rate": 0.04,
+  "ambiguous_count": 8,
+  "none_count": 2,
+  "invalid_response_count": 0,
+  "hard_contradiction_promoted_count": 0,
+  "filename_only_promoted_count": 0,
+  "kind_collision_count": 0,
+  "api_unsafe_promotion_count": 0,
+  "safety_pass": true,
+  "audit": {
+    "measurement_time_utc": "2026-08-29T02:29:35.628691+00:00",
+    "resolver_version": "drawing-evidence-v3",
+    "source_root": "D:\\Coding\\archaeology-document-review-system\\src",
+    "body_pdf": "D:\\Coding\\archaeology-document-review-system\\src\\완성까지 가던 교정본들\\11.21-3차 교정\\11.21-115집 논산 산노리 산17-1번지 유적-본문-3차 교정.pdf",
+    "source_root_read_only": true,
+    "live_codex": true,
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "high",
+    "turn_timeout_seconds": 180.0,
+    "source_limit": null,
+    "ai_files": 56,
+    "body_packets": 828
+  },
+  "rows": [
+    {
+      "source": "본문 도면/1지점/【도면  】1지점 고려시대 1호 석곽묘 평·입단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "36"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "40"
+        ],
+        [
+          "drawing",
+          "79"
+        ],
+        [
+          "drawing",
+          "75"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "35"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "35"
+      ],
+      "codex_confidence": 0.98,
+      "codex_summary": "The source depicts a stone-lined rectangular tomb with plan and sectional views, matching candidate drawing 35's Goryeo-period stone-coffin tomb plan/elevation-section drawing.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:43e8cf1ef66fafda032df8b2870eb201",
+        "drawing-v3-evidence:6620c775935bde0c8b1b7946f2fa48d1",
+        "drawing-v3-evidence:ee00456dcca8049c32686c4e07ea0670"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:e35fb2fe75d86b7d5df8ed81b7c4d0e7",
+        "drawing-v3-visual-support:07cb1ec0d975a03fb60a5537b17d586a"
+      ],
+      "cited_support_families": [
+        "visual_signature",
+        "weak_filename_semantic"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/1지점/【도면  】1지점 원삼국시대 1호 분구묘 평·단면도-A3.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "31"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "32"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "53"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "32"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate 32 matches the source’s F-F′ and G-G′ section labels and the plan/section drawing format for the 1st-point mound tomb.",
+      "auto_gate_reason": "assignment_conflict",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:ae58d8e876558a8fdf245d75af04535d",
+        "drawing-v3-source-evidence:4d4a2838b18601890d084c5817806162",
+        "drawing-v3-evidence:eb6387687523fb995fb7debdd68407ff"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "drawing_signature",
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 3,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/1지점/【도면  】1지점 조선시대 1호 주거지 평·단면도 및 출토유물1.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "38"
+        ],
+        [
+          "drawing",
+          "36"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "53"
+        ],
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "51"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "38"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "38"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source image is explicitly labeled 도면 38, and the candidate title image matches the same drawing number, site, feature type, and plan/section description.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:0e21c0c8c2fe2dbef2292ab5e9c8f74c"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:14f97cf7b4f9618e79ffe0cdec53cee3"
+      ],
+      "cited_support_families": [
+        "lexical_support",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 2,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/1지점/【도면  】1지점 청동기시대 6호 석관묘 평·입단면도.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "31"
+        ],
+        [
+          "drawing",
+          "29"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "32"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "26"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "24"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "22"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "30"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source visibly shows drawing number 30 and a stone-coffin plan/section with stratigraphic layers, matching candidate 30’s 1-point Bronze Age no. 6 stone-coffin plan/section.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:3610d769f2a976f91a43f261aa808f73",
+        "drawing-v3-evidence:e2ea3bb12f7eff477bf6a395d3a56735",
+        "drawing-v3-evidence:4b78ea2eafcee01542762c5feec82823",
+        "drawing-v3-evidence:a5a9c4d1ac7a9082f045ca5bcc8f2730",
+        "drawing-v3-evidence:e50131a0744ce9d4eb963c9af40250a6",
+        "drawing-v3-evidence:d8e12cf13dae4eeadba86b291967fd1d"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "weak_filename_semantic"
+      ],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/2지점/【도면  】2지점 조선시대 1호 주거지 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "54"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "52"
+        ],
+        [
+          "drawing",
+          "53"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "38"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "34"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "52"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.94,
+      "codex_summary": "The source shows a large feature plan with 39.00m levels and three associated ceramic find drawings numbered 46–48, matching the Joseon-period 1st dwelling candidate with excavated artifacts.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:12fae20670535ef806b94159426d3588",
+        "drawing-v3-evidence:b78b83dbe9bc31f78b1b9af3dc18c1e8",
+        "drawing-v3-evidence:c40e56302494de182816cf1074c07c03"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/2지점/【도면  】2지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "57"
+        ],
+        [
+          "drawing",
+          "53"
+        ],
+        [
+          "drawing",
+          "58"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "52"
+        ],
+        [
+          "drawing",
+          "54"
+        ],
+        [
+          "drawing",
+          "55"
+        ],
+        [
+          "drawing",
+          "96"
+        ],
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "92"
+        ],
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "94"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "93"
+        ],
+        [
+          "drawing",
+          "81"
+        ],
+        [
+          "drawing",
+          "82"
+        ],
+        [
+          "drawing",
+          "117"
+        ],
+        [
+          "drawing",
+          "71"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "none",
+      "status": "UNRESOLVED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source image is explicitly labeled 49-1 through 49-6, while all submitted candidates are different drawings.",
+      "auto_gate_reason": "verdict_none",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/2지점/【도면  】2지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "54"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "101"
+        ],
+        [
+          "drawing",
+          "84"
+        ],
+        [
+          "drawing",
+          "129"
+        ],
+        [
+          "drawing",
+          "62"
+        ],
+        [
+          "drawing",
+          "130"
+        ],
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "100"
+        ],
+        [
+          "drawing",
+          "1"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "54"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "54"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Source explicitly depicts unidentified pit burials 25 and 26 and artifacts numbered 50 and 51; candidate 54 uniquely matches the 25/26 context while also describing excavated artifacts.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:12b7e0784d1e5e70306a45db6c136732",
+        "drawing-v3-source-evidence:fb05372e9634b06dfff87ce265a27968",
+        "drawing-v3-source-evidence:63e3d3f5f49366e58590a0a9a0deaf73",
+        "drawing-v3-evidence:a743d3f0e3d3e272e393406caf30f906",
+        "drawing-v3-evidence:d06ecbff3adcb750f0b11d683f92241c",
+        "drawing-v3-evidence:7dae7f39b8b0e61fb78f2765816f1673"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "archaeology_signature",
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 6,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 1호 옹관묘평·단면도 및 출토유물 1.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "69"
+        ],
+        [
+          "drawing",
+          "65"
+        ],
+        [
+          "drawing",
+          "84"
+        ],
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "66"
+        ],
+        [
+          "drawing",
+          "67"
+        ],
+        [
+          "drawing",
+          "68"
+        ],
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "36"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "66"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "66"
+      ],
+      "codex_confidence": 0.98,
+      "codex_summary": "The source visibly combines a plan/section drawing with excavated artifact 54 and related items 54–56, matching candidate 66’s 1호 옹관묘 평·단면도 및 출토유물 1 composition.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:7be7b53269dc0fe0786721e7b0f58124",
+        "drawing-v3-evidence:a064cfbb589f0907694c1b94d7068563",
+        "drawing-v3-evidence:0586a29357cdeb04275f860a2e488ccf",
+        "drawing-v3-evidence:7a98de0fd64873a614db014c6b799ea9",
+        "drawing-v3-evidence:1506ac5409206354a47374cfc7cfd78e",
+        "drawing-v3-evidence:54af954b149e0ae9476ac788f3e5f2ec"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:02c91b07e27e0dd345909ed12add0e94",
+        "drawing-v3-visual-support:7340c130f796e95b7b6dd702691faad0",
+        "drawing-v3-visual-support:d777cd4cad10488e09a49233a8e943e8"
+      ],
+      "cited_support_families": [
+        "visual_signature",
+        "weak_filename_semantic"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "81"
+        ],
+        [
+          "drawing",
+          "82"
+        ],
+        [
+          "drawing",
+          "71"
+        ],
+        [
+          "drawing",
+          "72"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "78"
+        ],
+        [
+          "drawing",
+          "96"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "73"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.86,
+      "codex_summary": "The source combines a tomb plan/section with an excavated artifact at 1/2 scale and a 5 cm scale bar, aligning best with drawing 73 for the Joseon-period No. 1 pit tomb.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:204a8e7231a58d6d412d350d8cc770c1",
+        "drawing-v3-evidence:4bd22786376e45c83638feed39d127ae",
+        "drawing-v3-evidence:72275172f0f3a2ff62fc5efdf727ca3d",
+        "drawing-v3-evidence:afc8a69d257889c4afe73de1bfa39698"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 2호 옹관묘 평·단면도.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "68"
+        ],
+        [
+          "drawing",
+          "66"
+        ],
+        [
+          "drawing",
+          "67"
+        ],
+        [
+          "drawing",
+          "69"
+        ],
+        [
+          "drawing",
+          "70"
+        ],
+        [
+          "drawing",
+          "71"
+        ],
+        [
+          "drawing",
+          "72"
+        ],
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "76"
+        ],
+        [
+          "drawing",
+          "77"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "68"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.96,
+      "codex_summary": "The source visibly depicts an urn burial with pottery vessels and a 40.50 m elevation, matching candidate drawing 68's 2-ho Joseon-period urn-burial identification.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:e9b9ae86e05b39af978f5fd4796a96ff"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "76"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "72"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "78"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "123"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "56"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.93,
+      "codex_summary": "The source’s 황갈색 사질점토 soil description and elongated rounded feature profile best support drawing 56, a 2지점 시대미상 1호 구상유구 평·단면도.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:d4df65b3aa26e57e366c9476ee50df79"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 3호 옹관묘 평·단면도 및 출토유물1.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "69"
+        ],
+        [
+          "drawing",
+          "70"
+        ],
+        [
+          "drawing",
+          "72"
+        ],
+        [
+          "drawing",
+          "86"
+        ],
+        [
+          "drawing",
+          "85"
+        ],
+        [
+          "drawing",
+          "68"
+        ],
+        [
+          "drawing",
+          "71"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "65"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "69"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.9,
+      "codex_summary": "The source is artifact drawing 59 with a 10 cm, 1/3 scale; candidate 69 is the uniquely supported corresponding artifact plate.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:d96a8bbf3202e491f7c3717f84d9f009"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 조선시대 3호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "85"
+        ],
+        [
+          "drawing",
+          "86"
+        ],
+        [
+          "drawing",
+          "76"
+        ],
+        [
+          "drawing",
+          "77"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "87"
+        ],
+        [
+          "drawing",
+          "78"
+        ],
+        [
+          "drawing",
+          "123"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "75"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source depicts two vessels (63–64) and seven coffin nails (65-1–65-7), matching candidate 75's description of two buncheong dishes and coffin nails.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:6145c031df474d918ab03a926bd38861"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/3지점/【도면  】3지점 청동기시대 수혈 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "81"
+        ],
+        [
+          "drawing",
+          "88"
+        ],
+        [
+          "drawing",
+          "65"
+        ],
+        [
+          "drawing",
+          "82"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "66"
+        ],
+        [
+          "drawing",
+          "67"
+        ],
+        [
+          "drawing",
+          "89"
+        ],
+        [
+          "drawing",
+          "83"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "65"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.97,
+      "codex_summary": "The source visibly combines a feature plan/section with artifact drawings 52 and 53, matching candidate drawing 65’s description of a plan-section and excavated artifacts.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:a0b3ac362d5ae64dc5d01c6238197cc9"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/4지점/【도면  】4지점 조선시대 1호 토광묘 평·입단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "92"
+        ],
+        [
+          "drawing",
+          "94"
+        ],
+        [
+          "drawing",
+          "93"
+        ],
+        [
+          "drawing",
+          "91"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "96"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "51"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "92"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "92"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source depicts the Joseon-period pit tomb with associated artifacts and stratigraphic profile matching Drawing 92.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:8c374bed86b39c74936b3757256aa13e"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:0358b3a062e4074121b3722f42417e2c",
+        "drawing-v3-visual-support:f9ffc783df97fa1eed21117f3a6eb48a"
+      ],
+      "cited_support_families": [
+        "lexical_support",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 2,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 1호 구상유구 평·단면도.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "129"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "120"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "130"
+        ],
+        [
+          "drawing",
+          "113"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "117"
+        ],
+        [
+          "drawing",
+          "128"
+        ],
+        [
+          "drawing",
+          "56"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "56"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.97,
+      "codex_summary": "The source soil labels materially match candidate 56's 황갈색 사질점토 description, and its 1호 구상유구 평·단면도 subject fits the source's elongated curved feature with plan and sections.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:f3cef2423577dda700e334d72e2bacf9"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 1호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "117"
+        ],
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "96"
+        ],
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "92"
+        ],
+        [
+          "drawing",
+          "53"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "116"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.94,
+      "codex_summary": "The source matches candidate 116: a 5지점 Joseon-period tomb plan/section with artifact 76 and a 1/3 artifact scale; the supplied candidate text also matches the 10 cm scale.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:9375d19e50733e1e6bd6611bd638ee20"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 2호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "119"
+        ],
+        [
+          "drawing",
+          "124"
+        ],
+        [
+          "drawing",
+          "117"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "74"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "117"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.74,
+      "codex_summary": "The source depicts eight small, varied bead-like finds labeled 77-1 through 77-8, consistent with candidate 117's description of varied jade beads and inconsistent with candidates describing a single spoon, bowl, coin, or no artifacts.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:82a5dec4ea565bc6322b18760cb69ab9"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 3호 토광묘 평·입단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "127"
+        ],
+        [
+          "drawing",
+          "119"
+        ],
+        [
+          "drawing",
+          "122"
+        ],
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "121"
+        ],
+        [
+          "drawing",
+          "124"
+        ],
+        [
+          "drawing",
+          "125"
+        ],
+        [
+          "drawing",
+          "117"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "114"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a plan-and-section archaeological drawing of a rectangular feature with associated finds, matching candidate drawing 114’s Bronze Age pit-trap feature and 평·입단면도 format.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:2f77eb77d9e7f7f111d2ca4029ac3b69",
+        "drawing-v3-evidence:15f357eb69b0b251bb76222070004db7",
+        "drawing-v3-evidence:2f08d063a16212169ba961827af0781c"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "weak_filename_semantic"
+      ],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 4호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "129"
+        ],
+        [
+          "drawing",
+          "124"
+        ],
+        [
+          "drawing",
+          "119"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "120"
+        ],
+        [
+          "drawing",
+          "130"
+        ],
+        [
+          "drawing",
+          "128"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "42"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "119"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "119"
+      ],
+      "codex_confidence": 0.97,
+      "codex_summary": "The source visibly combines a tomb plan/section with multiple depicted artifacts labeled 80–82 and includes a 5 cm scale, matching candidate drawing 119's combined feature-and-artifacts description.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:2ade0cd2352b3cac1f3a56dab362744f"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:93544596b76da7659270d042cc2f0fcb",
+        "drawing-v3-visual-support:1222f4918fb623ca670c269556113159"
+      ],
+      "cited_support_families": [
+        "lexical_support",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 2,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "본문 도면/5지점/【도면  】5지점 조선시대 5호 토광묘 평·단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "124"
+        ],
+        [
+          "drawing",
+          "121"
+        ],
+        [
+          "drawing",
+          "122"
+        ],
+        [
+          "drawing",
+          "96"
+        ],
+        [
+          "drawing",
+          "58"
+        ],
+        [
+          "drawing",
+          "97"
+        ],
+        [
+          "drawing",
+          "93"
+        ],
+        [
+          "drawing",
+          "94"
+        ],
+        [
+          "drawing",
+          "127"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "121"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.94,
+      "codex_summary": "The source depicts a coffin-related pit grave with artifact 83; candidate 121 uniquely identifies a Joseon-period No. 5 pit grave with excavated artifacts.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:c783f68bd615f2721368137ff72d5675"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면1. 위치도(15-22)5만.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "26"
+        ],
+        [
+          "drawing",
+          "27"
+        ],
+        [
+          "drawing",
+          "29"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "40"
+        ],
+        [
+          "drawing",
+          "44"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.97,
+      "codex_summary": "The source is a modern 1:50,000 site-location map, matching candidate drawing 1; candidate 2 is specifically a 1916 historical map.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:27ee4feabbec062530061f593d9c3d7f"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면10. 해동지도(15-10)-은진현-갈마동면.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "drawing",
+          "17"
+        ],
+        [
+          "drawing",
+          "18"
+        ],
+        [
+          "drawing",
+          "19"
+        ],
+        [
+          "drawing",
+          "20"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.96,
+      "codex_summary": "The source is a historical map, and both drawing 9 (광여도) and drawing 10 (해동지도) remain plausible; the supplied visuals do not provide a unique discriminator.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-evidence:248a7ac0e4c80a263da5c8d219b149bd",
+        "drawing-v3-evidence:e61f0b9a2df2982e133a9d12b1d7bbe4"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면11. 조사대상지역 현황도(15-22)3400.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "10"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "9"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "11"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "11"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a site status map at scale 1:3,400, matching drawing 11; drawing 12 is explicitly scale 1:2,000.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:f228980b5e8540210ba0bccef3325b48",
+        "drawing-v3-evidence:df0b951e898650c8f5c1f9464efd13da"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:665e4619b1776bb70c9109cf4971e84c",
+        "drawing-v3-visual-support:2adc36996c871a55653421a95656dc40"
+      ],
+      "cited_support_families": [
+        "visual_signature",
+        "weak_filename_semantic",
+        "weak_identity"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면12. 조사대상지역 유구현황도(12,000).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "23"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "21"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "12"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "12"
+      ],
+      "codex_confidence": 0.98,
+      "codex_summary": "The source is a site feature-status map at scale 1/2,000, matching candidate drawing 12.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:9d06581862851eaa16c4fbc257b2b87a",
+        "drawing-v3-evidence:0240e6328ed93e100c59e0c504ef4495"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:a8f56845a626cfee4ac4e1b9a58af18f",
+        "drawing-v3-visual-support:c6e5cb5264b03c76730aede46980dabe"
+      ],
+      "cited_support_families": [
+        "archaeology_signature",
+        "lexical_support",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 3,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면13. 구석기-그리드현황도(15-22)800.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "23"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "6"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "13"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "13"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate 13 matches the source's Paleolithic excavation-area location map, including the period, location drawing type, and 1/800 scale.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:34b9141afca8f95bf2372bbaf74b69ea",
+        "drawing-v3-source-evidence:fac106342ceb08eb3ad278b5fc0cadb5",
+        "drawing-v3-evidence:9bab921286f34cb9444d4a764a5bd03f",
+        "drawing-v3-evidence:3ad96de5b66089bfaded15edaeabdf04",
+        "drawing-v3-evidence:5202fec110766dce1b8d6f7b2a2b4083"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "archaeology_signature",
+        "drawing_signature",
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 5,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면14. 2지점 S1E1 북동 토층 cs5.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "drawing",
+          "52"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "59"
+        ],
+        [
+          "drawing",
+          "49"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "14"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "14"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is explicitly 도면 14: 2지점 S1E1 그리드 남벽 층위도, matching candidate drawing 14 exactly.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:ba5c944a7d62c078f56d852be527c5c0",
+        "drawing-v3-source-evidence:36afc5ad6dac8226356f7dc592c43397",
+        "drawing-v3-source-evidence:6f44e9215cf6f1c4d63540965d10c999",
+        "drawing-v3-source-evidence:f5b9309a9f9aa98bfb9a72e6e90c010f",
+        "drawing-v3-source-evidence:82dd97bb0daafe69f962d5e7605b9b78",
+        "drawing-v3-evidence:595c6d2c20ed95e1d5d838ab4f8c10bd",
+        "drawing-v3-evidence:e1c882ac1d1305294daf2169db03e1e5",
+        "drawing-v3-evidence:8f808b98edc95b7ccb3d7b9fe2c99c56",
+        "drawing-v3-evidence:e0c9832425d0f9749a2fbf25b37cf4b5"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "drawing_signature",
+        "identity_signature",
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 9,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면15. 4지점 선행트렌치 토층 cs5 수정본40.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "illustration",
+          "6"
+        ],
+        [
+          "illustration",
+          "7"
+        ],
+        [
+          "illustration",
+          "8"
+        ],
+        [
+          "illustration",
+          "3"
+        ],
+        [
+          "illustration",
+          "5"
+        ],
+        [
+          "illustration",
+          "4"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "16"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "15"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "15"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate drawing 15 exactly matches the source: 4지점 트렌치 동벽 층위도.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:8e3efda6fa8bf35178328ce4b6f22d3c",
+        "drawing-v3-evidence:767bbb8d78527258237274ec13767d6b",
+        "drawing-v3-evidence:516f2a4f9bcb42e1b6a4e1b8defa77e3"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "drawing_signature",
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 3,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면16. 구석기시대발굴조사지역 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "17"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "drawing",
+          "23"
+        ],
+        [
+          "drawing",
+          "19"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "18"
+        ],
+        [
+          "drawing",
+          "20"
+        ],
+        [
+          "drawing",
+          "22"
+        ],
+        [
+          "drawing",
+          "21"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "24"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "5"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source depicts Paleolithic excavated artifacts, matching multiple submitted artifact drawings (16–22); the supplied textual evidence does not uniquely distinguish one candidate.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:a6f556c989bdc8273a9b57282f0746ea",
+        "drawing-v3-source-evidence:c28434117fc48c145988eae52a136dac",
+        "drawing-v3-evidence:2a082f59a2831521aede1dc2b6ee535d",
+        "drawing-v3-evidence:c174435c22c1ad9a3a22614689bbc88a",
+        "drawing-v3-evidence:65a82fa95087d625a2cd756c19cb6024",
+        "drawing-v3-evidence:1923336dedaa3a0f21f41387ede23135",
+        "drawing-v3-evidence:48e2963a85e48d4329b4dc5125e567a0",
+        "drawing-v3-evidence:a737e173bbe78fdea55b18a28added74",
+        "drawing-v3-evidence:7758d01ea8895c05efc4189b6f17aa9b",
+        "drawing-v3-evidence:3360417bb9a8ec179525654450c9de00",
+        "drawing-v3-evidence:6ac3e6b6107d660bc9ba875667c7e2ac",
+        "drawing-v3-evidence:80d83bfeb9f2d3d6bcc609454f82d82f",
+        "drawing-v3-evidence:9022b9787b9d0dddcfa2ac3d688099e8",
+        "drawing-v3-evidence:b025409d2306d6aec911a1ae48a03829",
+        "drawing-v3-evidence:43dfd3a6cb3f0346692a8f49bea3a5db",
+        "drawing-v3-evidence:6388fd3d69aaa152ac7afacf3b6b5b30"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면17. 1지점-유구현황도(15-22)800.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "36"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "40"
+        ],
+        [
+          "drawing",
+          "32"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "29"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "31"
+        ],
+        [
+          "drawing",
+          "48"
+        ],
+        [
+          "drawing",
+          "23"
+        ],
+        [
+          "drawing",
+          "24"
+        ],
+        [
+          "drawing",
+          "25"
+        ],
+        [
+          "drawing",
+          "22"
+        ],
+        [
+          "drawing",
+          "27"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "23"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "23"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate 23 matches the source as the 1지점 유구현황도 at scale 1/800, with overlapping archaeological feature content.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:804fb91c7490eaea81e492e3bf6a7fc2",
+        "drawing-v3-source-evidence:91291d0fdc03fd26f4c644ee01f032b0",
+        "drawing-v3-evidence:24404fe1e5348c53302b824991dd778f",
+        "drawing-v3-evidence:29053094aaa53e75be0026d6b3b5f354"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 4,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면18. 1지점-유구편집본 수정.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "45"
+        ],
+        [
+          "drawing",
+          "44"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "40"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "46"
+        ],
+        [
+          "drawing",
+          "36"
+        ],
+        [
+          "drawing",
+          "43"
+        ],
+        [
+          "drawing",
+          "41"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "29"
+        ],
+        [
+          "drawing",
+          "26"
+        ],
+        [
+          "drawing",
+          "38"
+        ],
+        [
+          "drawing",
+          "27"
+        ],
+        [
+          "drawing",
+          "24"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "33"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The supplied source is a composite containing multiple drawing groups, with strong textual support for several submitted candidates including drawings 39, 44, 45, and 47. No unique candidate can be selected.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-evidence:8df7766f66462c6af7d339307679954d",
+        "drawing-v3-evidence:d40f8ae26373e7896609cfee1714a842",
+        "drawing-v3-evidence:3ccd5405d86747036575a6b49d104ee9",
+        "drawing-v3-evidence:0d45e170b419dd629e14dbfaaa2f6eb3"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면19. 1지점 분구묘-A3.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "31"
+        ],
+        [
+          "drawing",
+          "42"
+        ],
+        [
+          "drawing",
+          "32"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "21"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "32"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "32"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate 32 exactly identifies the source as the 1st-point, Proto-Three-Kingdoms-era No. 1 mound tomb plan and sectional drawing.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:9792624a74a7c7940819c31fc196ee4d",
+        "drawing-v3-evidence:49c196c5d1ad1f644e78a05537e6e75e",
+        "drawing-v3-evidence:18210d8e7d060e89bbd91444756ff2b4",
+        "drawing-v3-evidence:62b99647e6d4628094d60f96dc3bc7fd",
+        "drawing-v3-evidence:7351279c2c6db6c933423a53c08945f7",
+        "drawing-v3-evidence:b14bac037fa2fc459685554eae01f81e",
+        "drawing-v3-evidence:87217c84b09c1b20b5480d0085f13c14"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "archaeology_signature",
+        "drawing_signature",
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 7,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면2. 근세도(15-22)대정오년 5만.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.86,
+      "codex_summary": "The source is a 1:50,000 site location map with the 조사대상지역 marker, matching candidate drawing 1. Candidate 2 shares the scale but is specifically a 1916 modern-period map, which is not supported by the source.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:1186f706eba61ccc894dd7e007c5a0b9"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면20. 2지점-유구현황도(15-22)600.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "57"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "52"
+        ],
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "65"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "66"
+        ],
+        [
+          "drawing",
+          "55"
+        ],
+        [
+          "drawing",
+          "53"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "48"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "54"
+        ],
+        [
+          "illustration",
+          "7"
+        ],
+        [
+          "drawing",
+          "61"
+        ],
+        [
+          "drawing",
+          "58"
+        ],
+        [
+          "illustration",
+          "6"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "48"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "48"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a 2지점 archaeological status map at scale 1/600, matching drawing 48.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:28fa16f7190e332487fde1c1f529b7a0",
+        "drawing-v3-evidence:c3ed7dee30f29c6baf3b856c7bba6027"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:629c495e6788527a949763ce92afc603",
+        "drawing-v3-visual-support:15f5ae1b873b0656c8b0cf4cb960e231"
+      ],
+      "cited_support_families": [
+        "lexical_support",
+        "spatial_signature",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 3,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면21. 2지점 유구+유물 편집.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "61"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "57"
+        ],
+        [
+          "drawing",
+          "58"
+        ],
+        [
+          "drawing",
+          "46"
+        ],
+        [
+          "drawing",
+          "56"
+        ],
+        [
+          "drawing",
+          "54"
+        ],
+        [
+          "drawing",
+          "62"
+        ],
+        [
+          "drawing",
+          "60"
+        ],
+        [
+          "drawing",
+          "59"
+        ],
+        [
+          "drawing",
+          "55"
+        ],
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "52"
+        ],
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "49"
+        ],
+        [
+          "drawing",
+          "53"
+        ],
+        [
+          "drawing",
+          "65"
+        ],
+        [
+          "drawing",
+          "48"
+        ],
+        [
+          "drawing",
+          "51"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The supplied source packet depicts multiple archaeological drawings and supports several submitted candidates, including drawings 57, 61, and 63; no single candidate is uniquely established.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:e38caed75389be58b7efb0d78ed25ad5",
+        "drawing-v3-source-evidence:46b625268329a8b7310dbd4c9a847386",
+        "drawing-v3-source-evidence:019c085d56f08f5325eff93de1fde16f",
+        "drawing-v3-evidence:9b6357ac8adf226ea6ef1272722b6246",
+        "drawing-v3-evidence:ac4a2b2475d1f92e379cd433d29a5efa",
+        "drawing-v3-evidence:db4a9cfaf8ac479c380ff3856ec939f5",
+        "drawing-v3-evidence:57126d2e1cdcab9167fc3b01e710e9be",
+        "drawing-v3-evidence:a0296028b82c2a2f256b5ee4e017af6b",
+        "drawing-v3-evidence:6b8e37187efce38f4b876c66f35f9f35"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면22. 3지점-유구현황도(15-22)500.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "65"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "66"
+        ],
+        [
+          "drawing",
+          "67"
+        ],
+        [
+          "drawing",
+          "82"
+        ],
+        [
+          "drawing",
+          "81"
+        ],
+        [
+          "drawing",
+          "89"
+        ],
+        [
+          "drawing",
+          "90"
+        ],
+        [
+          "drawing",
+          "88"
+        ],
+        [
+          "drawing",
+          "87"
+        ],
+        [
+          "drawing",
+          "76"
+        ],
+        [
+          "drawing",
+          "77"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "85"
+        ],
+        [
+          "drawing",
+          "70"
+        ],
+        [
+          "drawing",
+          "84"
+        ],
+        [
+          "drawing",
+          "86"
+        ],
+        [
+          "drawing",
+          "73"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "none",
+      "status": "UNRESOLVED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a 3지점 overview map at 1/500, while the only overview-map candidate is explicitly the 2지점 map; the remaining candidates are feature-specific drawings.",
+      "auto_gate_reason": "verdict_none",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": [
+        "drawing-v3-evidence:2fa94b8c6857173ae2e1e257407ca7d2"
+      ]
+    },
+    {
+      "source": "환경 도면/도면23. 3지점-유구편집본.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "85"
+        ],
+        [
+          "drawing",
+          "78"
+        ],
+        [
+          "drawing",
+          "82"
+        ],
+        [
+          "drawing",
+          "79"
+        ],
+        [
+          "drawing",
+          "86"
+        ],
+        [
+          "drawing",
+          "84"
+        ],
+        [
+          "drawing",
+          "83"
+        ],
+        [
+          "drawing",
+          "81"
+        ],
+        [
+          "drawing",
+          "80"
+        ],
+        [
+          "drawing",
+          "63"
+        ],
+        [
+          "drawing",
+          "75"
+        ],
+        [
+          "drawing",
+          "87"
+        ],
+        [
+          "drawing",
+          "76"
+        ],
+        [
+          "drawing",
+          "77"
+        ],
+        [
+          "drawing",
+          "74"
+        ],
+        [
+          "drawing",
+          "64"
+        ],
+        [
+          "drawing",
+          "73"
+        ],
+        [
+          "drawing",
+          "71"
+        ],
+        [
+          "drawing",
+          "68"
+        ],
+        [
+          "drawing",
+          "65"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The supplied packet supports multiple candidates from 3지점 with the same 평·단면도 format, including drawings 78, 82, and 85. No submitted visual uniquely distinguishes one.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:a95e3c1dc8585866e45f334f5502d844",
+        "drawing-v3-source-evidence:d241b6e2970311e4727ee8cb234ff5ac",
+        "drawing-v3-source-evidence:b3c6e266511409b15fdcaad8b50478e9",
+        "drawing-v3-evidence:f590d50cd714594e487abcb4e3ebdcba",
+        "drawing-v3-evidence:a87c30c90a790457a101ad99dc4ab821",
+        "drawing-v3-evidence:d7a38784ab137de672e878d53dd0f937"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면24. 4지점-유구현황도(15-22)900.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "113"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "91"
+        ],
+        [
+          "drawing",
+          "93"
+        ],
+        [
+          "drawing",
+          "92"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "89"
+        ],
+        [
+          "drawing",
+          "112"
+        ],
+        [
+          "drawing",
+          "90"
+        ],
+        [
+          "drawing",
+          "88"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "89"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "89"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "Candidate 89 is the 4지점 유구현황도 at S=1/900, matching the source map's site point, feature-survey layout, and scale.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:a382e38b2583f93ba4483b9e5b2e4b50",
+        "drawing-v3-evidence:9203773c505145ba91e14c0459e6decb",
+        "drawing-v3-evidence:da275aae65bc35bc33c85016e050dcc9"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "archaeology_signature",
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 3,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면25. 4지점 유구+유물편집.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "96"
+        ],
+        [
+          "drawing",
+          "102"
+        ],
+        [
+          "drawing",
+          "103"
+        ],
+        [
+          "drawing",
+          "95"
+        ],
+        [
+          "drawing",
+          "94"
+        ],
+        [
+          "drawing",
+          "93"
+        ],
+        [
+          "drawing",
+          "109"
+        ],
+        [
+          "drawing",
+          "98"
+        ],
+        [
+          "drawing",
+          "104"
+        ],
+        [
+          "drawing",
+          "108"
+        ],
+        [
+          "drawing",
+          "100"
+        ],
+        [
+          "drawing",
+          "106"
+        ],
+        [
+          "drawing",
+          "105"
+        ],
+        [
+          "drawing",
+          "97"
+        ],
+        [
+          "drawing",
+          "101"
+        ],
+        [
+          "drawing",
+          "87"
+        ],
+        [
+          "drawing",
+          "99"
+        ],
+        [
+          "drawing",
+          "107"
+        ],
+        [
+          "drawing",
+          "92"
+        ],
+        [
+          "drawing",
+          "91"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The supplied source packet contains multiple distinct drawings matching several submitted candidates, so no single candidate is uniquely supported.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-evidence:2d8df214d719bb93e9d97820915276f4",
+        "drawing-v3-evidence:e02abdb22c61ca26e225c917dacce3da",
+        "drawing-v3-evidence:6aa5e4af17bacd689953a946ec6cfa4d"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면26. 5지점-유구현황도(15-22)600.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "113"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "136"
+        ],
+        [
+          "drawing",
+          "126"
+        ],
+        [
+          "drawing",
+          "127"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "112"
+        ],
+        [
+          "drawing",
+          "122"
+        ],
+        [
+          "drawing",
+          "123"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "113"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "113"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is an overall 5지점 archaeological-feature status map at 1/600, matching candidate drawing 113.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:c3a89f483e402a7d5ad56fd142938a99",
+        "drawing-v3-evidence:1e62c9eb617bdf40f6382e8eb6f61673"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support",
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 2,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면27. 5지점-유구편집본.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "128"
+        ],
+        [
+          "drawing",
+          "127"
+        ],
+        [
+          "drawing",
+          "126"
+        ],
+        [
+          "drawing",
+          "129"
+        ],
+        [
+          "drawing",
+          "130"
+        ],
+        [
+          "drawing",
+          "124"
+        ],
+        [
+          "drawing",
+          "123"
+        ],
+        [
+          "drawing",
+          "122"
+        ],
+        [
+          "drawing",
+          "114"
+        ],
+        [
+          "drawing",
+          "125"
+        ],
+        [
+          "drawing",
+          "115"
+        ],
+        [
+          "drawing",
+          "116"
+        ],
+        [
+          "drawing",
+          "120"
+        ],
+        [
+          "drawing",
+          "136"
+        ],
+        [
+          "drawing",
+          "121"
+        ],
+        [
+          "drawing",
+          "117"
+        ],
+        [
+          "drawing",
+          "118"
+        ],
+        [
+          "drawing",
+          "131"
+        ],
+        [
+          "drawing",
+          "113"
+        ],
+        [
+          "drawing",
+          "119"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.97,
+      "codex_summary": "The source is a multi-figure compilation whose site and drawing-type evidence supports several submitted candidates, including 126, 127, and 128; no unique identity is established.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-source-evidence:f0cd4cef63a7a634222d106882d78860",
+        "drawing-v3-source-evidence:4c6ae6717e6a2bde55a746c3bce02054",
+        "drawing-v3-evidence:fba8060957b27f3ff41832877ec70ac2",
+        "drawing-v3-evidence:7b5b678fe6dce37c8617847aa7764987",
+        "drawing-v3-evidence:afe40f7754d503ca3b2125f45d5b2051",
+        "drawing-v3-evidence:9c12c31d01dadeee62247adf03557a38",
+        "drawing-v3-evidence:c92ff69e8cba05bf1b0eb0acc0461bee",
+        "drawing-v3-evidence:5604e3276b655e8a8037a30c97dd5c8a"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면3. 수계도(15-10)만도.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "illustration",
+          "1"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "3"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source matches candidate drawing 3 by the distinctive 1/10,000 scale, 250m/500m scale markings, and 국가하천 legend.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:fadaffc612b1f0d89639829a50575217"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면4. 침식등급(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "4"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.9,
+      "codex_summary": "The source map’s legend uses 없음/있음/많음/기타 categories, which is consistent with the submitted surface-soil-erosion map candidate.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:eb4ec76c4157b1b8f825a2fbcf27497d"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면5. 지질도(15-10)5000.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "illustration",
+          "1"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "5"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a geological distribution map, and candidate 5 explicitly matches the geological units and labels Jbgd, Jpgdi, Qa, and Jurassic geology.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:dcf42e71e71abbbffa9e74a8e8c55f2c"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면6. 분포지형(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "6"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.93,
+      "codex_summary": "The source is a terrain-distribution map: its legend lists terrain classes, including 기타. Candidate 6 is explicitly the survey-area terrain-distribution map, making it the sufficiently supported match.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:88dacbf033b127926677734a702163be"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면7. 구석기위치도(15-22)25000.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "51"
+        ],
+        [
+          "drawing",
+          "50"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "9"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "7"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "drawing",
+        "7"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a 1/25,000 map of surrounding Paleolithic sites, matching Drawing 7.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:b01b461e015e7e1f9ae97dc41dc30f8e",
+        "drawing-v3-evidence:a85fd252a80c81de762df5316bd10fb7"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "archaeology_signature",
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 2,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면8. 주변유적분포도(15-22)14000.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "91"
+        ],
+        [
+          "drawing",
+          "29"
+        ],
+        [
+          "drawing",
+          "122"
+        ],
+        [
+          "drawing",
+          "60"
+        ],
+        [
+          "drawing",
+          "30"
+        ],
+        [
+          "drawing",
+          "61"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "8"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source is a 1/14,000 archaeological distribution map, matching candidate drawing 8 exactly; other plausible map candidates have different scale or map type.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:3d82123e3daaeb9d8a849a86f40a18c6"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/도면9. 광여도(15-10)-은진현-갈마동면.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "10"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "11"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "drawing",
+          "17"
+        ],
+        [
+          "drawing",
+          "18"
+        ],
+        [
+          "drawing",
+          "19"
+        ],
+        [
+          "drawing",
+          "20"
+        ]
+      ],
+      "codex_identity": null,
+      "codex_verdict": "ambiguous",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.84,
+      "codex_summary": "The source is a historical map, and both drawing 9 (광여도) and drawing 10 (해동지도) remain plausible; neither is sufficiently distinguished by the supplied visual evidence.",
+      "auto_gate_reason": "verdict_not_match",
+      "cited_support_ids": [
+        "drawing-v3-evidence:b7353bfc0c16c48da954499cd93adf2f",
+        "drawing-v3-evidence:3893c427ee5ef8539e78c227ea713f0f"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도1. 위성지도(15-10)만도.ai",
+      "candidate_identities": [
+        [
+          "illustration",
+          "2"
+        ],
+        [
+          "illustration",
+          "1"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ]
+      ],
+      "codex_identity": [
+        "illustration",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source is a satellite map labeled 1:10,000 with 250m/500m scale markers, matching illustration 1's caption and scale.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:7a5c806c60bab9dc042627560bc6d57b"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "lexical_support"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도2-1. 항공지도-1968(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.98,
+      "codex_summary": "The source depicts the survey area, matching candidate 1’s “조사지역 위치도” (site location map).",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도2-2. 항공지도-1989(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source is a location map labeled 조사대상지역, matching candidate drawing 1, 조사지역 위치도(S=1/50,000).",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도2-3. 항공지도-2007(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.93,
+      "codex_summary": "The source is a location drawing depicting the survey area, matching candidate drawing 1.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도2-4. 항공지도-2012(15-10).ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "1"
+        ],
+        [
+          "drawing",
+          "2"
+        ],
+        [
+          "drawing",
+          "3"
+        ],
+        [
+          "drawing",
+          "4"
+        ],
+        [
+          "drawing",
+          "5"
+        ],
+        [
+          "drawing",
+          "6"
+        ],
+        [
+          "drawing",
+          "7"
+        ],
+        [
+          "drawing",
+          "8"
+        ],
+        [
+          "drawing",
+          "9"
+        ],
+        [
+          "drawing",
+          "10"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "1"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.96,
+      "codex_summary": "The source depicts a survey-area location image, matching candidate drawing 1's location-map caption.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도3. 2지점 그리드.ai",
+      "candidate_identities": [
+        [
+          "illustration",
+          "3"
+        ],
+        [
+          "illustration",
+          "4"
+        ],
+        [
+          "illustration",
+          "5"
+        ],
+        [
+          "illustration",
+          "7"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "illustration",
+          "6"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "14"
+        ]
+      ],
+      "codex_identity": [
+        "illustration",
+        "3"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source visibly shows the 2지점 grid with the exact N1E1, N1E2, N1E4, N1E5, N2E4, N2E5, S1E1, and S1E2 identifiers supported by candidate 3.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [
+        "drawing-v3-evidence:e40e659eeaa6181f82c1260fe3640ea8",
+        "drawing-v3-evidence:959eb7c1660efd076a5f41cf79d21e12",
+        "drawing-v3-evidence:9c9a27c8f0c41db240b778a556a0e46b",
+        "drawing-v3-evidence:25bdc5aa76629a2cba54096b2e4901eb",
+        "drawing-v3-evidence:0f07add69a1fa6c9489e4f749fc7d43f",
+        "drawing-v3-evidence:90bae6c1337547decebe5b2da6fbaf7f",
+        "drawing-v3-evidence:22a471bbf66df9be2a202fa36047ff9b",
+        "drawing-v3-evidence:38b37e8a2279e55f9c31f1cac25b3a70"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [
+        "spatial_signature"
+      ],
+      "cited_nonweak_count": 8,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도4. 4지점 그리드.ai",
+      "candidate_identities": [
+        [
+          "illustration",
+          "4"
+        ],
+        [
+          "illustration",
+          "3"
+        ],
+        [
+          "illustration",
+          "5"
+        ],
+        [
+          "illustration",
+          "7"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "illustration",
+          "6"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "12"
+        ]
+      ],
+      "codex_identity": [
+        "illustration",
+        "4"
+      ],
+      "codex_verdict": "match",
+      "status": "AUTO_VERIFIED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": [
+        "illustration",
+        "4"
+      ],
+      "codex_confidence": 0.99,
+      "codex_summary": "The source visibly shows the four-point grid overview with the matching S1–S3/E1–E5 layout and numbered points, supporting illustration 4.",
+      "auto_gate_reason": "auto_verified",
+      "cited_support_ids": [
+        "drawing-v3-evidence:77d2ed9bdcf21bc4384192f7f235fd13",
+        "drawing-v3-evidence:0f912007d855eeade5a2afc95ab86cee",
+        "drawing-v3-evidence:5b45288bf5809cbb1c69c4b3034a575d",
+        "drawing-v3-evidence:665931fe5ab7e2b64f99e12958d92fe1",
+        "drawing-v3-evidence:9f6f9b4e2780217381e0d33b2abfaec4",
+        "drawing-v3-evidence:042e355a8dd505b170cc83e7352da1ca",
+        "drawing-v3-evidence:bc63394232bc3923b7560b9361684ff3"
+      ],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:84d5be2bf2fa1776d8c528b3bcfc9d71"
+      ],
+      "cited_support_families": [
+        "spatial_signature",
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 8,
+      "cited_contradiction_ids": []
+    },
+    {
+      "source": "환경 도면/삽도5. 2지점 S1E1 그리드 남벽.ai",
+      "candidate_identities": [
+        [
+          "illustration",
+          "4"
+        ],
+        [
+          "illustration",
+          "6"
+        ],
+        [
+          "illustration",
+          "5"
+        ],
+        [
+          "drawing",
+          "12"
+        ],
+        [
+          "drawing",
+          "13"
+        ],
+        [
+          "drawing",
+          "14"
+        ],
+        [
+          "drawing",
+          "15"
+        ],
+        [
+          "drawing",
+          "16"
+        ],
+        [
+          "illustration",
+          "3"
+        ],
+        [
+          "illustration",
+          "7"
+        ]
+      ],
+      "codex_identity": [
+        "illustration",
+        "6"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.93,
+      "codex_summary": "The source is a photographed trench-wall stratigraphic profile with multiple repeated layers, matching Illustration 6: 4-point trench east-wall stratigraphy.",
+      "auto_gate_reason": "confidence_below_threshold",
+      "cited_support_ids": [
+        "drawing-v3-evidence:ea154e69b3b23d8c8b27e91f827f73a7"
+      ],
+      "cited_visual_support_ids": [],
+      "cited_support_families": [],
+      "cited_nonweak_count": 0,
+      "cited_contradiction_ids": []
+    }
+  ]
+}

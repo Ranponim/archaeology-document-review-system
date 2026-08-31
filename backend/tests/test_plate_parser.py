@@ -246,6 +246,18 @@ def test_plate_parser_real_plate_book_pdf_sample_pages():
     assert plate45.source_sha256 == expected_sha
 
 
+def test_real_plate_parser_recovers_continuation_caption_panel():
+    if not REAL_PLATE_PDF_3.is_file():
+        pytest.skip(f"Real sample PDF not found at {REAL_PLATE_PDF_3}")
+
+    plates = PlateParser().parse_page_range(REAL_PLATE_PDF_3, start_page=59, end_page=59)
+
+    assert len(plates) == 1
+    assert plates[0].number == "57"
+    assert len(plates[0].panels) == 6
+    assert all(panel.bbox is not None for panel in plates[0].panels)
+
+
 def test_plate_parser_pypdf_fallback():
     parser = PlateParser()
 
@@ -282,3 +294,38 @@ def test_plate_parser_edge_cases():
     assert index.get_plate("1") is None
     assert index.get_panel("1", 1) is None
     assert "1" not in index
+
+
+def test_segment_page_panels_uses_reading_order_when_badges_are_rasterized():
+    class Rect:
+        def __init__(self, x0, y0, x1, y1):
+            self.x0, self.y0, self.x1, self.y1 = x0, y0, x1, y1
+
+        @property
+        def width(self):
+            return self.x1 - self.x0
+
+        @property
+        def height(self):
+            return self.y1 - self.y0
+
+    class Page:
+        rect = Rect(0, 0, 100, 100)
+
+        def get_images(self, full=True):
+            return [(1,), (2,)]
+
+        def get_image_rects(self, xref):
+            return {
+                1: [Rect(0, 0, 100, 40)],
+                2: [Rect(0, 45, 100, 85)],
+            }[xref]
+
+    result = PlateParser.segment_page_panels(
+        Page(),
+        label_bboxes={2: (90, 75, 95, 80)},
+        expected_indices={1, 2},
+    )
+
+    assert set(result) == {1, 2}
+    assert result[1][1] < result[2][1]

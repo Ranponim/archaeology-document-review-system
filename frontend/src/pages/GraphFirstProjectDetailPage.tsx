@@ -13,6 +13,7 @@ import {
   retryAnalysisRun,
   uploadDocument,
 } from '../api';
+import { DrawingIdentityReviewPanel } from '../components/DrawingIdentityReviewPanel';
 import { ReferenceCorpusPanel } from '../components/ReferenceCorpusPanel';
 import type { ReferenceCorpus } from '../referenceCorpusApi';
 import {
@@ -383,6 +384,11 @@ export function GraphFirstProjectDetailPage({ project, onBack }: Props) {
             )}
           </div>
         ))}
+      </section>
+
+      <section aria-labelledby="drawing-review-title" role="region">
+        <h3 id="drawing-review-title">도면 ID 검수</h3>
+        <DrawingIdentityReviewPanel projectId={project.id} />
       </section>
 
       <section aria-labelledby="candidate-title">

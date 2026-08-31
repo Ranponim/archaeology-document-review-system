@@ -22,7 +22,7 @@ export type ReferenceCorpus = {
   failureCode?: string | null;
 };
 
-export type ReferenceCorpusSourceRole = 'plate_layout' | 'plate_link' | 'drawing_source';
+export type ReferenceCorpusSourceRole = 'plate_layout' | 'plate_pdf' | 'plate_link' | 'drawing_source';
 
 export type ReferenceCorpusSource = {
   id: string;

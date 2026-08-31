@@ -1,0 +1,339 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import Any
+
+from app.domain.drawing_evidence_v3 import (
+    BodyDrawingEvidencePacket,
+    CodexDrawingDecision,
+    DrawingCandidatePacket,
+    DrawingSourceEvidencePacket,
+    DrawingV3Resolution,
+    DrawingV3SourceResult,
+    drawing_visual_support_id,
+)
+from app.services.codex_drawing_resolver_client import CodexDrawingDecisionError
+
+
+class DrawingEvidenceResolverV3:
+    resolver_version = "drawing-evidence-v3"
+
+    def __init__(
+        self,
+        candidate_generator,
+        codex_client,
+        *,
+        auto_confidence: float = 0.95,
+        max_candidates: int = 10,
+        max_expansions: int = 1,
+    ) -> None:
+        if not 0.0 <= auto_confidence <= 1.0:
+            raise ValueError("auto_confidence must be between 0 and 1")
+        if max_candidates <= 0:
+            raise ValueError("max_candidates must be positive")
+        if max_expansions < 0:
+            raise ValueError("max_expansions must be non-negative")
+        self._generator = candidate_generator
+        self._codex = codex_client
+        self._auto_confidence = auto_confidence
+        self._max_candidates = max_candidates
+        self._max_expansions = max_expansions
+
+    @staticmethod
+    def _selected_candidate(
+        decision: CodexDrawingDecision | None,
+        candidates: tuple[DrawingCandidatePacket, ...],
+    ) -> DrawingCandidatePacket | None:
+        if decision is None or decision.verdict != "match" or not decision.candidate_id:
+            return None
+        return next(
+            (row for row in candidates if row.candidate_id == decision.candidate_id),
+            None,
+        )
+
+    @staticmethod
+    def _allowed_visual_support_ids(
+        source: DrawingSourceEvidencePacket,
+        candidate: DrawingCandidatePacket,
+    ) -> set[str]:
+        return {
+            drawing_visual_support_id(
+                source.source_asset_id,
+                source_region.region_id,
+                candidate.candidate_id,
+                candidate_region.region_id,
+            )
+            for source_region in source.visual_regions
+            for candidate_region in candidate.visual_regions
+        }
+
+    def _final_evaluation(
+        self,
+        source: DrawingSourceEvidencePacket,
+        candidates: tuple[DrawingCandidatePacket, ...],
+        decision: CodexDrawingDecision | None,
+    ) -> tuple[str, dict[str, object]]:
+        diagnostics: dict[str, object] = {
+            "auto_gate_reason": "decision_missing",
+            "cited_support_ids": list(decision.cited_support_ids) if decision else [],
+            "cited_visual_support_ids": (
+                list(decision.cited_visual_support_ids) if decision else []
+            ),
+            "cited_contradiction_ids": (
+                list(decision.cited_contradiction_ids) if decision else []
+            ),
+            "cited_support_families": [],
+            "cited_nonweak_count": 0,
+        }
+        if decision is None:
+            return "REVIEW_REQUIRED", diagnostics
+        if decision.verdict == "none":
+            diagnostics["auto_gate_reason"] = "verdict_none"
+            return "UNRESOLVED", diagnostics
+        if decision.verdict != "match":
+            diagnostics["auto_gate_reason"] = "verdict_not_match"
+            return "REVIEW_REQUIRED", diagnostics
+
+        candidate = self._selected_candidate(decision, candidates)
+        if candidate is None:
+            diagnostics["auto_gate_reason"] = "selected_candidate_missing"
+            return "REVIEW_REQUIRED", diagnostics
+        if candidate.hard_contradiction:
+            diagnostics["auto_gate_reason"] = "hard_contradiction"
+            return "REVIEW_REQUIRED", diagnostics
+        if decision.confidence < self._auto_confidence:
+            diagnostics["auto_gate_reason"] = "confidence_below_threshold"
+            return "REVIEW_REQUIRED", diagnostics
+        if decision.cited_contradiction_ids:
+            diagnostics["auto_gate_reason"] = "cited_contradiction"
+            return "REVIEW_REQUIRED", diagnostics
+
+        allowed_visual_support_ids = self._allowed_visual_support_ids(source, candidate)
+        if not set(decision.cited_visual_support_ids) <= allowed_visual_support_ids:
+            diagnostics["auto_gate_reason"] = "invalid_visual_support"
+            return "REVIEW_REQUIRED", diagnostics
+
+        evidence_by_id = {item.id: item for item in source.evidence}
+        evidence_by_id.update({item.id: item for item in candidate.evidence})
+        cited = []
+        for evidence_id in decision.cited_support_ids:
+            item = evidence_by_id.get(evidence_id)
+            if item is None or not item.supports:
+                diagnostics["auto_gate_reason"] = "invalid_support_evidence"
+                return "REVIEW_REQUIRED", diagnostics
+            cited.append(item)
+
+        families = {item.family for item in cited}
+        nonweak_count = sum(not item.weak for item in cited)
+        has_validated_visual = bool(decision.cited_visual_support_ids)
+        if has_validated_visual:
+            families.add("visual_signature")
+            # Multiple crops of the same source/candidate pair must not inflate
+            # evidence strength. A validated visual family contributes once.
+            nonweak_count += 1
+        sorted_families = sorted(families)
+        diagnostics["cited_support_families"] = sorted_families
+        diagnostics["cited_nonweak_count"] = nonweak_count
+
+        # A closed-world visual citation is already validated against the
+        # selected source/candidate image pair above. Once confidence and
+        # contradiction gates have passed, that material visual comparison is
+        # sufficient strong evidence by itself. Text-only decisions retain the
+        # conservative independent-family requirement below.
+        if has_validated_visual:
+            diagnostics["auto_gate_reason"] = "auto_verified"
+            return "AUTO_VERIFIED", diagnostics
+        if len(sorted_families) < 2:
+            diagnostics["auto_gate_reason"] = "insufficient_support_families"
+            return "REVIEW_REQUIRED", diagnostics
+        if nonweak_count == 0:
+            diagnostics["auto_gate_reason"] = "weak_support_only"
+            return "REVIEW_REQUIRED", diagnostics
+        diagnostics["auto_gate_reason"] = "auto_verified"
+        return "AUTO_VERIFIED", diagnostics
+
+    def _resolve_one(
+        self,
+        source: DrawingSourceEvidencePacket,
+        bodies: list[BodyDrawingEvidencePacket],
+    ) -> DrawingV3SourceResult:
+        candidates = tuple(
+            self._generator.generate(
+                source,
+                bodies,
+                limit=self._max_candidates,
+            )
+        )
+        decision: CodexDrawingDecision | None = None
+        last_error: str | None = None
+        expansion_count = 0
+
+        try:
+            decision = self._codex.resolve(source, candidates)
+        except CodexDrawingDecisionError as exc:
+            last_error = str(exc)
+
+        should_expand = (
+            self._max_expansions > 0
+            and last_error is None
+            and decision is not None
+            and decision.verdict in {"ambiguous", "none"}
+        )
+        if should_expand:
+            for _ in range(self._max_expansions):
+                expansion_count += 1
+                candidates = tuple(
+                    self._generator.expand(
+                        source,
+                        bodies,
+                        existing_candidate_ids={row.candidate_id for row in candidates},
+                        limit=max(20, self._max_candidates),
+                    )
+                )
+                try:
+                    decision = self._codex.resolve(source, candidates)
+                    last_error = None
+                except CodexDrawingDecisionError as exc:
+                    decision = None
+                    last_error = str(exc)
+                # v3 currently permits one bounded expansion. Keep the loop
+                # generic so config=0/1 remains explicit and fail closed.
+                break
+
+        selected = self._selected_candidate(decision, candidates)
+        status, gate_diagnostics = self._final_evaluation(source, candidates, decision)
+        return DrawingV3SourceResult(
+            source_asset_id=source.source_asset_id,
+            status=status,
+            candidates=candidates,
+            decision=decision,
+            selected_candidate_id=selected.candidate_id if selected else None,
+            diagnostics={
+                "resolver_version": self.resolver_version,
+                "candidate_count": len(candidates),
+                "expansion_count": expansion_count,
+                "codex_error": last_error,
+                "assignment_conflict": False,
+                **gate_diagnostics,
+            },
+        )
+
+    @staticmethod
+    def _nonweak_cited_count(
+        source: DrawingSourceEvidencePacket,
+        result: DrawingV3SourceResult,
+        candidate: DrawingCandidatePacket,
+    ) -> int:
+        if result.decision is None:
+            return 0
+        evidence_by_id = {item.id: item for item in source.evidence}
+        evidence_by_id.update({item.id: item for item in candidate.evidence})
+        count = sum(
+            1
+            for evidence_id in result.decision.cited_support_ids
+            if (item := evidence_by_id.get(evidence_id)) is not None and not item.weak
+        )
+        allowed_visual_support_ids = DrawingEvidenceResolverV3._allowed_visual_support_ids(
+            source, candidate
+        )
+        if (
+            result.decision.cited_visual_support_ids
+            and set(result.decision.cited_visual_support_ids) <= allowed_visual_support_ids
+        ):
+            count += 1
+        return count
+
+    def _apply_assignment_conflicts(
+        self,
+        sources: list[DrawingSourceEvidencePacket],
+        results: list[DrawingV3SourceResult],
+    ) -> list[DrawingV3SourceResult]:
+        source_by_id = {source.source_asset_id: source for source in sources}
+        grouped: dict[tuple[str, str], list[int]] = {}
+        candidate_by_index: dict[int, DrawingCandidatePacket] = {}
+
+        for index, result in enumerate(results):
+            if result.status != "AUTO_VERIFIED" or not result.selected_candidate_id:
+                continue
+            candidate = next(
+                (
+                    row
+                    for row in result.candidates
+                    if row.candidate_id == result.selected_candidate_id
+                ),
+                None,
+            )
+            if candidate is None:
+                continue
+            candidate_by_index[index] = candidate
+            grouped.setdefault(
+                (candidate.publication_kind, candidate.number), []
+            ).append(index)
+
+        updated = list(results)
+        for target, indexes in grouped.items():
+            if len(indexes) <= 1:
+                continue
+
+            def rank(index: int) -> tuple[int, float, int, str]:
+                result = results[index]
+                source = source_by_id[result.source_asset_id]
+                candidate = candidate_by_index[index]
+                internal_agreement = int(candidate.number in source.internal_numbers)
+                confidence = result.decision.confidence if result.decision else 0.0
+                nonweak = self._nonweak_cited_count(source, result, candidate)
+                return (
+                    -internal_agreement,
+                    -confidence,
+                    -nonweak,
+                    result.source_asset_id,
+                )
+
+            winner = sorted(indexes, key=rank)[0]
+            for index in indexes:
+                if index == winner:
+                    continue
+                diagnostics = dict(updated[index].diagnostics)
+                diagnostics.update(
+                    {
+                        "assignment_conflict": True,
+                        "assignment_target": f"{target[0]}:{target[1]}",
+                        "assignment_winner_source_asset_id": results[winner].source_asset_id,
+                        "auto_gate_reason": "assignment_conflict",
+                    }
+                )
+                updated[index] = replace(
+                    updated[index],
+                    status="REVIEW_REQUIRED",
+                    diagnostics=diagnostics,
+                )
+        return updated
+
+    def resolve_observations(
+        self,
+        corpus_id: str,
+        sources: list[DrawingSourceEvidencePacket],
+        bodies: list[BodyDrawingEvidencePacket],
+        body_pdf_path: str | None = None,
+        render_dir: str | None = None,
+    ) -> DrawingV3Resolution:
+        del body_pdf_path, render_dir  # visual packet assembly is wired by the corpus/evaluator layer.
+        results = [self._resolve_one(source, bodies) for source in sources]
+        results = self._apply_assignment_conflicts(sources, results)
+        return DrawingV3Resolution(
+            source_results=tuple(results),
+            diagnostics={
+                "resolver_version": self.resolver_version,
+                "reference_corpus_id": corpus_id,
+                "source_count": len(sources),
+                "auto_verified_count": sum(
+                    result.status == "AUTO_VERIFIED" for result in results
+                ),
+                "review_required_count": sum(
+                    result.status == "REVIEW_REQUIRED" for result in results
+                ),
+                "unresolved_count": sum(
+                    result.status == "UNRESOLVED" for result in results
+                ),
+            },
+        )

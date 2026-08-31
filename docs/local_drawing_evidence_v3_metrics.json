@@ -1,0 +1,68 @@
+{
+  "audit": {
+    "status": "not_evaluable_live_codex",
+    "resolver_version": "drawing-evidence-v3",
+    "branch": "feature/adobe-free-provenance-20260823",
+    "head_before_report": "9f649066355d189a99231f8c6262e9bced4e56e8",
+    "source_root": "D:/Coding/archaeology-document-review-system/src",
+    "source_root_read_only": true,
+    "adobe_used": false,
+    "com_used": false,
+    "extendscript_used": false,
+    "openai_api_key_present": false,
+    "live_codex_called": false,
+    "python": "3.13.3",
+    "pymupdf": "1.28.2",
+    "pillow": "11.2.1",
+    "networkx": "3.5",
+    "neo4j_driver": "5.28.4",
+    "pytest": "8.4.1"
+  },
+  "gold": {
+    "template": "docs/local_drawing_evidence_v3_gold_template.json",
+    "rows": 56,
+    "human_verified_rows": 0,
+    "unknown_rows": 56,
+    "filename_inference_used": false,
+    "accuracy_denominator_available": false
+  },
+  "live_codex_metrics": {
+    "recall_at_5": null,
+    "recall_at_10": null,
+    "recall_at_20": null,
+    "codex_top1_accuracy": null,
+    "auto_coverage": null,
+    "auto_precision": null,
+    "review_rate": null,
+    "unresolved_rate": null,
+    "reason_not_measured": "OPENAI_API_KEY absent and all gold rows remain unknown; live Codex was intentionally not called"
+  },
+  "safety": {
+    "invalid_response_count": null,
+    "hard_contradiction_promoted_count": null,
+    "filename_only_promoted_count": null,
+    "kind_collision_count": null,
+    "api_unsafe_promotion_count": null,
+    "contract_fixture_safety_pass": true,
+    "reason_live_safety_not_measured": "No live Codex decisions were produced"
+  },
+  "tests": {
+    "focused_v3_linux": {"passed": 68, "failed": 0, "warnings": 1},
+    "backend_hermetic_linux_ci_equivalent": {"passed": 774, "skipped": 7, "failed": 0, "warnings": 1},
+    "neo4j_e2e_repository_linux": {"passed": 53, "failed": 0, "warnings": 1},
+    "frontend_typecheck": "passed",
+    "frontend_unit": {"files": 15, "passed": 75, "failed": 0},
+    "frontend_build": "passed",
+    "gold_template_generation": {"passed": true, "rows": 56}
+  },
+  "acceptance_gate": {
+    "recall_at_10_ge_99_percent": "not_measured",
+    "auto_coverage_75_to_85_percent": "not_measured",
+    "auto_precision_ge_99_percent": "not_measured",
+    "review_rate_le_25_percent": "not_measured",
+    "all_live_safety_counters_zero": "not_measured",
+    "v3_accepted": false,
+    "v3_auto_promote_enabled": false,
+    "production_default_changed": false
+  }
+}

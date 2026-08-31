@@ -1,0 +1,359 @@
+from __future__ import annotations
+
+from collections import Counter
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
+
+import pymupdf
+from PIL import Image, ImageDraw, ImageEnhance
+
+import app.services.visual_asset_matcher as visual_asset_matcher
+from app.services.visual_asset_matcher import VisualAssetMatcher
+
+
+def _write_pattern_jpg(path: Path) -> None:
+    image = Image.new("RGB", (200, 140), "black")
+    draw = ImageDraw.Draw(image)
+    for index, value in enumerate((20, 220, 50, 180, 90)):
+        draw.rectangle(
+            (index * 40, 0, index * 40 + 39, 139),
+            fill=(value, value, value),
+        )
+    draw.ellipse((55, 20, 145, 120), fill=(130, 130, 130))
+    image.save(path, format="JPEG", quality=100, subsampling=0)
+
+
+def _write_bordered_pattern_jpg(path: Path) -> tuple[int, int, int, int]:
+    inner = Image.new("RGB", (160, 112), "black")
+    draw = ImageDraw.Draw(inner)
+    for index, value in enumerate((20, 220, 50, 180, 90)):
+        draw.rectangle(
+            (index * 32, 0, index * 32 + 31, 111),
+            fill=(value, value, value),
+        )
+    draw.ellipse((44, 16, 116, 96), fill=(130, 130, 130))
+
+    canvas = Image.new("RGB", (320, 220), "white")
+    box = (73, 51, 233, 163)
+    canvas.paste(inner, box[:2])
+    canvas.save(path, format="JPEG", quality=100, subsampling=0)
+    return box
+
+
+def _write_distractor_jpg(path: Path) -> None:
+    image = Image.new("RGB", (200, 140), (245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((20, 15, 180, 125), fill=(35, 35, 35))
+    draw.line((0, 0, 199, 139), fill=(200, 200, 200), width=8)
+    image.save(path, format="JPEG", quality=100, subsampling=0)
+
+
+def _write_pdf_with_center_crop(original_path: Path, pdf_path: Path) -> tuple[float, float, float, float]:
+    with Image.open(original_path) as image:
+        image.load()
+        # The publication used only the central 80% of the original JPG.
+        cropped = image.crop((20, 14, 180, 126))
+        payload = BytesIO()
+        cropped.save(payload, format="PNG")
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        rect = pymupdf.Rect(20, 20, 180, 132)
+        page.insert_image(rect, stream=payload.getvalue())
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.10, 0.10, 0.90, 0.66)
+
+
+def _write_pdf_without_source_border(
+    original_path: Path,
+    pdf_path: Path,
+    content_box: tuple[int, int, int, int],
+) -> tuple[float, float, float, float]:
+    with Image.open(original_path) as image:
+        image.load()
+        cropped = image.crop(content_box)
+        payload = BytesIO()
+        cropped.save(payload, format="PNG")
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        rect = pymupdf.Rect(20, 20, 180, 132)
+        page.insert_image(rect, stream=payload.getvalue())
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.10, 0.10, 0.90, 0.66)
+
+
+def _write_pdf_with_brightness_shift(
+    original_path: Path,
+    pdf_path: Path,
+    *,
+    factor: float,
+) -> tuple[float, float, float, float]:
+    with Image.open(original_path) as image:
+        image.load()
+        shifted = ImageEnhance.Brightness(image).enhance(factor)
+        payload = BytesIO()
+        shifted.save(payload, format="JPEG", quality=88)
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        rect = pymupdf.Rect(20, 20, 180, 132)
+        page.insert_image(rect, stream=payload.getvalue())
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.10, 0.10, 0.90, 0.66)
+
+
+def _write_pdf_with_reused_image_twice(
+    original_path: Path,
+    pdf_path: Path,
+) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
+    image_bytes = original_path.read_bytes()
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=200)
+        page.insert_image(pymupdf.Rect(10, 10, 90, 66), stream=image_bytes)
+        page.insert_image(pymupdf.Rect(110, 10, 190, 66), stream=image_bytes)
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+
+    return (0.05, 0.05, 0.45, 0.33), (0.55, 0.05, 0.95, 0.33)
+
+
+def test_match_panel_accepts_bounded_center_crop_without_lowering_safety_threshold(tmp_path):
+    original = tmp_path / "original.jpg"
+    distractor = tmp_path / "distractor.jpg"
+    pdf_path = tmp_path / "plate.pdf"
+    _write_pattern_jpg(original)
+    _write_distractor_jpg(distractor)
+    bbox = _write_pdf_with_center_crop(original, pdf_path)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    match = matcher.match_panel(
+        pdf_path=pdf_path,
+        physical_page=1,
+        bbox=bbox,
+        candidates=[
+            (SimpleNamespace(id="original"), original),
+            (SimpleNamespace(id="distractor"), distractor),
+        ],
+    )
+
+    assert match is not None
+    assert match.source_asset_id == "original"
+    assert match.score >= 0.97
+
+
+def test_match_panel_trims_light_source_border_without_lowering_safety_threshold(tmp_path):
+    original = tmp_path / "bordered-original.jpg"
+    distractor = tmp_path / "distractor.jpg"
+    pdf_path = tmp_path / "plate.pdf"
+    content_box = _write_bordered_pattern_jpg(original)
+    _write_distractor_jpg(distractor)
+    bbox = _write_pdf_without_source_border(original, pdf_path, content_box)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    match = matcher.match_panel(
+        pdf_path=pdf_path,
+        physical_page=1,
+        bbox=bbox,
+        candidates=[
+            (SimpleNamespace(id="original"), original),
+            (SimpleNamespace(id="distractor"), distractor),
+        ],
+    )
+
+    assert match is not None
+    assert match.source_asset_id == "original"
+    assert match.score >= 0.97
+
+
+def test_match_panel_normalizes_brightness_shift_without_lowering_safety_threshold(tmp_path):
+    original = tmp_path / "original.jpg"
+    distractor = tmp_path / "distractor.jpg"
+    pdf_path = tmp_path / "plate-brightness-shift.pdf"
+    _write_pattern_jpg(original)
+    _write_distractor_jpg(distractor)
+    bbox = _write_pdf_with_brightness_shift(original, pdf_path, factor=0.75)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    match = matcher.match_panel(
+        pdf_path=pdf_path,
+        physical_page=1,
+        bbox=bbox,
+        candidates=[
+            (SimpleNamespace(id="original"), original),
+            (SimpleNamespace(id="distractor"), distractor),
+        ],
+    )
+
+    assert match is not None
+    assert match.source_asset_id == "original"
+    assert match.score >= 0.97
+
+
+def test_match_panels_fails_closed_when_two_panels_select_same_source(monkeypatch):
+    request_type = visual_asset_matcher.VisualPanelRequest
+    matcher = VisualAssetMatcher()
+    requests = [
+        request_type(
+            panel_id="panel-a",
+            pdf_path="plate.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+        request_type(
+            panel_id="panel-b",
+            pdf_path="plate.pdf",
+            physical_page=1,
+            bbox=(0.5, 0.0, 1.0, 0.5),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        matcher,
+        "match_panel",
+        lambda **_: visual_asset_matcher.VisualAssetMatch(
+            source_asset_id="same-photo",
+            score=0.99,
+        ),
+    )
+
+    matches = matcher.match_panels(panels=requests, candidates=[])
+
+    assert matches == {}
+
+
+def test_match_panels_allows_same_source_once_per_distinct_plate_pdf(monkeypatch):
+    request_type = visual_asset_matcher.VisualPanelRequest
+    matcher = VisualAssetMatcher()
+    requests = [
+        request_type(
+            panel_id="panel-v1",
+            pdf_path="plate-v1.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+        request_type(
+            panel_id="panel-v2",
+            pdf_path="plate-v2.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 0.5, 0.5),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        matcher,
+        "match_panel",
+        lambda **_: visual_asset_matcher.VisualAssetMatch(
+            source_asset_id="reused-photo",
+            score=0.99,
+        ),
+    )
+
+    matches = matcher.match_panels(panels=requests, candidates=[])
+
+    assert set(matches) == {"panel-v1", "panel-v2"}
+    assert {match.source_asset_id for match in matches.values()} == {"reused-photo"}
+
+
+def test_match_panels_precomputes_each_candidate_once_per_batch(tmp_path, monkeypatch):
+    candidate_a = tmp_path / "a.jpg"
+    candidate_b = tmp_path / "b.jpg"
+    candidate_a.write_bytes(b"a")
+    candidate_b.write_bytes(b"b")
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    panel_fingerprint = bytes([0]) * 1024
+    candidate_fingerprints = {
+        candidate_a: (bytes([0]) * 1024,),
+        candidate_b: (bytes([255]) * 1024,),
+    }
+    calls: Counter[Path] = Counter()
+
+    monkeypatch.setattr(
+        matcher,
+        "_panel_fingerprint",
+        lambda pdf_path, physical_page, bbox: panel_fingerprint,
+    )
+
+    def fake_candidate_fingerprints(path: Path) -> tuple[bytes, ...]:
+        calls[path] += 1
+        return candidate_fingerprints[path]
+
+    monkeypatch.setattr(matcher, "_candidate_fingerprints_path", fake_candidate_fingerprints)
+
+    requests = [
+        visual_asset_matcher.VisualPanelRequest(
+            panel_id="panel-v1",
+            pdf_path="plate-v1.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 1.0, 1.0),
+        ),
+        visual_asset_matcher.VisualPanelRequest(
+            panel_id="panel-v2",
+            pdf_path="plate-v2.pdf",
+            physical_page=1,
+            bbox=(0.0, 0.0, 1.0, 1.0),
+        ),
+    ]
+    candidates = [
+        (SimpleNamespace(id="a"), candidate_a),
+        (SimpleNamespace(id="b"), candidate_b),
+    ]
+
+    matches = matcher.match_panels(panels=requests, candidates=candidates)
+
+    assert set(matches) == {"panel-v1", "panel-v2"}
+    assert calls == Counter({candidate_a: 1, candidate_b: 1})
+
+
+def test_match_panels_opens_each_pdf_once_per_batch(tmp_path, monkeypatch):
+    original = tmp_path / "original.jpg"
+    pdf_path = tmp_path / "plate.pdf"
+    _write_pattern_jpg(original)
+    bbox_a, bbox_b = _write_pdf_with_reused_image_twice(original, pdf_path)
+
+    real_open = pymupdf.open
+    open_count = 0
+
+    def counting_open(*args, **kwargs):
+        nonlocal open_count
+        open_count += 1
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(visual_asset_matcher.pymupdf, "open", counting_open)
+
+    matcher = VisualAssetMatcher(minimum_score=0.97, minimum_margin=0.03)
+    matcher.match_panels(
+        panels=[
+            visual_asset_matcher.VisualPanelRequest(
+                panel_id="panel-a",
+                pdf_path=pdf_path,
+                physical_page=1,
+                bbox=bbox_a,
+            ),
+            visual_asset_matcher.VisualPanelRequest(
+                panel_id="panel-b",
+                pdf_path=pdf_path,
+                physical_page=1,
+                bbox=bbox_b,
+            ),
+        ],
+        candidates=[(SimpleNamespace(id="original"), original)],
+    )
+
+    assert open_count == 1
