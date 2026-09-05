@@ -60,9 +60,7 @@ describe('ReferenceCorpus path-preserving package upload', () => {
     expect(upload).toHaveBeenCalledWith(
       'p1', 'c1', 'plate_link', photo, 'Publication/Links/photo.jpg',
     );
-    expect(upload).not.toHaveBeenCalledWith(
-      expect.anything(), expect.anything(), expect.anything(), ignored, expect.anything(),
-    );
+    expect(upload.mock.calls.map((call) => call[3])).not.toContain(ignored);
   });
 
   it('preserves AI relative path when available and falls back to filename otherwise', async () => {

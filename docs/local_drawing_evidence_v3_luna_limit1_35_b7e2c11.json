@@ -1,0 +1,107 @@
+{
+  "gold_rows": 56,
+  "gold_known": 0,
+  "gold_unknown": 56,
+  "evaluated_sources": 1,
+  "recall_at_5": 0.0,
+  "recall_at_10": 0.0,
+  "recall_at_20": 0.0,
+  "codex_top1_accuracy": 0.0,
+  "auto_coverage": 0.0,
+  "auto_precision": 0.0,
+  "review_rate": 0.0,
+  "unresolved_rate": 0.0,
+  "ambiguous_count": 0,
+  "none_count": 0,
+  "invalid_response_count": 0,
+  "hard_contradiction_promoted_count": 0,
+  "filename_only_promoted_count": 0,
+  "kind_collision_count": 0,
+  "api_unsafe_promotion_count": 0,
+  "safety_pass": true,
+  "audit": {
+    "measurement_time_utc": "2026-08-28T21:47:22.771072+00:00",
+    "resolver_version": "drawing-evidence-v3",
+    "source_root": "D:\\Coding\\archaeology-document-review-system\\src",
+    "body_pdf": "D:\\Coding\\archaeology-document-review-system\\src\\완성까지 가던 교정본들\\11.21-3차 교정\\11.21-115집 논산 산노리 산17-1번지 유적-본문-3차 교정.pdf",
+    "source_root_read_only": true,
+    "live_codex": true,
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "high",
+    "turn_timeout_seconds": 180.0,
+    "source_limit": 1,
+    "ai_files": 1,
+    "body_packets": 828
+  },
+  "rows": [
+    {
+      "source": "본문 도면/1지점/【도면  】1지점 고려시대 1호 석곽묘 평·입단면도 및 출토유물.ai",
+      "candidate_identities": [
+        [
+          "drawing",
+          "34"
+        ],
+        [
+          "drawing",
+          "47"
+        ],
+        [
+          "drawing",
+          "37"
+        ],
+        [
+          "drawing",
+          "36"
+        ],
+        [
+          "drawing",
+          "33"
+        ],
+        [
+          "drawing",
+          "35"
+        ],
+        [
+          "drawing",
+          "39"
+        ],
+        [
+          "drawing",
+          "40"
+        ],
+        [
+          "drawing",
+          "79"
+        ],
+        [
+          "drawing",
+          "75"
+        ]
+      ],
+      "codex_identity": [
+        "drawing",
+        "35"
+      ],
+      "codex_verdict": "match",
+      "status": "REVIEW_REQUIRED",
+      "invalid_response": false,
+      "hard_contradiction_promoted": false,
+      "filename_only_promoted": false,
+      "kind_collision": false,
+      "api_unsafe_promotion": false,
+      "selected_target": null,
+      "codex_confidence": 0.99,
+      "codex_summary": "The source depicts a stone-lined grave with plan and sectional views at 1/40 scale, matching candidate drawing 35.",
+      "auto_gate_reason": "insufficient_support_families",
+      "cited_support_ids": [],
+      "cited_visual_support_ids": [
+        "drawing-v3-visual-support:e35fb2fe75d86b7d5df8ed81b7c4d0e7"
+      ],
+      "cited_support_families": [
+        "visual_signature"
+      ],
+      "cited_nonweak_count": 1,
+      "cited_contradiction_ids": []
+    }
+  ]
+}

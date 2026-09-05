@@ -187,6 +187,7 @@ class PlateParser:
         cls,
         page: Any,
         label_bboxes: dict[int, tuple[float, float, float, float]],
+        expected_indices: set[int] | None = None,
     ) -> dict[int, tuple[float, float, float, float]]:
         """Map panel labels to embedded photo rects on a plate page.
 
@@ -224,6 +225,26 @@ class PlateParser:
             ]
             if len(candidates) == 1:
                 r = candidates[0]
+                result[p_idx] = (
+                    r.x0 / page_width,
+                    r.y0 / page_height,
+                    r.x1 / page_width,
+                    r.y1 / page_height,
+                )
+
+        # Some source PDFs rasterize the panel badges into the photo itself,
+        # leaving no text bbox to associate. When the page has exactly one
+        # embedded image per expected panel, reading order is deterministic
+        # and supplies the missing associations without guessing from names.
+        if (
+            expected_indices
+            and len(expected_indices) == len(image_rects)
+            and len(result) < len(expected_indices)
+        ):
+            for p_idx, r in zip(
+                sorted(expected_indices),
+                sorted(image_rects, key=lambda item: (item.y0, item.x0)),
+            ):
                 result[p_idx] = (
                     r.x0 / page_width,
                     r.y0 / page_height,
@@ -410,6 +431,13 @@ class PlateParser:
                 expected_indices_all.update(
                     self.extract_panels_from_caption(info[3]).keys()
                 )
+            # A long caption can wrap into a second text block below the
+            # identifier block. Include those continuation markers so a
+            # rasterized badge does not become an orphan panel.
+            for block in blocks:
+                expected_indices_all.update(
+                    self.extract_panels_from_caption(block[4]).keys()
+                )
             label_bboxes: dict[int, tuple[float, float, float, float]] = {}
             for w in words:
                 w_text = w[4].strip()
@@ -429,7 +457,11 @@ class PlateParser:
                         label_bboxes[p_idx] = w_bbox
 
             # Panel segmentation: real photo/panel regions from embedded images.
-            segment_bboxes = self.segment_page_panels(page, label_bboxes)
+            segment_bboxes = self.segment_page_panels(
+                page,
+                label_bboxes,
+                expected_indices=expected_indices_all,
+            )
 
             # High-resolution page render, shared by every panel of the page.
             page_render_uri: str | None = None

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assets import router as assets_router
+from app.api.drawing_reviews import router as drawing_reviews_router
 from app.api.project_structure import router as project_structure_router
 from app.api.projects import AnalysisRunRetryConflict, ServerOperationError
 from app.api.projects import router as projects_router
@@ -22,7 +23,16 @@ from app.api.review_round_runs import router as review_round_runs_router
 from app.api.reviews import CandidateNotFoundError
 from app.api.reviews import router as reviews_router
 from app.api.run_diagnostics import router as run_diagnostics_router
+from app.config import (
+    get_drawing_evidence_resolver_version,
+    get_drawing_evidence_v3_auto_promote,
+)
 from app.graph.client import create_driver
+from app.graph.drawing_evidence_repository_v3 import (
+    DrawingEvidenceRepositoryV3,
+    DrawingReviewConflictError,
+    DrawingReviewNotFoundError,
+)
 from app.graph.production_review_repository import ProductionReviewRepository
 from app.graph.project_repository import (
     AnalysisRunNotFoundError,
@@ -37,14 +47,12 @@ from app.graph.schema import ensure_schema
 from app.graph.source_asset_repository import SourceAssetRepository
 from app.jobs.queue import enqueue_ingest, enqueue_proofreading
 from app.services.adobe_conversion_client import build_adobe_conversion_client
+from app.services.drawing_evidence_corpus_service import EvidenceGraphReferenceCorpusService
 from app.services.file_store import FileStore
 from app.services.orchestrator_factory import build_proofreading_orchestrator
 from app.services.project_structure_service import ProjectStructureService
 from app.services.reference_canonicalizer import ReferenceCanonicalizer
-from app.services.reference_corpus_service import (
-    ReferenceCorpusNotFoundError,
-    ReferenceCorpusService,
-)
+from app.services.reference_corpus_service import ReferenceCorpusNotFoundError
 from app.services.visual_asset_service import (
     VisualAssetIncompleteError,
     VisualAssetNotFoundError,
@@ -113,11 +121,20 @@ def create_app(
             driver = getattr(app.state, "neo4j_driver", None)
             if driver is not None:
                 source_repository = SourceAssetRepository(driver)
-                app.state.reference_corpus_service = ReferenceCorpusService(
+                drawing_repository = DrawingEvidenceRepositoryV3(driver)
+                app.state.drawing_evidence_repository = drawing_repository
+                project_repo = app.state.project_repository
+                if not hasattr(project_repo, "resolve_version_input"):
+                    project_repo = ReviewProjectRepository(driver)
+                app.state.reference_corpus_service = EvidenceGraphReferenceCorpusService(
                     ReferenceCorpusRepository(driver),
                     build_adobe_conversion_client(),
                     ReferenceCanonicalizer(),
                     source_asset_repository=source_repository,
+                    drawing_evidence_repository=drawing_repository,
+                    drawing_evidence_resolver_version=get_drawing_evidence_resolver_version(),
+                    drawing_evidence_v3_auto_promote=get_drawing_evidence_v3_auto_promote(),
+                    project_repository=project_repo,
                 )
         yield
         driver = getattr(app.state, "neo4j_driver", None)
@@ -141,6 +158,7 @@ def create_app(
     application.state.visual_asset_service = injected_visual_service
     application.state.project_structure_service = project_structure_service
     application.state.reference_corpus_service = reference_corpus_service
+    application.state.drawing_evidence_repository = None
 
     @application.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -164,6 +182,14 @@ def create_app(
     @application.exception_handler(CandidateNotFoundError)
     async def missing_candidate(request: Request, _error: CandidateNotFoundError):
         return _error_response(request, 404)
+
+    @application.exception_handler(DrawingReviewNotFoundError)
+    async def missing_drawing_review(request: Request, _error: DrawingReviewNotFoundError):
+        return _error_response(request, 404)
+
+    @application.exception_handler(DrawingReviewConflictError)
+    async def drawing_review_conflict(request: Request, _error: DrawingReviewConflictError):
+        return _error_response(request, 409)
 
     @application.exception_handler(ReviewRoundNotFoundError)
     async def missing_review_round(request: Request, _error: ReviewRoundNotFoundError):
@@ -209,6 +235,7 @@ def create_app(
     application.include_router(project_structure_router)
     application.include_router(review_round_runs_router)
     application.include_router(reviews_router)
+    application.include_router(drawing_reviews_router)
     application.include_router(run_diagnostics_router)
     application.include_router(assets_router)
 

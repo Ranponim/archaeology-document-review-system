@@ -20,6 +20,7 @@ type SourceCounts = Record<ReferenceCorpusSourceRole, number>;
 
 const EMPTY_COUNTS: SourceCounts = {
   plate_layout: 0,
+  plate_pdf: 0,
   plate_link: 0,
   drawing_source: 0,
 };
@@ -46,6 +47,7 @@ function suffixOf(file: File): string {
 
 function packageRole(file: File): ReferenceCorpusSourceRole | null {
   const suffix = suffixOf(file);
+  if (suffix === '.pdf') return 'plate_pdf';
   if (suffix === '.indd') return 'plate_layout';
   if (LINK_SUFFIXES.has(suffix)) return 'plate_link';
   return null;
@@ -84,6 +86,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
   const canBuild = Boolean(selected && selected.status === 'staging' && !busy);
   const summary = useMemo(
     () => [
+      `PDF ${sourceCounts.plate_pdf}`,
       `INDD ${sourceCounts.plate_layout}`,
       `Links ${sourceCounts.plate_link}`,
       `AI ${sourceCounts.drawing_source}`,
@@ -174,7 +177,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
         <div>
           <p className="section-label">REFERENCE DATA</p>
           <h3 id="reference-corpus-title">기준 자료 구축</h3>
-          <p className="reference-corpus-help">도판은 INDD + Links의 원래 폴더 구조를 보존하고, 도면은 AI에서 구조를 추출해 Neo4j 기준 그래프로 만듭니다.</p>
+          <p className="reference-corpus-help">Adobe 없이 도판 PDF를 publication authority로 사용하고, AI와 Links 원본을 evidence graph로 연결합니다. INDD는 선택적 provenance 자료로 보존할 수 있습니다.</p>
         </div>
         <div className="reference-corpus-actions">
           <span className={`reference-corpus-status status-${selected?.status ?? 'none'}`}>
@@ -197,7 +200,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
       <div className="reference-source-grid">
         <label className="reference-source-card">
           <span className="reference-source-title">도판 패키지 폴더</span>
-          <span className="reference-source-description">권장: INDD와 Links가 함께 있는 상위 폴더를 선택해 상대경로를 그대로 보존</span>
+          <span className="reference-source-description">도판 PDF, 선택적 INDD, Links 사진을 함께 선택하면 상대경로를 그대로 보존합니다.</span>
           <input
             {...DIRECTORY_INPUT_PROPS}
             aria-label="도판 패키지 폴더"
@@ -209,8 +212,21 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
         </label>
 
         <label className="reference-source-card">
+          <span className="reference-source-title">도판 PDF</span>
+          <span className="reference-source-description">Adobe-free 기준 도판 identity와 panel geometry의 authority</span>
+          <input
+            aria-label="도판 PDF 파일"
+            type="file"
+            accept=".pdf,application/pdf"
+            multiple
+            disabled={!canStage}
+            onChange={(event) => void stageFiles('plate_pdf', event)}
+          />
+        </label>
+
+        <label className="reference-source-card">
           <span className="reference-source-title">도판 INDD</span>
-          <span className="reference-source-description">호환용 단일 업로드. 완전 E2E에서는 위 패키지 폴더 사용 권장</span>
+          <span className="reference-source-description">선택적 provenance 자료. Adobe-free build에는 필수가 아닙니다.</span>
           <input
             aria-label="도판 INDD 파일"
             type="file"
@@ -222,7 +238,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
 
         <label className="reference-source-card">
           <span className="reference-source-title">Links 사진</span>
-          <span className="reference-source-description">호환용 개별 업로드. 폴더 경로가 필요하면 패키지 폴더 사용</span>
+          <span className="reference-source-description">도판 panel과 실제 원본 사진을 verified evidence로 연결할 후보 원본</span>
           <input
             aria-label="Links 사진 파일"
             type="file"
@@ -235,7 +251,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
 
         <label className="reference-source-card">
           <span className="reference-source-title">도면 AI</span>
-          <span className="reference-source-description">Illustrator 내부 artboard/text identifier를 authority로 사용</span>
+          <span className="reference-source-description">PDF-compatible AI text/content와 본문 context를 evidence graph로 교차 검증합니다.</span>
           <input
             aria-label="도면 AI 파일"
             type="file"
@@ -248,7 +264,7 @@ export function ReferenceCorpusPanel({ projectId, onReadyCorpusChange }: Props) 
       </div>
 
       <div className="reference-corpus-footer">
-        <p>파일명 숫자는 도판·도면 identity로 사용하지 않습니다. 패키지 폴더의 상대경로는 Link 재해석과 build identity에 포함됩니다.</p>
+        <p>파일명만으로 canonical identity를 확정하지 않습니다. direct 또는 독립 evidence가 검증된 derived identity만 기준 그래프로 승격합니다.</p>
         <button type="button" onClick={() => void buildGraph()} disabled={!canBuild}>
           {busy ? '처리 중…' : '기준 그래프 구축'}
         </button>

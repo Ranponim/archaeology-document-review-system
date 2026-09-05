@@ -14,7 +14,7 @@ except ImportError:
 
 import pypdf
 
-from app.domain.canonical_models import ReferenceData
+from app.domain.canonical_models import EvidenceLevel, ReferenceData
 from app.domain.document_structure import (
     CaptionData,
     ParsedPage,
@@ -29,6 +29,16 @@ from app.domain.document_structure import (
 class PDFParser:
     HEADER_PATTERN_LEFT = re.compile(r"^(\d+)\s*\|\s*(.*)$")
     HEADER_PATTERN_RIGHT = re.compile(r"^(.*?)\s*\|\s*(\d+)$")
+    REFERENCE_PATTERN = re.compile(
+        r"(?:【\s*)?"
+        r"(?P<label>원색\s*도판|도판|사진|도면|삽도)"
+        r"\s*(?::\s*)?"
+        r"(?P<numbers>"
+        r"\d+(?:\s*[~\-]\s*\d+)?"
+        r"(?:\s*[,，·ㆍ•・/]\s*\d+(?:\s*[~\-]\s*\d+)?)*"
+        r")"
+        r"\s*(?:】)?"
+    )
 
     @staticmethod
     def normalize_text(text: str) -> str:
@@ -76,32 +86,21 @@ class PDFParser:
         physical_page: int | None = None,
     ) -> list[ReferenceData]:
         refs: list[ReferenceData] = []
-        for m in re.finditer(r"도면\s*:\s*([^,\)\s]+(?:\s*[·ㆍ•・~\-]\s*[^,\)\s]+)*)?", text):
-            val = m.group(1) or ""
-            for num in self.expand_reference_numbers(val):
+        for match in self.REFERENCE_PATTERN.finditer(text):
+            label = re.sub(r"\s+", "", match.group("label"))
+            ref_type = "drawing" if label in {"도면", "삽도"} else "plate"
+            for number in self.expand_reference_numbers(match.group("numbers")):
                 refs.append(
                     ReferenceData(
-                        ref_type="drawing",
-                        number=num,
+                        ref_type=ref_type,
+                        number=number,
                         source_block_id=source_block_id,
-                        raw_text=m.group(0),
+                        raw_text=match.group(0).strip(),
                         source_sha256=source_sha256,
                         bbox=bbox,
                         physical_page=physical_page,
-                    )
-                )
-        for m in re.finditer(r"도판\s*:\s*([^,\)\s]+(?:\s*[·ㆍ•・~\-]\s*[^,\)\s]+)*)?", text):
-            val = m.group(1) or ""
-            for num in self.expand_reference_numbers(val):
-                refs.append(
-                    ReferenceData(
-                        ref_type="plate",
-                        number=num,
-                        source_block_id=source_block_id,
-                        raw_text=m.group(0),
-                        source_sha256=source_sha256,
-                        bbox=bbox,
-                        physical_page=physical_page,
+                        evidence_level=EvidenceLevel.DIRECT,
+                        evidence_method="body_explicit_identifier",
                     )
                 )
         return refs
@@ -133,6 +132,8 @@ class PDFParser:
                         source_sha256=source_sha256,
                         bbox=bbox,
                         physical_page=physical_page,
+                        evidence_level=EvidenceLevel.DIRECT,
+                        evidence_method="body_caption_identifier",
                     )
                 )
             for num in plate_nums:
@@ -145,6 +146,8 @@ class PDFParser:
                         source_sha256=source_sha256,
                         bbox=bbox,
                         physical_page=physical_page,
+                        evidence_level=EvidenceLevel.DIRECT,
+                        evidence_method="body_caption_identifier",
                     )
                 )
 
@@ -179,6 +182,8 @@ class PDFParser:
                         source_sha256=source_sha256,
                         bbox=bbox,
                         physical_page=physical_page,
+                        evidence_level=EvidenceLevel.DIRECT,
+                        evidence_method="body_caption_identifier",
                     )
                 )
             for num in plate_nums:
@@ -191,6 +196,8 @@ class PDFParser:
                         source_sha256=source_sha256,
                         bbox=bbox,
                         physical_page=physical_page,
+                        evidence_level=EvidenceLevel.DIRECT,
+                        evidence_method="body_caption_identifier",
                     )
                 )
 
@@ -511,4 +518,3 @@ class PDFParser:
             source_sha256=source_sha256,
             page_id=make_page_id(version_id, physical_page),
         )
-
