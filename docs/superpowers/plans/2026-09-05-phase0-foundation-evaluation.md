@@ -4,9 +4,9 @@
 
 **Goal:** Establish the new SQLite source-of-truth, immutable artifact/intake snapshot foundation, auditable Finding/Evidence/HumanDecision model, and first-class gold evaluation harness without breaking current review flows.
 
-**Architecture:** Add the redesign as a parallel foundation beside the existing Neo4j/revision-oriented implementation. New domain records are persisted in SQLite using Python 3.12 stdlib `sqlite3`; large files live in a content-addressed local artifact store. Existing review models are connected through explicit adapters, while real Discord/Google Drive, Canonical Asset QA, Codex review, and product UI remain later phases.
+**Architecture:** Build the redesign as a parallel foundation beside the existing Neo4j/revision-oriented implementation. New structured records persist in SQLite through stdlib `sqlite3`; large immutable inputs and derived files live in a content-addressed local artifact store. Existing review models connect through one-way adapters, while real Discord/Google Drive, Canonical Asset QA, Codex review, and product UI remain later phases.
 
-**Tech Stack:** Python >=3.12, stdlib `sqlite3`, dataclasses/enums, pathlib/hashlib/json, FastAPI codebase conventions, pytest, existing `uv` workflow.
+**Tech Stack:** Python >=3.12, stdlib `sqlite3`, dataclasses/enums, pathlib/hashlib/json, existing FastAPI codebase conventions, pytest, existing `uv` workflow.
 
 **Spec:** `docs/superpowers/specs/2026-09-05-archaeology-review-system-redesign-design.md`
 
@@ -14,42 +14,44 @@
 
 - SQLite is the sole structured source of truth for the redesigned review domain.
 - Artifact files are immutable and content-addressed by SHA256.
-- Neo4j is not written by Phase 0 and must not be required by the new foundation tests.
-- AI never establishes canonical truth; Phase 0 contains no live AI calls.
+- Neo4j is not written by Phase 0 and is not required by Phase 0 tests.
+- Phase 0 makes no live AI, Discord, or Google Drive calls.
 - Previous proof revisions are audit/cache inputs only, never semantic ground truth.
-- Human decisions are append-only and separate from AI/deterministic findings.
-- Evidence is immutable; a Finding may not cite a nonexistent Evidence record.
-- No `AgentBudget`, automatic cost router, provider escalation policy, or silent paid-provider fallback is introduced.
-- Discord/Google Drive integration is represented only by source-reference and snapshot interfaces in this phase; no network adapter is implemented.
-- Do not modify user source files or `/src` corpus content.
-- Keep current production flows operational; migration occurs through adapters, not a big-bang rewrite.
-- CI stays hermetic; real `/src`, Neo4j, live AI, Discord, and Google Drive are not required for Phase 0 tests.
+- Human decisions are append-only records separate from findings.
+- Evidence is immutable; a finding cannot be persisted with missing evidence IDs.
+- No AgentBudget, automatic cost router, provider escalation policy, or silent paid-provider fallback is added.
+- Do not modify `/src` or any user source file.
+- Existing production flows stay operational; migration is via adapters, not a big-bang rewrite.
+- CI remains hermetic.
 
 ---
 
 ## File Map
 
-New focused modules:
+Create:
 
-- `backend/app/domain/review_core.py` — ReviewRequest, AnalysisRun, Finding, Evidence, HumanDecision and enums/invariants.
-- `backend/app/domain/intake.py` — DriveResource/IntakeSnapshot transport-neutral records.
-- `backend/app/domain/evaluation.py` — gold case/evaluation result records.
-- `backend/app/storage/sqlite_db.py` — connection factory and transaction helper.
-- `backend/app/storage/schema.py` — idempotent schema initialization.
-- `backend/app/storage/review_repository.py` — persistence for requests/snapshots/runs/findings/evidence/decisions.
-- `backend/app/services/content_artifact_store.py` — content-addressed immutable file store.
-- `backend/app/services/intake_snapshot_service.py` — transport-neutral source snapshotting.
-- `backend/app/services/legacy_review_adapter.py` — one-way adapters from current domain types into the new root model.
-- `backend/app/evaluation/finding_set_evaluator.py` — deterministic generic gold evaluator.
-- `tools/evaluate_review_gold.py` — local/CI CLI for gold fixtures.
+- `backend/app/domain/review_core.py` — request/run/finding/evidence/decision contracts.
+- `backend/app/domain/intake.py` — transport-neutral resource/snapshot contracts.
+- `backend/app/domain/evaluation.py` — generic gold/evaluation contracts.
+- `backend/app/storage/__init__.py` — storage package marker.
+- `backend/app/storage/sqlite_db.py` — SQLite connection factory.
+- `backend/app/storage/schema.py` — idempotent schema initializer.
+- `backend/app/storage/review_repository.py` — transactional persistence.
+- `backend/app/services/review_request_service.py` — request state machine.
+- `backend/app/services/content_artifact_store.py` — immutable content-addressed files.
+- `backend/app/services/intake_snapshot_service.py` — source-ref snapshotting.
+- `backend/app/services/legacy_review_adapter.py` — one-way migration adapters.
+- `backend/app/evaluation/__init__.py` — evaluation package marker.
+- `backend/app/evaluation/finding_set_evaluator.py` — deterministic generic evaluator.
+- `tools/evaluate_review_gold.py` — gold evaluation CLI.
 
-Existing files modified:
+Modify only when required by a task:
 
-- `backend/app/config.py` — new SQLite/artifact paths only.
-- `.env.example` — document path overrides.
-- `.github/workflows/remediation-ci.yml` — add Phase 0 focused tests to hermetic backend job only if current job does not already run all backend tests.
+- `backend/app/config.py`
+- `.env.example`
+- `.github/workflows/remediation-ci.yml`
 
-No existing `review_models.py`, `ai_review_finding.py`, graph repository, orchestrator, parser, or asset matcher is deleted in Phase 0.
+Do not delete or rewrite existing `review_models.py`, `ai_review_finding.py`, graph repositories, orchestrators, parsers, or asset matching services in Phase 0.
 
 ---
 
@@ -63,64 +65,64 @@ No existing `review_models.py`, `ai_review_finding.py`, graph repository, orches
 - Test: `backend/tests/test_intake_domain.py`
 
 **Interfaces:**
-- Produces: `ReviewRequestData`, `ReviewRequestStatus`, `AnalysisRunData`, `AnalysisRuntime`, `FindingData`, `FindingStatus`, `EvidenceDataV2`, `FindingEvidenceData`, `HumanDecisionDataV2`, `DecisionValue`, `DriveResourceData`, `IntakeSnapshotData`, `GoldCaseData`, `EvaluationResultData`.
-- Later tasks persist these exact dataclasses; do not rename fields after Task 1.
+- Produces all dataclasses/enums shown below. Later tasks must use these exact names and fields.
 
-- [ ] **Step 1: Write failing domain invariant tests**
-
-Create tests that assert valid construction and the fail-closed invariants:
+- [ ] **Step 1: Write failing invariant tests**
 
 ```python
 from app.domain.review_core import (
     DecisionValue,
     EvidenceDataV2,
-    FindingData,
-    FindingEvidenceData,
     HumanDecisionDataV2,
     ReviewRequestData,
     ReviewRequestStatus,
 )
 
 
-def test_review_request_starts_received():
-    request = ReviewRequestData(id="R-1", project_id="P-1", source="DISCORD")
-    assert request.status is ReviewRequestStatus.RECEIVED
+def test_review_request_defaults_to_received():
+    value = ReviewRequestData(id="R-1", project_id="P-1", source="DISCORD")
+    assert value.status is ReviewRequestStatus.RECEIVED
 
 
-def test_evidence_rejects_empty_source_identity_for_document_block():
+def test_document_evidence_requires_source_sha256():
     try:
         EvidenceDataV2(id="E-1", evidence_type="DOCUMENT_BLOCK", value="x")
     except ValueError as exc:
         assert "source_sha256" in str(exc)
     else:
-        raise AssertionError("document evidence must require source_sha256")
+        raise AssertionError("document-bound evidence must fail closed")
 
 
-def test_human_decision_requires_supported_value():
-    decision = HumanDecisionDataV2(
+def test_human_decision_is_separate_record():
+    value = HumanDecisionDataV2(
         id="D-1",
         finding_id="F-1",
         decision=DecisionValue.ACCEPT,
         created_at="2026-09-05T00:00:00Z",
     )
-    assert decision.decision is DecisionValue.ACCEPT
+    assert value.decision is DecisionValue.ACCEPT
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
-
-Run:
+- [ ] **Step 2: Run RED**
 
 ```bash
 uv run --directory backend pytest tests/test_review_core_domain.py tests/test_intake_domain.py -v
 ```
 
-Expected: collection/import failure because the new domain modules do not exist.
+Expected: import failure because the new modules do not exist.
 
-- [ ] **Step 3: Implement the minimal domain records and enums**
+- [ ] **Step 3: Implement exact domain contracts**
 
-`review_core.py` must define, at minimum:
+`backend/app/domain/review_core.py`:
 
 ```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+
 class ReviewRequestStatus(str, Enum):
     RECEIVED = "RECEIVED"
     IMPORTING = "IMPORTING"
@@ -149,43 +151,174 @@ class DecisionValue(str, Enum):
     REJECT = "REJECT"
     MODIFY = "MODIFY"
     DEFER = "DEFER"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewRequestData:
+    id: str
+    project_id: str
+    source: str
+    status: ReviewRequestStatus = ReviewRequestStatus.RECEIVED
+    canonical_source_ref: str | None = None
+    proof_source_ref: str | None = None
+    intake_snapshot_id: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisRunData:
+    id: str
+    request_id: str
+    task_type: str
+    runtime: AnalysisRuntime
+    status: str
+    provider: str | None = None
+    endpoint_profile: str | None = None
+    model: str | None = None
+    reasoning_level: str | None = None
+    prompt_version: str | None = None
+    toolset_version: str | None = None
+    input_hash: str | None = None
+    output_hash: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceDataV2:
+    id: str
+    evidence_type: str
+    value: Any
+    method: str = "unknown"
+    source_sha256: str | None = None
+    document_revision_id: str | None = None
+    page_id: str | None = None
+    block_id: str | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    canonical_fact_id: str | None = None
+    canonical_asset_id: str | None = None
+    analysis_run_id: str | None = None
+    rationale: str | None = None
+    confidence: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError("confidence must be between 0 and 1")
+        if self.evidence_type in {"DOCUMENT_BLOCK", "RULE_RESULT", "AGENT_OBSERVATION"}:
+            if not self.source_sha256:
+                raise ValueError("source_sha256 is required for document-bound evidence")
+        if self.evidence_type == "CANONICAL_FACT" and not self.canonical_fact_id:
+            raise ValueError("canonical_fact_id is required for canonical fact evidence")
+        if self.evidence_type == "CANONICAL_ASSET" and not self.canonical_asset_id:
+            raise ValueError("canonical_asset_id is required for canonical asset evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class FindingData:
+    id: str
+    request_id: str
+    engine: str
+    finding_type: str
+    status: FindingStatus = FindingStatus.PENDING_REVIEW
+    revision_id: str | None = None
+    severity: str = "medium"
+    subject_entity_id: str | None = None
+    canonical_entity_id: str | None = None
+    original_text: str | None = None
+    suggested_text: str | None = None
+    analysis_run_id: str | None = None
+    fingerprint: str | None = None
+    created_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FindingEvidenceData:
+    finding_id: str
+    evidence_id: str
+    role: str
+
+    def __post_init__(self) -> None:
+        if self.role not in {"SUPPORTS", "CONTRADICTS", "CONTEXT"}:
+            raise ValueError("invalid finding evidence role")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanDecisionDataV2:
+    id: str
+    finding_id: str
+    decision: DecisionValue
+    created_at: str
+    reviewer: str = ""
+    note: str = ""
+    modified_text: str | None = None
+    previous_decision_id: str | None = None
 ```
 
-`EvidenceDataV2` must validate document-bound evidence types (`DOCUMENT_BLOCK`, `RULE_RESULT`, `AGENT_OBSERVATION`) require `source_sha256`; canonical evidence types may instead carry `canonical_fact_id` or `canonical_asset_id`.
-
-`FindingEvidenceData` fields are exactly `finding_id`, `evidence_id`, `role`, where role is one of `SUPPORTS`, `CONTRADICTS`, `CONTEXT`.
-
-`intake.py` must include immutable `DriveResourceData` fields:
+`backend/app/domain/intake.py`:
 
 ```python
-id: str
-source_ref: str
-external_file_id: str
-name: str
-mime_type: str
-modified_time: str | None
-size: int
-local_sha256: str
-artifact_uri: str
-role: Literal["CANONICAL", "PROOF"]
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass(frozen=True, slots=True)
+class DriveResourceData:
+    id: str
+    snapshot_id: str
+    source_ref: str
+    external_file_id: str
+    name: str
+    mime_type: str
+    modified_time: str | None
+    size: int
+    local_sha256: str
+    artifact_uri: str
+    role: Literal["CANONICAL", "PROOF"]
+
+
+@dataclass(frozen=True, slots=True)
+class IntakeSnapshotData:
+    id: str
+    request_id: str
+    source_hash: str
+    resource_ids: tuple[str, ...]
+    created_at: str
 ```
 
-and `IntakeSnapshotData` fields `id`, `request_id`, `source_hash`, `resource_ids`, `created_at`.
-
-`evaluation.py` must define a generic gold case that does not pretend to know Phase 1-3 metrics:
+`backend/app/domain/evaluation.py`:
 
 ```python
+from dataclasses import dataclass
+
+
 @dataclass(frozen=True, slots=True)
 class GoldCaseData:
     id: str
     engine: str
     expected_finding_types: tuple[str, ...]
     expected_entity_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationResultData:
+    run_id: str
+    suite_id: str
+    true_positive: int
+    false_positive: int
+    false_negative: int
+    precision: float
+    recall: float
+    false_positives_per_case: float
 ```
 
-- [ ] **Step 4: Run domain tests to GREEN**
+- [ ] **Step 4: Run GREEN**
 
-Run the same pytest command. Expected: all new domain tests pass.
+```bash
+uv run --directory backend pytest tests/test_review_core_domain.py tests/test_intake_domain.py -v
+```
+
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -202,72 +335,72 @@ git commit -m "feat: add review foundation domain contracts"
 - Create: `backend/app/storage/__init__.py`
 - Create: `backend/app/storage/sqlite_db.py`
 - Create: `backend/app/storage/schema.py`
+- Create: `backend/tests/test_review_config.py`
+- Create: `backend/tests/test_sqlite_review_schema.py`
 - Modify: `backend/app/config.py`
 - Modify: `.env.example`
-- Test: `backend/tests/test_sqlite_review_schema.py`
 
 **Interfaces:**
-- Consumes: Task 1 field names.
-- Produces: `connect_review_db(path: Path) -> sqlite3.Connection`, `initialize_review_schema(conn: sqlite3.Connection) -> None`, `review_db_path() -> Path`, `review_artifact_root() -> Path`.
+- Produces `review_db_path() -> Path`, `review_artifact_root() -> Path`, `connect_review_db(path: Path) -> sqlite3.Connection`, `initialize_review_schema(conn) -> None`.
 
-- [ ] **Step 1: Write failing schema tests**
+- [ ] **Step 1: Write failing config/schema tests**
 
 ```python
-import sqlite3
+def test_review_paths_follow_environment(monkeypatch, tmp_path):
+    db = tmp_path / "state.sqlite3"
+    artifacts = tmp_path / "artifacts"
+    monkeypatch.setenv("REVIEW_DB_PATH", str(db))
+    monkeypatch.setenv("REVIEW_ARTIFACT_ROOT", str(artifacts))
+    assert review_db_path() == db
+    assert review_artifact_root() == artifacts
+```
 
-from app.storage.schema import initialize_review_schema
-
-
-def test_schema_is_idempotent_and_enables_foreign_keys(tmp_path):
-    conn = sqlite3.connect(tmp_path / "review.sqlite3")
+```python
+def test_schema_is_idempotent_and_enforces_foreign_keys(tmp_path):
+    conn = connect_review_db(tmp_path / "review.sqlite3")
     initialize_review_schema(conn)
     initialize_review_schema(conn)
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-    tables = {
-        row[0]
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {
-        "review_requests",
-        "intake_snapshots",
-        "drive_resources",
-        "analysis_runs",
-        "evidence",
-        "findings",
-        "finding_evidence",
-        "human_decisions",
-        "artifacts",
-        "evaluation_runs",
-        "evaluation_results",
+        "review_requests", "intake_snapshots", "drive_resources", "analysis_runs",
+        "evidence", "findings", "finding_evidence", "human_decisions", "artifacts",
+        "evaluation_runs", "evaluation_results",
     } <= tables
 ```
 
-Add a second test asserting foreign-key insertion fails when `finding_evidence.evidence_id` does not exist.
+Add one test that inserts a `finding_evidence` row with a missing evidence ID and asserts `sqlite3.IntegrityError`.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-uv run --directory backend pytest tests/test_sqlite_review_schema.py -v
+uv run --directory backend pytest tests/test_review_config.py tests/test_sqlite_review_schema.py -v
 ```
 
-Expected: import failure for `app.storage`.
+Expected: import failures.
 
-- [ ] **Step 3: Implement connection/config/schema**
+- [ ] **Step 3: Implement config/connection/schema**
 
-In `config.py`, add only path settings:
+Add to `backend/app/config.py`:
 
 ```python
 def review_db_path() -> Path:
-    return Path(os.environ.get("REVIEW_DB_PATH", "").strip() or DATA_ROOT / "review.sqlite3")
+    raw = os.environ.get("REVIEW_DB_PATH", "").strip()
+    return Path(raw) if raw else DATA_ROOT / "review.sqlite3"
 
 
 def review_artifact_root() -> Path:
-    return Path(os.environ.get("REVIEW_ARTIFACT_ROOT", "").strip() or DATA_ROOT / "artifacts")
+    raw = os.environ.get("REVIEW_ARTIFACT_ROOT", "").strip()
+    return Path(raw) if raw else DATA_ROOT / "artifacts"
 ```
 
-In `sqlite_db.py`:
+`sqlite_db.py`:
 
 ```python
+import sqlite3
+from pathlib import Path
+
+
 def connect_review_db(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
@@ -277,39 +410,149 @@ def connect_review_db(path: Path) -> sqlite3.Connection:
     return conn
 ```
 
-In `schema.py`, create the tables named in Step 1 with explicit foreign keys. Store enum values as TEXT. Add uniqueness constraints on `finding_evidence(finding_id, evidence_id, role)` and `artifacts(sha256, kind)`; make `human_decisions.id` primary key and never define an update trigger/API.
+`schema.py` must execute one `SCHEMA_SQL` string with these tables/keys:
 
-Update `.env.example` with:
+```sql
+CREATE TABLE IF NOT EXISTS review_requests (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL,
+  canonical_source_ref TEXT,
+  proof_source_ref TEXT,
+  intake_snapshot_id TEXT,
+  created_at TEXT,
+  completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS intake_snapshots (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES review_requests(id),
+  source_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS drive_resources (
+  id TEXT PRIMARY KEY,
+  snapshot_id TEXT NOT NULL REFERENCES intake_snapshots(id),
+  source_ref TEXT NOT NULL,
+  external_file_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  modified_time TEXT,
+  size INTEGER NOT NULL,
+  local_sha256 TEXT NOT NULL,
+  artifact_uri TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('CANONICAL','PROOF'))
+);
+CREATE TABLE IF NOT EXISTS analysis_runs (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES review_requests(id),
+  task_type TEXT NOT NULL,
+  runtime TEXT NOT NULL,
+  status TEXT NOT NULL,
+  provider TEXT, endpoint_profile TEXT, model TEXT, reasoning_level TEXT,
+  prompt_version TEXT, toolset_version TEXT, input_hash TEXT, output_hash TEXT,
+  started_at TEXT, completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS evidence (
+  id TEXT PRIMARY KEY,
+  evidence_type TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  method TEXT NOT NULL,
+  source_sha256 TEXT,
+  document_revision_id TEXT,
+  page_id TEXT,
+  block_id TEXT,
+  bbox_json TEXT,
+  canonical_fact_id TEXT,
+  canonical_asset_id TEXT,
+  analysis_run_id TEXT REFERENCES analysis_runs(id),
+  rationale TEXT,
+  confidence REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS findings (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES review_requests(id),
+  engine TEXT NOT NULL,
+  finding_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  revision_id TEXT,
+  severity TEXT NOT NULL,
+  subject_entity_id TEXT,
+  canonical_entity_id TEXT,
+  original_text TEXT,
+  suggested_text TEXT,
+  analysis_run_id TEXT REFERENCES analysis_runs(id),
+  fingerprint TEXT,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS finding_evidence (
+  finding_id TEXT NOT NULL REFERENCES findings(id),
+  evidence_id TEXT NOT NULL REFERENCES evidence(id),
+  role TEXT NOT NULL CHECK(role IN ('SUPPORTS','CONTRADICTS','CONTEXT')),
+  PRIMARY KEY(finding_id, evidence_id, role)
+);
+CREATE TABLE IF NOT EXISTS human_decisions (
+  id TEXT PRIMARY KEY,
+  finding_id TEXT NOT NULL REFERENCES findings(id),
+  decision TEXT NOT NULL CHECK(decision IN ('ACCEPT','REJECT','MODIFY','DEFER')),
+  created_at TEXT NOT NULL,
+  reviewer TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  modified_text TEXT,
+  previous_decision_id TEXT REFERENCES human_decisions(id)
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  sha256 TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  PRIMARY KEY(sha256, kind)
+);
+CREATE TABLE IF NOT EXISTS evaluation_runs (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS evaluation_results (
+  run_id TEXT PRIMARY KEY REFERENCES evaluation_runs(id),
+  suite_id TEXT NOT NULL,
+  true_positive INTEGER NOT NULL,
+  false_positive INTEGER NOT NULL,
+  false_negative INTEGER NOT NULL,
+  precision REAL NOT NULL,
+  recall REAL NOT NULL,
+  false_positives_per_case REAL NOT NULL
+);
+```
+
+`initialize_review_schema` enables foreign keys and calls `conn.executescript(SCHEMA_SQL)`.
+
+Update `.env.example`:
 
 ```text
 REVIEW_DB_PATH=/data/review.sqlite3
 REVIEW_ARTIFACT_ROOT=/data/artifacts
 ```
 
-- [ ] **Step 4: Run schema tests and config tests**
+- [ ] **Step 4: Run GREEN**
 
 ```bash
-uv run --directory backend pytest tests/test_sqlite_review_schema.py tests/test_config.py -v
+uv run --directory backend pytest tests/test_review_config.py tests/test_sqlite_review_schema.py -v
 ```
 
-Expected: PASS. If `tests/test_config.py` does not exist, run only `test_sqlite_review_schema.py` and the full backend suite in Step 5 before commit.
+Expected: PASS.
 
-- [ ] **Step 5: Run backend regression and commit**
+- [ ] **Step 5: Run regression and commit**
 
 ```bash
 uv run --directory backend pytest -q
-```
-
-Expected: existing suite remains green with existing intentional skips/xfails.
-
-```bash
-git add backend/app/storage backend/app/config.py .env.example backend/tests/test_sqlite_review_schema.py
+git add backend/app/storage backend/app/config.py .env.example backend/tests/test_review_config.py backend/tests/test_sqlite_review_schema.py
 git commit -m "feat: add sqlite review source of truth"
 ```
 
 ---
 
-### Task 3: Implement Transactional Review Repository and State Transitions
+### Task 3: Implement Transactional Repository and Request State Machine
 
 **Files:**
 - Create: `backend/app/storage/review_repository.py`
@@ -318,41 +561,33 @@ git commit -m "feat: add sqlite review source of truth"
 - Test: `backend/tests/test_review_request_service.py`
 
 **Interfaces:**
-- Consumes: `connect_review_db`, Task 1 dataclasses.
-- Produces repository methods:
-  - `create_request(request: ReviewRequestData) -> None`
-  - `get_request(request_id: str) -> ReviewRequestData | None`
-  - `save_snapshot(snapshot: IntakeSnapshotData, resources: Sequence[DriveResourceData]) -> None`
-  - `create_analysis_run(run: AnalysisRunData) -> None`
-  - `add_evidence(evidence: EvidenceDataV2) -> None`
-  - `create_finding(finding: FindingData, links: Sequence[FindingEvidenceData]) -> None`
-  - `append_human_decision(decision: HumanDecisionDataV2) -> None`
-  - `list_finding_evidence(finding_id: str) -> list[EvidenceDataV2]`
-- Produces service method `transition_request(request_id: str, target: ReviewRequestStatus) -> ReviewRequestData`.
+- Repository methods:
+  - `create_request(request) -> None`
+  - `get_request(request_id) -> ReviewRequestData | None`
+  - `update_request_status(request_id, status) -> None`
+  - `save_snapshot(snapshot, resources) -> None`
+  - `list_snapshot_resources(snapshot_id) -> list[DriveResourceData]`
+  - `create_analysis_run(run) -> None`
+  - `add_evidence(evidence) -> None`
+  - `create_finding(finding, links) -> None`
+  - `list_finding_evidence(finding_id) -> list[EvidenceDataV2]`
+  - `append_human_decision(decision) -> None`
+  - `list_human_decisions(finding_id) -> list[HumanDecisionDataV2]`
+  - `create_evaluation_run(run_id, suite_id, created_at) -> None`
+  - `save_evaluation_result(result) -> None`
+  - `get_evaluation_result(run_id) -> EvaluationResultData | None`
+- Service method: `transition_request(request_id, target) -> ReviewRequestData`.
 
 - [ ] **Step 1: Write failing repository/state tests**
 
-Test atomic evidence validation:
-
 ```python
-def test_create_finding_fails_if_linked_evidence_missing(repo):
+def test_finding_with_missing_evidence_is_rejected(repo):
     finding = FindingData(
-        id="F-1",
-        revision_id="REV-1",
-        engine="EDITORIAL_QA",
-        finding_type="TYPO",
-        status=FindingStatus.PENDING_REVIEW,
-        analysis_run_id="RUN-1",
-        created_at="2026-09-05T00:00:00Z",
+        id="F-1", request_id="R-1", engine="EDITORIAL_QA", finding_type="TYPO",
     )
-    with pytest.raises(ValueError, match="evidence"):
-        repo.create_finding(
-            finding,
-            [FindingEvidenceData("F-1", "E-MISSING", "SUPPORTS")],
-        )
+    with pytest.raises(ValueError, match="missing evidence"):
+        repo.create_finding(finding, [FindingEvidenceData("F-1", "E-X", "SUPPORTS")])
 ```
-
-Test state rules:
 
 ```python
 def test_request_cannot_jump_from_received_to_published(service):
@@ -360,19 +595,38 @@ def test_request_cannot_jump_from_received_to_published(service):
         service.transition_request("R-1", ReviewRequestStatus.PUBLISHED)
 ```
 
-Allowed transitions must be exactly:
+Use this exact transition map:
 
 ```python
-{
-    RECEIVED: {IMPORTING, FAILED},
-    IMPORTING: {WAITING_CANONICAL_APPROVAL, ANALYZING, FAILED},
-    WAITING_CANONICAL_APPROVAL: {ANALYZING, FAILED},
-    ANALYZING: {READY_FOR_REVIEW, FAILED},
-    READY_FOR_REVIEW: {REVIEWING, FAILED},
-    REVIEWING: {FINALIZED, FAILED},
-    FINALIZED: {PUBLISHED, FAILED},
-    PUBLISHED: set(),
-    FAILED: set(),
+ALLOWED = {
+    ReviewRequestStatus.RECEIVED: {ReviewRequestStatus.IMPORTING, ReviewRequestStatus.FAILED},
+    ReviewRequestStatus.IMPORTING: {
+        ReviewRequestStatus.WAITING_CANONICAL_APPROVAL,
+        ReviewRequestStatus.ANALYZING,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.WAITING_CANONICAL_APPROVAL: {
+        ReviewRequestStatus.ANALYZING,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.ANALYZING: {
+        ReviewRequestStatus.READY_FOR_REVIEW,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.READY_FOR_REVIEW: {
+        ReviewRequestStatus.REVIEWING,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.REVIEWING: {
+        ReviewRequestStatus.FINALIZED,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.FINALIZED: {
+        ReviewRequestStatus.PUBLISHED,
+        ReviewRequestStatus.FAILED,
+    },
+    ReviewRequestStatus.PUBLISHED: set(),
+    ReviewRequestStatus.FAILED: set(),
 }
 ```
 
@@ -382,15 +636,23 @@ Allowed transitions must be exactly:
 uv run --directory backend pytest tests/test_review_repository.py tests/test_review_request_service.py -v
 ```
 
-Expected: import failures.
+- [ ] **Step 3: Implement repository and service**
 
-- [ ] **Step 3: Implement repository with explicit transactions**
+Use `json.dumps`/`json.loads` for `EvidenceDataV2.value` and bbox, and enum `.value` for storage. Multi-row writes use `with self._conn:`.
 
-Use `with self._conn:` for every multi-row write. `create_finding` must first query all evidence IDs and raise before inserting the Finding if any are missing. `append_human_decision` inserts only; it must not update or delete an older decision row.
+Before `create_finding` inserts anything, query all linked evidence IDs. If any are absent:
 
-`ReviewRequestService.transition_request` loads current state, checks the exact map above, updates the request status in one transaction, and returns the refreshed record.
+```python
+missing = sorted(requested_ids - existing_ids)
+if missing:
+    raise ValueError(f"missing evidence: {', '.join(missing)}")
+```
 
-- [ ] **Step 4: Run focused and foreign-key tests**
+`append_human_decision` performs INSERT only. No repository method updates/deletes a human decision in Phase 0.
+
+`transition_request` loads the request, validates `ALLOWED[current]`, updates in one transaction, then returns the refreshed record.
+
+- [ ] **Step 4: Run GREEN**
 
 ```bash
 uv run --directory backend pytest tests/test_review_repository.py tests/test_review_request_service.py tests/test_sqlite_review_schema.py -v
@@ -407,47 +669,52 @@ git commit -m "feat: persist auditable review records"
 
 ---
 
-### Task 4: Add the Content-Addressed Immutable Artifact Store
+### Task 4: Add Immutable Artifact Store and Intake Snapshot Service
 
 **Files:**
 - Create: `backend/app/services/content_artifact_store.py`
+- Create: `backend/app/services/intake_snapshot_service.py`
+- Create: `backend/tests/fixtures/intake/canonical/photo-001.jpg`
+- Create: `backend/tests/fixtures/intake/proof/proof.txt`
 - Test: `backend/tests/test_content_artifact_store.py`
+- Test: `backend/tests/test_intake_snapshot_service.py`
 
 **Interfaces:**
-- Produces `StoredArtifact` and `ContentArtifactStore` methods:
-  - `put_bytes(data: bytes, *, kind: str, suffix: str = "") -> StoredArtifact`
-  - `put_file(source: Path, *, kind: str) -> StoredArtifact`
-  - `path_for(artifact: StoredArtifact) -> Path`
-  - `verify(artifact: StoredArtifact) -> bool`
-- Storage path format is `<root>/<kind>/<sha256[:2]>/<sha256><suffix>`.
+- `ContentArtifactStore.put_bytes(data, kind, suffix="") -> StoredArtifact`
+- `ContentArtifactStore.put_file(source, kind) -> StoredArtifact`
+- `ContentArtifactStore.path_for(artifact) -> Path`
+- `ContentArtifactStore.verify(artifact) -> bool`
+- `ExternalResourceSource.list(ref, role) -> Sequence[ExternalResourceMeta]`
+- `ExternalResourceSource.read(file_id) -> bytes`
+- `IntakeSnapshotService.create_snapshot(request_id, canonical_ref, proof_ref) -> IntakeSnapshotData`.
 
-- [ ] **Step 1: Write failing immutability/dedupe tests**
+- [ ] **Step 1: Write failing artifact/snapshot tests**
 
 ```python
-def test_same_content_reuses_same_artifact(tmp_path):
+def test_same_bytes_dedupe_to_same_uri(tmp_path):
     store = ContentArtifactStore(tmp_path)
-    a = store.put_bytes(b"canonical", kind="intake", suffix=".bin")
-    b = store.put_bytes(b"canonical", kind="intake", suffix=".bin")
-    assert a.sha256 == b.sha256
-    assert a.uri == b.uri
+    a = store.put_bytes(b"same", kind="intake", suffix=".bin")
+    b = store.put_bytes(b"same", kind="intake", suffix=".bin")
+    assert (a.sha256, a.uri) == (b.sha256, b.uri)
+```
 
-
-def test_verify_detects_mutated_artifact(tmp_path):
-    store = ContentArtifactStore(tmp_path)
-    artifact = store.put_bytes(b"proof", kind="intake", suffix=".pdf")
-    store.path_for(artifact).write_bytes(b"tampered")
-    assert store.verify(artifact) is False
+```python
+def test_snapshot_hash_changes_when_downloaded_content_changes(service, source):
+    first = service.create_snapshot("R-1", "canonical", "proof")
+    source.replace_bytes("proof/proof.txt", b"changed")
+    second = service.create_snapshot("R-2", "canonical", "proof")
+    assert first.source_hash != second.source_hash
 ```
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-uv run --directory backend pytest tests/test_content_artifact_store.py -v
+uv run --directory backend pytest tests/test_content_artifact_store.py tests/test_intake_snapshot_service.py -v
 ```
 
-- [ ] **Step 3: Implement atomic write-by-hash**
+- [ ] **Step 3: Implement exact behavior**
 
-Use SHA256 of raw bytes, create parent directory, write to a sibling temp file, then `Path.replace()` only when destination does not exist. If destination exists, do not overwrite it. Return:
+`StoredArtifact`:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -458,80 +725,33 @@ class StoredArtifact:
     size: int
 ```
 
-`verify()` must recompute SHA256 from disk and compare to the stored digest.
+Path format is `<root>/<kind>/<sha256[:2]>/<sha256><suffix>`. Write through a sibling temporary file and `Path.replace()` only when destination does not exist. Existing destinations are never overwritten. `verify()` recomputes SHA256.
 
-- [ ] **Step 4: Run artifact tests**
+`ExternalResourceMeta` fields are `file_id`, `name`, `mime_type`, `modified_time`, `size`, `source_ref`.
 
-```bash
-uv run --directory backend pytest tests/test_content_artifact_store.py -v
-```
+`LocalFixtureResourceSource` implements the protocol from a test root and exposes `replace_bytes(relative_path, data)` for tests.
 
-Expected: PASS on repeated writes and mutation detection.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/services/content_artifact_store.py backend/tests/test_content_artifact_store.py
-git commit -m "feat: add immutable content artifact store"
-```
-
----
-
-### Task 5: Add Transport-Neutral Intake Snapshotting with a Local Fixture Source
-
-**Files:**
-- Create: `backend/app/services/intake_snapshot_service.py`
-- Create: `backend/tests/fixtures/intake/canonical/photo-001.jpg`
-- Create: `backend/tests/fixtures/intake/proof/proof.txt`
-- Test: `backend/tests/test_intake_snapshot_service.py`
-
-**Interfaces:**
-- Consumes: `ContentArtifactStore`, `DriveResourceData`, `IntakeSnapshotData`, repository `save_snapshot`.
-- Produces `ExternalResourceSource` protocol and `LocalFixtureResourceSource` test implementation.
-- `ExternalResourceSource.list(ref: str, role: str) -> Sequence[ExternalResourceMeta]`
-- `ExternalResourceSource.read(file_id: str) -> bytes`
-- `IntakeSnapshotService.create_snapshot(request_id: str, canonical_ref: str, proof_ref: str) -> IntakeSnapshotData`.
-
-- [ ] **Step 1: Write failing snapshot reproducibility tests**
+Snapshot algorithm:
 
 ```python
-def test_snapshot_hash_depends_on_downloaded_content_not_mutable_path(service, source):
-    first = service.create_snapshot("R-1", "canonical", "proof")
-    source.replace_bytes("proof/proof.txt", b"changed")
-    second = service.create_snapshot("R-2", "canonical", "proof")
-    assert first.source_hash != second.source_hash
-
-
-def test_snapshot_records_canonical_and_proof_roles(service, repo):
-    snap = service.create_snapshot("R-1", "canonical", "proof")
-    resources = repo.list_snapshot_resources(snap.id)
-    assert {r.role for r in resources} == {"CANONICAL", "PROOF"}
+items = []
+for role, ref in (("CANONICAL", canonical_ref), ("PROOF", proof_ref)):
+    for meta in source.list(ref, role):
+        data = source.read(meta.file_id)
+        stored = artifacts.put_bytes(data, kind="intake", suffix=Path(meta.name).suffix)
+        items.append((role, meta, stored))
+source_hash = hashlib.sha256(
+    "\0".join(sorted(f"{role}:{stored.sha256}" for role, _, stored in items)).encode()
+).hexdigest()
+snapshot_id = f"snapshot:{request_id}:{source_hash[:16]}"
 ```
 
-- [ ] **Step 2: Run RED**
+Create `DriveResourceData.snapshot_id = snapshot_id`, save snapshot/resources transactionally, and return the snapshot.
+
+- [ ] **Step 4: Run GREEN**
 
 ```bash
-uv run --directory backend pytest tests/test_intake_snapshot_service.py -v
-```
-
-- [ ] **Step 3: Implement source protocol and snapshot algorithm**
-
-The service must:
-
-1. enumerate canonical and proof metadata through the protocol;
-2. download each resource once;
-3. persist bytes to `ContentArtifactStore(kind="intake")`;
-4. create `DriveResourceData` using the resulting SHA/URI;
-5. compute `source_hash = sha256("\0".join(sorted(role + ":" + local_sha256)))`;
-6. set snapshot ID to `snapshot:{request_id}:{source_hash[:16]}`;
-7. save snapshot/resources transactionally through `ReviewRepository`.
-
-`LocalFixtureResourceSource` accepts a root `Path` and treats `canonical_ref`/`proof_ref` as relative directories. It exists only for hermetic tests and early local development.
-
-- [ ] **Step 4: Run snapshot and artifact tests**
-
-```bash
-uv run --directory backend pytest tests/test_intake_snapshot_service.py tests/test_content_artifact_store.py -v
+uv run --directory backend pytest tests/test_content_artifact_store.py tests/test_intake_snapshot_service.py -v
 ```
 
 Expected: PASS without network access.
@@ -539,54 +759,41 @@ Expected: PASS without network access.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/services/intake_snapshot_service.py backend/tests/test_intake_snapshot_service.py backend/tests/fixtures/intake
+git add backend/app/services/content_artifact_store.py backend/app/services/intake_snapshot_service.py backend/tests/test_content_artifact_store.py backend/tests/test_intake_snapshot_service.py backend/tests/fixtures/intake
 git commit -m "feat: snapshot immutable review inputs"
 ```
 
 ---
 
-### Task 6: Add One-Way Legacy Adapters Without Changing Existing Flows
+### Task 5: Add Conservative One-Way Legacy Adapters
 
 **Files:**
 - Create: `backend/app/services/legacy_review_adapter.py`
 - Test: `backend/tests/test_legacy_review_adapter.py`
 
 **Interfaces:**
-- Consumes existing `app.domain.review_models.EvidenceData`, `CorrectionCandidateData`, and `app.domain.ai_review_finding.AIReviewFindingData`.
+- Consumes current `app.domain.review_models.EvidenceData`, `CorrectionCandidateData`, and `app.domain.ai_review_finding.AIReviewFindingData`.
 - Produces:
-  - `adapt_legacy_evidence(value, *, new_id: str) -> EvidenceDataV2`
-  - `adapt_correction_candidate(value, *, revision_id: str, analysis_run_id: str) -> tuple[FindingData, list[EvidenceDataV2], list[FindingEvidenceData]]`
-  - `adapt_ai_review_finding(value, *, revision_id: str) -> FindingData`
-- No function converts a new Finding back into a legacy correction candidate.
+  - `adapt_legacy_evidence(value, new_id) -> EvidenceDataV2`
+  - `adapt_correction_candidate(value, request_id, revision_id, analysis_run_id) -> tuple[FindingData, list[EvidenceDataV2], list[FindingEvidenceData]]`
+  - `adapt_ai_review_finding(value, request_id, revision_id) -> FindingData`
+- There is no reverse adapter from the new domain into legacy correction candidates.
 
-- [ ] **Step 1: Write failing safety adapter tests**
+- [ ] **Step 1: Write failing safety tests**
 
 ```python
-def test_filename_or_caption_heuristic_is_not_promoted_by_adapter():
-    legacy = CorrectionCandidateData(
-        candidate_id="C-1",
-        rule_category="figure_plate_table_photo_ref",
-        evidence=EvidenceData(
-            id="old-E",
-            kind="reference",
-            source_sha256="abc",
-            document_version_id="REV-1",
-            page_id="p1",
-            method="filename_only",
-            value="도판 1",
-            confidence=0.99,
-        ),
-    )
+def test_filename_only_evidence_never_becomes_canonical(adapter_input):
     finding, evidence, links = adapt_correction_candidate(
-        legacy,
+        adapter_input,
+        request_id="R-1",
         revision_id="REV-1",
         analysis_run_id="RUN-1",
     )
     assert finding.status is FindingStatus.PENDING_REVIEW
-    assert evidence[0].evidence_type != "CANONICAL_ASSET"
+    assert all(e.evidence_type not in {"CANONICAL_FACT", "CANONICAL_ASSET"} for e in evidence)
 ```
 
-Also assert AI adapter preserves model provenance only through `analysis_run_id`/finding association and does not create canonical evidence from `rationale`.
+Add an AI adapter test proving rationale/confidence do not create canonical evidence IDs.
 
 - [ ] **Step 2: Run RED**
 
@@ -594,9 +801,9 @@ Also assert AI adapter preserves model provenance only through `analysis_run_id`
 uv run --directory backend pytest tests/test_legacy_review_adapter.py -v
 ```
 
-- [ ] **Step 3: Implement explicit mapping tables**
+- [ ] **Step 3: Implement conservative mapping**
 
-Map legacy evidence kinds conservatively:
+Use exactly:
 
 ```python
 LEGACY_EVIDENCE_TYPE = {
@@ -610,15 +817,16 @@ LEGACY_EVIDENCE_TYPE = {
 }
 ```
 
-No legacy evidence kind maps to `CANONICAL_FACT` or `CANONICAL_ASSET` unless a future phase supplies an explicit approved canonical ID. Preserve old IDs/value/rationale/method as audit fields where the new record allows them.
+No legacy kind maps to `CANONICAL_FACT` or `CANONICAL_ASSET`. Preserve legacy value/rationale/method/confidence where representable. Use the caller-supplied request/revision/run IDs; never infer canonical identity from filename/path/caption or AI rationale.
 
-- [ ] **Step 4: Run adapter plus existing model tests**
+- [ ] **Step 4: Run GREEN and regression**
 
 ```bash
-uv run --directory backend pytest tests/test_legacy_review_adapter.py tests/test_review_models.py -v
+uv run --directory backend pytest tests/test_legacy_review_adapter.py -v
+uv run --directory backend pytest -q
 ```
 
-If `tests/test_review_models.py` is not present, run `pytest -q` before commit.
+Expected: no new failures.
 
 - [ ] **Step 5: Commit**
 
@@ -629,28 +837,26 @@ git commit -m "feat: bridge legacy findings into review foundation"
 
 ---
 
-### Task 7: Build the Generic Gold Evaluation Harness and Persist Evaluation Runs
+### Task 6: Add the Generic Gold Evaluation Harness
 
 **Files:**
 - Create: `backend/app/evaluation/__init__.py`
 - Create: `backend/app/evaluation/finding_set_evaluator.py`
 - Create: `backend/tests/fixtures/gold/foundation_findings.json`
+- Create: `backend/tests/fixtures/gold/foundation_predictions.json`
 - Create: `backend/tests/test_finding_set_evaluator.py`
+- Create: `backend/tests/test_evaluation_repository.py`
 - Create: `tools/evaluate_review_gold.py`
 - Modify: `backend/app/storage/review_repository.py`
-- Test: `backend/tests/test_evaluation_repository.py`
 
 **Interfaces:**
-- Consumes: `GoldCaseData`, `FindingData`, SQLite evaluation tables.
-- Produces:
-  - `evaluate_finding_types(cases: Sequence[GoldCaseData], predictions: Mapping[str, Sequence[FindingData]]) -> EvaluationResultData`
-  - repository `create_evaluation_run(...)`, `save_evaluation_result(...)`.
-- CLI input is a JSON fixture plus optional predictions JSON; no model/network invocation.
+- `evaluate_finding_types(cases, predictions, run_id, suite_id) -> EvaluationResultData`.
+- Evaluation repository methods are the exact Task 3 methods.
 
-- [ ] **Step 1: Write failing precision/recall tests**
+- [ ] **Step 1: Write failing evaluator/repository tests**
 
 ```python
-def test_finding_set_metrics_count_tp_fp_fn():
+def test_metrics_count_tp_fp_fn():
     cases = [
         GoldCaseData("case-1", "EDITORIAL_QA", ("TYPO", "DOCUMENT_INTERNAL_CONTRADICTION")),
         GoldCaseData("case-2", "EDITORIAL_QA", ("TYPO",)),
@@ -659,15 +865,17 @@ def test_finding_set_metrics_count_tp_fp_fn():
         "case-1": [finding("TYPO"), finding("GRAMMAR")],
         "case-2": [finding("TYPO")],
     }
-    result = evaluate_finding_types(cases, predictions)
-    assert result.true_positive == 2
-    assert result.false_positive == 1
-    assert result.false_negative == 1
+    result = evaluate_finding_types(cases, predictions, "EV-1", "suite-1")
+    assert (result.true_positive, result.false_positive, result.false_negative) == (2, 1, 1)
     assert result.precision == pytest.approx(2 / 3)
     assert result.recall == pytest.approx(2 / 3)
 ```
 
-Add a test where `cases=[]` and require `ValueError("gold cases required")`; this permanently prevents precision/recall claims without gold.
+```python
+def test_no_gold_refuses_accuracy_claim():
+    with pytest.raises(ValueError, match="gold cases required"):
+        evaluate_finding_types([], {}, "EV-1", "suite-1")
+```
 
 - [ ] **Step 2: Run RED**
 
@@ -675,11 +883,17 @@ Add a test where `cases=[]` and require `ValueError("gold cases required")`; thi
 uv run --directory backend pytest tests/test_finding_set_evaluator.py tests/test_evaluation_repository.py -v
 ```
 
-- [ ] **Step 3: Implement evaluator, persistence, and deterministic CLI**
+- [ ] **Step 3: Implement evaluator, fixture, persistence, CLI**
 
-The evaluator compares `(case_id, finding_type)` pairs only. It does not score Asset Top-1, entity-link accuracy, or canonical contradiction semantics; those specialized metrics belong to Phases 1-3.
+Evaluator compares `(case_id, finding_type)` pairs only. It computes:
 
-Fixture format:
+```python
+precision = tp / (tp + fp) if tp + fp else 0.0
+recall = tp / (tp + fn) if tp + fn else 0.0
+false_positives_per_case = fp / len(cases)
+```
+
+`foundation_findings.json`:
 
 ```json
 {
@@ -691,7 +905,16 @@ Fixture format:
 }
 ```
 
-CLI:
+`foundation_predictions.json`:
+
+```json
+{
+  "case-typo": [{"finding_type": "TYPO"}],
+  "case-clean": []
+}
+```
+
+CLI command:
 
 ```bash
 uv run --directory backend python ../tools/evaluate_review_gold.py \
@@ -699,16 +922,18 @@ uv run --directory backend python ../tools/evaluate_review_gold.py \
   --predictions tests/fixtures/gold/foundation_predictions.json
 ```
 
-It prints JSON containing `suite_id`, `true_positive`, `false_positive`, `false_negative`, `precision`, and `recall`, and exits nonzero on malformed/no-gold input.
+Output JSON keys: `suite_id`, `true_positive`, `false_positive`, `false_negative`, `precision`, `recall`, `false_positives_per_case`. Exit nonzero for malformed input or zero gold cases.
 
-- [ ] **Step 4: Run evaluator tests and CLI**
+Do not implement Asset Top-1, entity-link accuracy, or canonical contradiction metrics here; those belong to Phases 1-3.
+
+- [ ] **Step 4: Run GREEN**
 
 ```bash
 uv run --directory backend pytest tests/test_finding_set_evaluator.py tests/test_evaluation_repository.py -v
 uv run --directory backend python ../tools/evaluate_review_gold.py --gold tests/fixtures/gold/foundation_findings.json --predictions tests/fixtures/gold/foundation_predictions.json
 ```
 
-Expected: tests PASS and CLI emits deterministic JSON.
+Expected: tests PASS; CLI reports precision/recall 1.0 for the smoke fixture.
 
 - [ ] **Step 5: Commit**
 
@@ -719,29 +944,27 @@ git commit -m "feat: add gold review evaluation harness"
 
 ---
 
-### Task 8: Prove the Phase 0 End-to-End Foundation Flow
+### Task 7: Lock the Phase 0 End-to-End Acceptance Contract
 
 **Files:**
 - Create: `backend/tests/integration/test_review_foundation_flow.py`
-- Modify: `.github/workflows/remediation-ci.yml` only if needed to ensure this test runs in the hermetic backend job.
+- Modify: `.github/workflows/remediation-ci.yml` only if the current hermetic backend job would otherwise omit this test.
 
 **Interfaces:**
-- Consumes all Phase 0 components.
-- Produces one acceptance contract: local source refs -> immutable snapshot -> deterministic analysis run -> evidence-backed finding -> append-only human decision -> persisted evaluation result.
+- Consumes every Phase 0 component.
+- Produces one acceptance flow: local source refs -> immutable snapshot -> deterministic AnalysisRun -> evidence-backed Finding -> append-only HumanDecision -> persisted gold result.
 
-- [ ] **Step 1: Write the end-to-end failing test**
+- [ ] **Step 1: Write the failing integration test**
 
-The test must perform this exact sequence against `tmp_path`:
+Use a tmp SQLite DB/artifact root and the local fixture source. The test must execute:
 
 ```python
-request = ReviewRequestData(id="R-E2E", project_id="P-1", source="DISCORD")
-repo.create_request(request)
-service.transition_request("R-E2E", ReviewRequestStatus.IMPORTING)
-
+repo.create_request(ReviewRequestData(id="R-E2E", project_id="P-1", source="DISCORD"))
+request_service.transition_request("R-E2E", ReviewRequestStatus.IMPORTING)
 snapshot = intake.create_snapshot("R-E2E", "canonical", "proof")
-service.transition_request("R-E2E", ReviewRequestStatus.ANALYZING)
+request_service.transition_request("R-E2E", ReviewRequestStatus.ANALYZING)
 
-run = AnalysisRunData(
+repo.create_analysis_run(AnalysisRunData(
     id="RUN-E2E",
     request_id="R-E2E",
     task_type="foundation-smoke",
@@ -749,59 +972,62 @@ run = AnalysisRunData(
     status="COMPLETED",
     started_at="2026-09-05T00:00:00Z",
     completed_at="2026-09-05T00:00:01Z",
-)
-repo.create_analysis_run(run)
+))
 
-evidence = EvidenceDataV2(
+proof_resource = next(r for r in repo.list_snapshot_resources(snapshot.id) if r.role == "PROOF")
+repo.add_evidence(EvidenceDataV2(
     id="E-E2E",
     evidence_type="DOCUMENT_BLOCK",
-    source_sha256=repo.list_snapshot_resources(snapshot.id)[-1].local_sha256,
+    source_sha256=proof_resource.local_sha256,
     value="오타 문장",
     method="fixture",
-)
-repo.add_evidence(evidence)
+    analysis_run_id="RUN-E2E",
+))
 repo.create_finding(
     FindingData(
         id="F-E2E",
+        request_id="R-E2E",
         revision_id="REV-E2E",
         engine="EDITORIAL_QA",
         finding_type="TYPO",
-        status=FindingStatus.PENDING_REVIEW,
         analysis_run_id="RUN-E2E",
         created_at="2026-09-05T00:00:01Z",
     ),
     [FindingEvidenceData("F-E2E", "E-E2E", "SUPPORTS")],
 )
-repo.append_human_decision(
-    HumanDecisionDataV2(
-        id="D-E2E",
-        finding_id="F-E2E",
-        decision=DecisionValue.ACCEPT,
-        created_at="2026-09-05T00:00:02Z",
-    )
-)
+repo.append_human_decision(HumanDecisionDataV2(
+    id="D-E2E",
+    finding_id="F-E2E",
+    decision=DecisionValue.ACCEPT,
+    created_at="2026-09-05T00:00:02Z",
+))
 ```
 
-Then assert the artifact verifies, the finding resolves to the evidence, the decision remains a separate row, and a one-case gold evaluation produces precision/recall 1.0.
+Then assert:
 
-- [ ] **Step 2: Run RED/GREEN cycle**
+```python
+assert artifacts.verify(artifact_for(proof_resource)) is True
+assert [e.id for e in repo.list_finding_evidence("F-E2E")] == ["E-E2E"]
+assert [d.id for d in repo.list_human_decisions("F-E2E")] == ["D-E2E"]
+```
 
-Run before any fixes:
+Create and persist a one-case `TYPO` gold evaluation and assert precision/recall are 1.0.
+
+- [ ] **Step 2: Run integration RED/GREEN cycle**
 
 ```bash
 uv run --directory backend pytest tests/integration/test_review_foundation_flow.py -v
 ```
 
-If it fails because of integration mismatches, make only the minimum fixes in the Phase 0 modules; do not modify graph/AI/asset production paths to satisfy this test.
+Only fix Phase 0 modules needed by this contract. Do not modify graph, AI, parser, or asset production paths to force this test green.
 
-Run again until PASS.
-
-- [ ] **Step 3: Run all Phase 0 tests together**
+- [ ] **Step 3: Run all Phase 0 tests**
 
 ```bash
 uv run --directory backend pytest \
   tests/test_review_core_domain.py \
   tests/test_intake_domain.py \
+  tests/test_review_config.py \
   tests/test_sqlite_review_schema.py \
   tests/test_review_repository.py \
   tests/test_review_request_service.py \
@@ -813,19 +1039,19 @@ uv run --directory backend pytest \
   tests/integration/test_review_foundation_flow.py -v
 ```
 
-Expected: PASS with no network, Neo4j, `/src`, or API credentials.
+Expected: PASS with no external services or credentials.
 
-- [ ] **Step 4: Run full backend regression suite**
+- [ ] **Step 4: Run full backend regression and inspect CI config**
 
 ```bash
 uv run --directory backend pytest -q
 ```
 
-Expected: no new failures beyond existing intentional skips/xfails documented by current test configuration.
+Expected: no new failures beyond current intentional skips/xfails.
 
-If the hermetic CI job already runs `pytest`, no workflow change is needed. If it filters tests and would omit the new integration test, update `.github/workflows/remediation-ci.yml` so the backend hermetic job includes `tests/integration/test_review_foundation_flow.py` without adding external services.
+Inspect `.github/workflows/remediation-ci.yml`. If the hermetic backend job already runs the full backend pytest suite, leave the workflow unchanged. If it filters test paths and omits `tests/integration/test_review_foundation_flow.py`, add that path to the existing hermetic pytest invocation without adding Neo4j/Redis/API dependencies.
 
-- [ ] **Step 5: Commit Phase 0 acceptance**
+- [ ] **Step 5: Commit acceptance**
 
 ```bash
 git add backend/tests/integration/test_review_foundation_flow.py .github/workflows/remediation-ci.yml
@@ -836,30 +1062,28 @@ git commit -m "test: lock phase zero review foundation acceptance"
 
 ## Phase 0 Completion Gate
 
-Phase 0 is complete only when all of the following are demonstrated by tests/CI:
+Phase 0 is complete only when tests demonstrate all of the following:
 
 - SQLite initializes idempotently and enforces foreign keys.
-- ReviewRequest transitions fail closed on illegal jumps.
-- Intake content is copied into an immutable SHA256 artifact store before analysis.
-- Snapshot identity changes when downloaded source content changes.
+- Request state transitions fail closed on illegal jumps.
+- Input content is copied into an immutable SHA256 artifact store before analysis.
+- Snapshot identity changes when downloaded content changes.
 - Findings cannot be persisted with missing evidence.
-- Human decisions are append-only records separate from Findings.
-- Legacy filename/path/caption/VLM evidence is not silently promoted into canonical truth by adapters.
-- Evaluation refuses to report precision/recall without gold cases.
-- The complete Phase 0 integration flow runs without Neo4j, live AI, Discord, Google Drive, or `/src`.
-- The existing backend regression suite remains green.
+- Human decisions remain append-only and separate from findings.
+- Legacy filename/path/caption/VLM evidence is not promoted into canonical truth by adapters.
+- Evaluation refuses precision/recall reporting with zero gold cases.
+- End-to-end Phase 0 runs without Neo4j, live AI, Discord, Google Drive, `/src`, or API credentials.
+- Existing backend regression remains green.
 
-## Explicit Non-Goals for This Plan
+## Explicit Non-Goals
 
-The following are intentionally deferred to separate implementation plans:
+Separate plans will cover:
 
-- CanonicalAsset/CanonicalMetadata/CanonicalEntity/CanonicalFact production flows.
-- Persistent SIFT feature generation and incremental Asset QA.
-- Codex SDK runtime, Luna max/xhigh, ReviewToolGateway, or Direct API runtime.
-- EntityMention/DocumentClaim extraction and B1 whole-document contradiction analysis.
-- B2 canonical fact comparison and Neo4j projection redesign.
-- Real Discord bot commands/events.
-- Real Google Drive authentication/list/download/upload.
-- Review Web UI.
-- PDF/XLSX/annotated PDF/JSON ReviewPackage publication.
-- HWP/HWPX acceptance.
+- CanonicalAsset/CanonicalMetadata/CanonicalEntity/CanonicalFact production flow.
+- Persistent SIFT and incremental Asset QA.
+- Codex SDK runtime, Luna max/xhigh, ReviewToolGateway, Direct API runtime/model switching.
+- EntityMention/DocumentClaim and B1 whole-document review.
+- B2 canonical comparison and Neo4j projection redesign.
+- Real Discord bot and Google Drive adapters.
+- Review Web UI and ReviewPackage generation/publishing.
+- HWP/HWPX acceptance and cross-platform product hardening.
