@@ -1,7 +1,7 @@
 # Archaeology Review System Redesign
 
 Date: 2026-09-05
-Status: Approved architecture design
+Status: Architecture approved in chat; written spec awaiting user review
 Branch context: `feat/revision-aware-panel-provenance`
 
 ## 1. Purpose
@@ -118,7 +118,7 @@ SQLite is the sole structured source of truth for:
 
 Large immutable files and derived features live outside SQLite in a content-addressed artifact store.
 
-Suggested layout:
+Initial convention:
 
 ```text
 /data
@@ -567,9 +567,27 @@ AI output is an observation/proposal until deterministic schema and evidence val
 - artifact store = immutable analysis snapshots and derived assets
 - Review Web UI = human review interface
 
-Repository search found no existing Discord/Google Drive subsystem to preserve, so this is a new bounded subsystem around the existing review core.
+Repository search found no existing Discord/Google Drive subsystem to preserve, so this is a new integration subsystem around the existing review core.
 
-### 8.2 ReviewRequest
+### 8.2 Structured Discord Request Contract
+
+Request intake should prefer a structured slash-command or equivalent Discord form rather than relying on free-text interpretation. Required semantic inputs are:
+
+- project or project selector
+- `canonical_drive_ref`
+- `proof_drive_ref`
+
+An optional note may remain free text. Free text must not be the sole mechanism for resolving an ambiguous Drive input.
+
+Representative interaction:
+
+```text
+/review
+project: 논산 산노리
+canonical: <Google Drive folder URL>
+proof: <Google Drive file URL>
+note: 3차 교정본 검수
+```
 
 Discord requests create a `ReviewRequest` containing:
 
@@ -585,7 +603,7 @@ Discord requests create a `ReviewRequest` containing:
 - created_at
 - completed_at
 
-Suggested states:
+Request states are:
 
 - RECEIVED
 - IMPORTING
@@ -677,7 +695,7 @@ AI analysis complete
 
 ### 10.3 ReviewPackage
 
-Recommended final package:
+The initial final package is:
 
 1. `01_review_summary.pdf` — report/approval summary
 2. `02_review_findings.xlsx` — operational correction list
